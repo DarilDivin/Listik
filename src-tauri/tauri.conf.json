@@ -1,0 +1,73 @@
+{
+  "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
+  "productName": "listik",
+  "version": "0.1.0",
+  "identifier": "com.listik.app",
+  "build": {
+    "frontendDist": "../out",
+    "devUrl": "http://localhost:3000",
+    "beforeDevCommand": "pnpm dev",
+    "beforeBuildCommand": "pnpm build"
+  },
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "Listik",
+        "width": 800,
+        "height": 600,
+        "visible": false,
+        "center": true
+      },
+      {
+        "label": "daily",
+        "title": "Tâches du jour",
+        "url": "/daily",
+        "width": 400,
+        "height": 600,
+        "resizable": false,
+        "fullscreen": false,
+        "alwaysOnTop": false,
+        "decorations": false,
+        "transparent": true,
+        "visible": true,
+        "center": true,
+        "backgroundColor": "#ffffff",
+        "maximizable": false
+      },
+      {
+        "label": "planner",
+        "title": "Planificateur Listik",
+        "url": "/planner",
+        "width": 1200,
+        "height": 800,
+        "resizable": true,
+        "decorations": false,
+        "fullscreen": false,
+        "center": true,
+        "visible": false,
+        "backgroundColor": "#ffffff",
+        "maximizable": true
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ]
+  },
+  "plugins": {
+    "autostart": {
+      "mobile" : false
+    }
+  }
+}

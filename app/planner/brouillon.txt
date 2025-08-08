@@ -1,0 +1,48 @@
+<div className="bg-white rounded-lg max-w-6xl mx-auto px-8 py-8">
+        {error && (
+          <div className="bg-red-100 text-red-700 p-4 rounded-lg mb-6">
+            {error}
+          </div>
+        )}
+
+        {/* Filtres */}
+        <div className="bg-white rounded-lg shadow-sm p-4 mb-6">
+          <div className="flex gap-2">
+            <button
+              onClick={() => setFilter("all")}
+              className={`px-4 py-2 rounded-lg ${
+                filter === "all"
+                  ? "bg-indigo-600 text-white"
+                  : "bg-gray-100 text-gray-700 hover:bg-gray-200"
+              }`}
+            >
+              All ({todos.length})
+            </button>
+            <button
+              onClick={() => setFilter("pending")}
+              className={`px-4 py-2 rounded-lg ${
+                filter === "pending"
+                  ? "bg-indigo-600 text-white"
+                  : "bg-gray-100 text-gray-700 hover:bg-gray-200"
+              }`}
+            >
+              Pending (
+              {todos.filter((t) => t.status === TodoStatus.Pending).length})
+            </button>
+            <button
+              onClick={() => setFilter("completed")}
+              className={`px-4 py-2 rounded-lg ${
+                filter === "completed"
+                  ? "bg-indigo-600 text-white"
+                  : "bg-gray-100 text-gray-700 hover:bg-gray-200"
+              }`}
+            >
+              Completed (
+              {todos.filter((t) => t.status === TodoStatus.Completed).length})
+            </button>
+          </div>
+        </div>
+
+        {/* Liste des todos */}
+        <TodoList todos={filteredTodos} onToggle={toggleTodo} />
+      </div>
