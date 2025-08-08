@@ -2,6 +2,10 @@
   "name": "listik",
   "version": "0.1.0",
   "private": true,
+  "license": "MIT",
+  "description": "Your daily task manager",
+  "author": "Daril D.",
+  "keywords": ["productivity", "tasks", "daily", "tauri", "desktop"],
   "scripts": {
     "dev": "next dev --turbopack",
     "build": "next build",
