@@ -64,7 +64,7 @@ export default function RootLayout({
         <div
           className={`
           bg-white p-2 pt-0 w-full overflow-hidden transition-all duration-300
-          ${showTitleBar ? "h-[calc(100vh-40px)]" : "h-[calc(100vh-8px)]"}
+          ${showTitleBar ? "h-[calc(100vh-32px)]" : "h-[calc(100vh-8px)]"}
         `}
         >
           {children}
