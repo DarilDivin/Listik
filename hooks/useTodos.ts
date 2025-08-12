@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { Todo, CreateTodo, TodoStatus, Priority } from '@/types/todo';
+import { toast } from 'sonner';
 
 export function useTodos() {
   const [todos, setTodos] = useState<Todo[]>([]);
@@ -27,23 +28,34 @@ export function useTodos() {
   const createTodoFromSmart = async (taskData: {
     text: string;
     dueDate?: Date | null;
-    priority?: Priority; // Changé de category à priority
+    priority?: Priority;
   }): Promise<Todo | null> => {
     setError(null);
     
     try {
+      // Si pas de date, utiliser aujourd'hui par défaut
+      const scheduledDate = taskData.dueDate || new Date();
+
       const createData: CreateTodo = {
         text: taskData.text,
-        priority: taskData.priority || Priority.Normal, // Utiliser la priorité fournie
+        priority: taskData.priority || Priority.Normal,
         due_date: taskData.dueDate ? taskData.dueDate.toISOString().split('T')[0] : undefined,
-        scheduled_for: taskData.dueDate ? taskData.dueDate.toISOString().split('T')[0] : undefined,
+        scheduled_for: scheduledDate.toISOString().split('T')[0],
       };
 
       const newTodo = await invoke<Todo>('create_todo', { todoData: createData });
       setTodos(prev => [...prev, newTodo]);
+      toast.success("Event has been created.")
       return newTodo;
     } catch (err) {
       setError(err as string);
+      toast.error("Erreur lors de la création de l'événement.", {
+          description: err instanceof Error ? err.message : "Unknown error",
+          action: {
+            label: "Info",
+            onClick: () => console.log("Info"),
+          },
+        });
       console.error('Erreur lors de la création du todo:', err);
       return null;
     }

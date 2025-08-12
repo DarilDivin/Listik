@@ -1,17 +1,27 @@
-'use client';
+"use client";
 
-import { useTodos } from '@/hooks/useTodos';
-import { TodoStatus, Priority } from '@/types/todo';
-import { useState } from 'react';
+import SmartTaskInput from "@/components/SmartTaskInput";
+import { useTodos } from "@/hooks/useTodos";
+import { TodoStatus, Priority } from "@/types/todo";
+import { useState } from "react";
 
 export default function DailyPage() {
-  const { todos, loading, error, toggleTodo, createTodo, openPlanner } = useTodos();
-  const [newTodoText, setNewTodoText] = useState('');
+  const {
+    todos,
+    loading,
+    error,
+    createTodoFromSmart,
+    toggleTodo,
+    createTodo,
+    openPlanner,
+  } = useTodos();
+
+  const [newTodoText, setNewTodoText] = useState("");
 
   // Filtrer seulement les todos d'aujourd'hui
-  const todayTodos = todos.filter(todo => {
+  const todayTodos = todos.filter((todo) => {
     if (!todo.scheduled_for) return false;
-    const today = new Date().toISOString().split('T')[0];
+    const today = new Date().toISOString().split("T")[0];
     return todo.scheduled_for === today;
   });
 
@@ -22,18 +32,30 @@ export default function DailyPage() {
     await createTodo({
       text: newTodoText,
       priority: Priority.Normal,
-      scheduled_for: new Date().toISOString().split('T')[0]
+      scheduled_for: new Date().toISOString().split("T")[0],
     });
 
-    setNewTodoText('');
+    setNewTodoText("");
+  };
+
+  const handleCreateTodo = async (taskData: {
+    text: string;
+    dueDate?: Date | null;
+    priority?: Priority;
+  }) => {
+    await createTodoFromSmart(taskData);
   };
 
   const getPriorityColor = (priority: Priority) => {
     switch (priority) {
-      case Priority.High: return 'bg-red-500';
-      case Priority.Normal: return 'bg-orange-500';
-      case Priority.Low: return 'bg-gray-400';
-      default: return 'bg-gray-400';
+      case Priority.High:
+        return "bg-red-500";
+      case Priority.Normal:
+        return "bg-orange-500";
+      case Priority.Low:
+        return "bg-gray-400";
+      default:
+        return "bg-gray-400";
     }
   };
 
@@ -48,104 +70,83 @@ export default function DailyPage() {
   const today = new Date();
 
   return (
-    <div className="h-full rounded bg-gradient-to-b from-gray-200 to-gray-300 p-4 overflow-y-scroll">
-      <div className="max-w-sm mx-auto bg-white rounded-2xl shadow-sm overflow-hidden">
-        {/* Header */}
-        <div className="bg-white p-6 border-b border-gray-100">
-          <div className="flex justify-between items-center mb-2">
-            <h1 className="text-xl font-semibold text-gray-900">Today</h1>
-            <button 
-              onClick={openPlanner}
-              className="text-sm text-gray-500 hover:text-gray-700 transition-colors"
-            >
-              Plan →
-            </button>
+    <div className="relative w-full h-full rounded bg-gradient-to-b from-gray-200 to-gray-300 p-4 overflow-y-scroll">
+      <button
+        onClick={openPlanner}
+        className="text-sm text-gray-500 hover:text-gray-700 transition-colors absolute top-2 right-2 bg-white/00 px-2 py-1 rounded cursor-pointer"
+      >
+        Plan →
+      </button>
+      <header className="px-8 py-6">
+        <div className="flex flex-col justify-center items-center max-w-7xl mx-auto h-full gap-10">
+          <div>
+            <h1 className="text-2xl font-semibold text-gray-900">
+              {today.toLocaleDateString("fr-FR", {
+                weekday: "long",
+                day: "numeric",
+              })}
+              ,
+              <span className="text-gray-400 ml-2">
+                {today.toLocaleDateString("fr-FR", { month: "long" })}
+              </span>
+            </h1>
           </div>
-          <p className="text-sm text-gray-500">
-            {today.toLocaleDateString('en-US', { 
-              weekday: 'long', 
-              day: 'numeric', 
-              month: 'long' 
-            })}
-          </p>
         </div>
-
-        {/* Formulaire d'ajout rapide */}
-        <div className="p-6 border-b border-gray-100">
-          <form onSubmit={handleAddTodo} className="flex gap-3">
-            <input
-              type="text"
-              value={newTodoText}
-              onChange={(e) => setNewTodoText(e.target.value)}
-              placeholder="Add new task"
-              className="flex-1 px-4 py-3 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
-            />
-            <button
-              type="submit"
-              className="bg-gray-900 text-white px-4 py-3 rounded-lg hover:bg-gray-800 transition-colors"
-            >
-              <span className="text-sm">+</span>
-            </button>
-          </form>
-        </div>
-
-        {/* Liste des todos */}
-        <div className="p-6">
-          {error && (
-            <div className="bg-red-50 text-red-700 p-3 rounded-lg mb-4 text-sm">
-              {error}
-            </div>
-          )}
-
-          {todayTodos.length === 0 ? (
-            <div className="text-center text-gray-500 py-12">
-              <div className="text-3xl mb-3">✨</div>
-              <p className="text-sm">No tasks for today</p>
-              <p className="text-xs text-gray-400">Enjoy your day!</p>
-            </div>
-          ) : (
-            <div className="space-y-3">
-              {todayTodos.map((todo) => (
-                <div
-                  key={todo.id}
-                  className="flex items-center gap-4 py-3 px-3 hover:bg-gray-50 rounded-lg group transition-colors"
+      </header>
+      <section className="max-w-2xl mx-auto mt-4 h-[450px] pb-[50px] overflow-y-scroll scroll-smooth">
+        {error && (
+          <div className="text-red-500 text-sm mb-2">Erreur: {error}</div>
+        )}
+        {todayTodos.length === 0 ? (
+          <div className="text-gray-500 text-center py-8">
+            Aucune tâche prévue pour aujourd'hui.
+          </div>
+        ) : (
+          <ul className="space-y-2">
+            {todayTodos.map((todo) => (
+              <li
+                key={todo.id}
+                className={`flex items-center bg-white rounded shadow p-3 gap-3`}
+              >
+                <button
+                  onClick={() => toggleTodo(todo.id)}
+                  className={`w-5 h-5 rounded-full border-2 border-gray-400 flex items-center justify-center mr-2 ${
+                    todo.status === TodoStatus.Completed
+                      ? "bg-green-400 border-green-400"
+                      : ""
+                  }`}
+                  aria-label="Marquer comme terminé"
                 >
-                  <button
-                    onClick={() => toggleTodo(todo.id)}
-                    className={`w-5 h-5 rounded-full border-2 flex items-center justify-center transition-colors ${
-                      todo.status === TodoStatus.Completed
-                        ? 'bg-green-500 border-green-500 text-white'
-                        : 'border-gray-300 hover:border-gray-400'
-                    }`}
-                  >
-                    {todo.status === TodoStatus.Completed && (
-                      <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
-                        <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
-                      </svg>
-                    )}
-                  </button>
-                  
-                  <div className="flex-1">
-                    <p className={`text-sm ${
-                      todo.status === TodoStatus.Completed
-                        ? 'line-through text-gray-500'
-                        : 'text-gray-900'
-                    }`}>
-                      {todo.text}
-                    </p>
-                    {todo.due_date && (
-                      <p className="text-xs text-orange-600 mt-1">
-                        Due: {new Date(todo.due_date).toLocaleDateString()}
-                      </p>
-                    )}
-                  </div>
+                  {todo.status === TodoStatus.Completed && (
+                    <span className="text-white text-xs">&#10003;</span>
+                  )}
+                </button>
+                <span
+                  className={`flex-1 text-gray-900 ${
+                    todo.status === TodoStatus.Completed
+                      ? "line-through text-gray-400"
+                      : ""
+                  }`}
+                >
+                  {todo.text}
+                </span>
+                <span
+                  className={`w-3 h-3 rounded-full ${getPriorityColor(
+                    todo.priority
+                  )}`}
+                  title={`Priorité: ${todo.priority}`}
+                />
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
 
-                  <div className={`w-2 h-2 rounded-full ${getPriorityColor(todo.priority)}`}></div>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
+      <div className="absolute bottom-2 left-2 right-2 bg-black/2  p-1 rounded-2xl">
+        <SmartTaskInput
+          onSubmit={handleCreateTodo}
+          placeholder="Ajouter une tâche"
+        />
       </div>
     </div>
   );

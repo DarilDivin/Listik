@@ -2,7 +2,9 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { getCurrentWindow } from '@tauri-apps/api/window';
+import { getCurrentWindow } from '@tauri-apps/api/window'; 
+import { BreakoutRoomRegular, SelectAllOffRegular, SquareMultipleRegular } from '@fluentui/react-icons'; // Import Fluent UI icons
+import { ChromeRestoreIcon } from '@fluentui/react-icons-mdl2';
 
 interface TitleBarProps {
   title?: string;
@@ -73,14 +75,22 @@ export default function TitleBar({
   };
 
   const handleClose = async () => {
-    try {
-      const window = getCurrentWindow();
-      await window.close();
-      console.log('✅ Fenêtre fermée');
-    } catch (error) {
-      console.error('❌ Erreur close:', error);
+  try {
+    const window = getCurrentWindow();
+    
+    // Vérifier si la fenêtre existe encore avant de la fermer
+    const isValid = await window.isVisible().catch(() => false);
+    if (!isValid) {
+      console.warn('⚠️ Fenêtre déjà fermée ou invalide');
+      return;
     }
-  };
+    
+    await window.close();
+    console.log('✅ Fenêtre fermée');
+  } catch (error) {
+    console.error('❌ Erreur close:', error);
+  }
+};
 
   // Masquer le bouton maximize si pas sur la fenêtre principale
   const shouldShowMaximize = showMaximize && windowLabel !== 'daily';
@@ -104,7 +114,9 @@ export default function TitleBar({
             aria-label="Minimize"
             title="Minimiser"
           >
-            <div className="w-3 h-0.5 bg-gray-600"></div>
+            {/* <div className="w-3 h-0.5 bg-gray-600"></div> */}
+            {/* Minimize - Style Windows 11 */}
+            <div className="w-3 h-px bg-gray-700 group-hover:bg-gray-900"></div>
           </button>
         )}
 
@@ -116,12 +128,12 @@ export default function TitleBar({
             title={isMaximized ? "Restaurer" : "Agrandir"}
           >
             {isMaximized ? (
-              <div className="relative">
-                <div className="w-2.5 h-2.5 border border-gray-600 bg-transparent absolute -top-0.5 -left-0.5"></div>
-                <div className="w-2.5 h-2.5 border border-gray-600 bg-white"></div>
-              </div>
+              /* Restore - Style Windows 11 */
+              // <SelectAllOffRegular className="w-4 h-4 text-gray-700 group-hover:text-gray-900" />
+              <SquareMultipleRegular />
             ) : (
-              <div className="w-3 h-3 border border-gray-600 bg-transparent"></div>
+              /* Maximize - Style Windows 11 */
+              <div className="w-3 h-3 border border-gray-700 rounded-[2px] group-hover:border-gray-900 bg-transparent"></div>
             )}
           </button>
         )}
@@ -129,12 +141,16 @@ export default function TitleBar({
         {showClose && (
           <button
             onClick={handleClose}
-            className="w-8 h-8 flex items-center justify-center hover:bg-red-400 hover:text-white transition-colors group"
+            className="w-8 h-8 flex items-center justify-center hover:bg-red-600 transition-all duration-150 group"
             aria-label="Close"
             title="Fermer"
           >
-            <svg className="w-3 h-3" viewBox="0 0 12 12" fill="currentColor">
-              <path d="M6 4.586L10.293.293a1 1 0 111.414 1.414L7.414 6l4.293 4.293a1 1 0 11-1.414 1.414L6 7.414l-4.293 4.293a1 1 0 01-1.414-1.414L4.586 6 .293 1.707A1 1 0 011.707.293L6 4.586z"/>
+            {/* Close - Style Windows 11 */}
+            <svg width="10" height="10" viewBox="0 0 10 10" className="text-gray-700 group-hover:text-white">
+              <path 
+                d="M0.146 0.146a.5.5 0 0 1 .708 0L5 4.293 9.146.146a.5.5 0 0 1 .708.708L5.707 5l4.147 4.146a.5.5 0 0 1-.708.708L5 5.707.854 9.854a.5.5 0 0 1-.708-.708L4.293 5 .146.854a.5.5 0 0 1 0-.708z" 
+                fill="currentColor"
+              />
             </svg>
           </button>
         )}

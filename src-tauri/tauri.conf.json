@@ -27,7 +27,7 @@
         "height": 600,
         "resizable": false,
         "fullscreen": false,
-        "alwaysOnTop": false,
+        "alwaysOnTop": true,
         "decorations": false,
         "transparent": true,
         "visible": true,

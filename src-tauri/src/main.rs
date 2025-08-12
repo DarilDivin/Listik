@@ -61,6 +61,7 @@ async fn open_planner_window(app: AppHandle) -> Result<(), String> {
                     .title("Planificateur Listik")
                     .inner_size(1200.0, 800.0)
                     .center()
+                    .decorations(false)
                     .resizable(true)
                     .build()
                     .map_err(|e| e.to_string())?;
@@ -72,31 +73,27 @@ async fn open_planner_window(app: AppHandle) -> Result<(), String> {
 
 #[tauri::command]
 async fn toggle_daily_window(app: AppHandle) -> Result<(), String> {
-    let daily_window = app.get_webview_window("daily");
+    println!("🔍 Toggle daily window...");
+    
+    if let Some(window) = app.get_webview_window("daily") {
+        println!("✅ Fenêtre daily existe → fermeture");
+        // Fermer complètement au lieu de cacher
+        window.close().map_err(|e| e.to_string())?;
+    } else {
+        println!("🆕 Création d'une nouvelle fenêtre daily");
+        let window = WebviewWindowBuilder::new(&app, "daily", WebviewUrl::App("/daily".into()))
+            .title("Tâches du jour")
+            .inner_size(420.0, 650.0)
+            .center()
+            .resizable(false)
+            .decorations(false)
+            .transparent(true)
+            .build()
+            .map_err(|e| e.to_string())?;
 
-    match daily_window {
-        Some(window) => {
-            if window.is_visible().unwrap_or(false) {
-                window.hide().map_err(|e| e.to_string())?;
-            } else {
-                window.show().map_err(|e| e.to_string())?;
-                window.set_focus().map_err(|e| e.to_string())?;
-            }
-        }
-        None => {
-            let window = WebviewWindowBuilder::new(&app, "daily", WebviewUrl::App("/daily".into()))
-                .title("Tâches du jour")
-                .inner_size(400.0, 600.0)
-                .center()
-                .resizable(false)
-                .always_on_top(true)
-                .decorations(false)
-                .transparent(true)
-                .build()
-                .map_err(|e| e.to_string())?;
-
-            window.show().map_err(|e| e.to_string())?;
-        }
+        window.show().map_err(|e| e.to_string())?;
+        window.set_focus().map_err(|e| e.to_string())?;
+        println!("✅ Fenêtre daily créée");
     }
 
     Ok(())
@@ -205,13 +202,24 @@ fn main() {
                 use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut, ShortcutState};
 
                 let ctrl_i_shortcut = Shortcut::new(Some(Modifiers::CONTROL), Code::KeyI);
+                let app_handle_clone = app.handle().clone(); // ← Ajouter cette ligne
                 app.handle().plugin(
                     tauri_plugin_global_shortcut::Builder::new().with_handler(move |_app, shortcut, event| {
                         println!("{:?}", shortcut);
                         if shortcut == &ctrl_i_shortcut {
                             match event.state() {
                               ShortcutState::Pressed => {
-                                println!("Ctrl-I Pressed!");
+                                println!("🎯 Ctrl-I Pressed! Toggling daily window...");
+                        
+                                // Utiliser toggle_daily_window
+                                let app_handle = app_handle_clone.clone();
+                                tauri::async_runtime::spawn(async move {
+                                    if let Err(e) = toggle_daily_window(app_handle).await {
+                                        eprintln!("❌ Erreur toggle daily via raccourci: {}", e);
+                                    } else {
+                                        println!("✅ Daily window toggled via Ctrl+I");
+                                    }
+                                });
                               }
                               ShortcutState::Released => {
                                 println!("Ctrl-I Released!");
