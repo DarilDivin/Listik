@@ -201,28 +201,28 @@ fn main() {
             {
                 use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut, ShortcutState};
 
-                let ctrl_i_shortcut = Shortcut::new(Some(Modifiers::CONTROL), Code::KeyI);
+                let alt_space_shortcut = Shortcut::new(Some(Modifiers::ALT), Code::Space);
                 let app_handle_clone = app.handle().clone(); // ← Ajouter cette ligne
                 app.handle().plugin(
                     tauri_plugin_global_shortcut::Builder::new().with_handler(move |_app, shortcut, event| {
                         println!("{:?}", shortcut);
-                        if shortcut == &ctrl_i_shortcut {
+                        if shortcut == &alt_space_shortcut {
                             match event.state() {
                               ShortcutState::Pressed => {
-                                println!("🎯 Ctrl-I Pressed! Toggling daily window...");
-                        
+                                println!("🎯 Alt+Space Pressed! Toggling daily window...");
+
                                 // Utiliser toggle_daily_window
                                 let app_handle = app_handle_clone.clone();
                                 tauri::async_runtime::spawn(async move {
                                     if let Err(e) = toggle_daily_window(app_handle).await {
                                         eprintln!("❌ Erreur toggle daily via raccourci: {}", e);
                                     } else {
-                                        println!("✅ Daily window toggled via Ctrl+I");
+                                        println!("✅ Daily window toggled via Alt+Space");
                                     }
                                 });
                               }
                               ShortcutState::Released => {
-                                println!("Ctrl-I Released!");
+                                println!("Alt-Space Released!");
                               }
                             }
                         }
@@ -230,7 +230,7 @@ fn main() {
                     .build(),
                 )?;
 
-                app.global_shortcut().register(ctrl_i_shortcut)?;
+                app.global_shortcut().register(alt_space_shortcut)?;
             }
             Ok(())
         })
