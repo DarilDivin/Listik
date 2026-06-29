@@ -53,8 +53,8 @@ export default function TitleBar({
 
   const handleMaximize = async () => {
     // Vérifier si cette fenêtre peut être maximisée
-    if (windowLabel == 'daily') {
-      console.warn('⚠️ Maximize non disponible pour daily');
+    if (windowLabel == 'quick') {
+      console.warn('⚠️ Maximize non disponible pour quick');
       return;
     }
 
@@ -93,15 +93,15 @@ export default function TitleBar({
 };
 
   // Masquer le bouton maximize si pas sur la fenêtre principale
-  const shouldShowMaximize = showMaximize && windowLabel !== 'daily';
+  const shouldShowMaximize = showMaximize && windowLabel !== 'quick';
 
   return (
     <div 
-      className={`flex items-center justify-between h-8 bg-white/00 backdrop-blur-sm select-none ${className}`}
+      className={`flex items-center justify-between h-8 bg-transparent select-none ${className}`}
       data-tauri-drag-region
     >
       {/* Titre */}
-      <div className="flex items-center px-4 text-sm font-medium text-gray-700">
+      <div className="flex items-center px-4 text-sm font-medium text-foreground/80">
         {title}
       </div>
 
@@ -110,30 +110,28 @@ export default function TitleBar({
         {showMinimize && (
           <button
             onClick={handleMinimize}
-            className="w-8 h-8 flex items-center justify-center hover:bg-gray-200/50 transition-colors"
+            className="w-8 h-8 flex items-center justify-center hover:bg-accent/50 transition-colors group"
             aria-label="Minimize"
             title="Minimiser"
           >
-            {/* <div className="w-3 h-0.5 bg-gray-600"></div> */}
             {/* Minimize - Style Windows 11 */}
-            <div className="w-3 h-px bg-gray-700 group-hover:bg-gray-900"></div>
+            <div className="w-3 h-px bg-foreground/80 group-hover:bg-foreground"></div>
           </button>
         )}
 
         {shouldShowMaximize && (
           <button
             onClick={handleMaximize}
-            className="w-8 h-8 flex items-center justify-center hover:bg-gray-200/50 transition-colors"
+            className="w-8 h-8 flex items-center justify-center hover:bg-accent/50 transition-colors group"
             aria-label={isMaximized ? "Unmaximize" : "Maximize"}
             title={isMaximized ? "Restaurer" : "Agrandir"}
           >
             {isMaximized ? (
               /* Restore - Style Windows 11 */
-              // <SelectAllOffRegular className="w-4 h-4 text-gray-700 group-hover:text-gray-900" />
-              <SquareMultipleRegular />
+              <SquareMultipleRegular className="text-foreground/80 group-hover:text-foreground w-3 h-3" />
             ) : (
               /* Maximize - Style Windows 11 */
-              <div className="w-3 h-3 border border-gray-700 rounded-[2px] group-hover:border-gray-900 bg-transparent"></div>
+              <div className="w-3 h-3 border border-foreground/80 rounded-[2px] group-hover:border-foreground bg-transparent"></div>
             )}
           </button>
         )}
@@ -146,7 +144,7 @@ export default function TitleBar({
             title="Fermer"
           >
             {/* Close - Style Windows 11 */}
-            <svg width="10" height="10" viewBox="0 0 10 10" className="text-gray-700 group-hover:text-white">
+            <svg width="10" height="10" viewBox="0 0 10 10" className="text-foreground/80 group-hover:text-white">
               <path 
                 d="M0.146 0.146a.5.5 0 0 1 .708 0L5 4.293 9.146.146a.5.5 0 0 1 .708.708L5.707 5l4.147 4.146a.5.5 0 0 1-.708.708L5 5.707.854 9.854a.5.5 0 0 1-.708-.708L4.293 5 .146.854a.5.5 0 0 1 0-.708z" 
                 fill="currentColor"

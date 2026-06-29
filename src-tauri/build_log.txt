@@ -1,0 +1,31 @@
+   Compiling zerotrie v0.2.2
+   Compiling tinystr v0.8.1
+   Compiling potential_utf v0.1.2
+   Compiling indexmap v2.10.0
+   Compiling serde_json v1.0.141
+   Compiling phf_macros v0.11.3
+   Compiling darling_macro v0.20.11
+   Compiling semver v1.0.26
+error: linking with `link.exe` failed: exit code: 1
+  |
+  = note: "link.exe" "/DEF:C:\\Users\\darko\\AppData\\Local\\Temp\\rustcpRAuXV\\lib.def" "/NOLOGO" "C:\\Users\\darko\\AppData\\Local\\Temp\\rustcpRAuXV\\symbols.o" "<1 object files omitted>" "D:\\Projects\\Tauri\\listik\\src-tauri\\target\\debug\\deps\\darling_macro-06f35cb11ab47d88.63np6dkd9ceu50r9znc4zpumk.rcgu.rmeta" "<1 object files omitted>" "D:\\Projects\\Tauri\\listik\\src-tauri\\target\\debug\\deps/{libdarling_core-8e7c21f834f9b3ed.rlib,libstrsim-6a19fa2c6b00c12a.rlib,libfnv-6a2bfe21e1772c80.rlib,libident_case-9d205211ae57ff4b.rlib,libsyn-ca4600fd545d9023.rlib,libquote-b6c8d9f62eca4461.rlib,libproc_macro2-e244ecf9ca92c722.rlib,libunicode_ident-f7db65657b8daa2b.rlib}.rlib" "<sysroot>\\lib\\rustlib\\x86_64-pc-windows-msvc\\lib/{libproc_macro-*,librustc_literal_escaper-*,librustc_std_workspace_std-*,libstd-*,libpanic_unwind-*,libwindows_targets-*,librustc_demangle-*,libstd_detect-*,libhashbrown-*,librustc_std_workspace_alloc-*,libunwind-*,libcfg_if-*,liballoc-*,librustc_std_workspace_core-*,libcore-*,libcompiler_builtins-*}.rlib" "kernel32.lib" "kernel32.lib" "ntdll.lib" "userenv.lib" "ws2_32.lib" "dbghelp.lib" "/defaultlib:msvcrt" "/NXCOMPAT" "/OUT:D:\\Projects\\Tauri\\listik\\src-tauri\\target\\debug\\deps\\darling_macro-06f35cb11ab47d88.dll" "/OPT:REF,NOICF" "/DLL" "/IMPLIB:D:\\Projects\\Tauri\\listik\\src-tauri\\target\\debug\\deps\\darling_macro-06f35cb11ab47d88.dll.lib" "/DEBUG" "/PDBALTPATH:%_PDB%" "/NATVIS:<sysroot>\\lib\\rustlib\\etc\\intrinsic.natvis" "/NATVIS:<sysroot>\\lib\\rustlib\\etc\\liballoc.natvis" "/NATVIS:<sysroot>\\lib\\rustlib\\etc\\libcore.natvis" "/NATVIS:<sysroot>\\lib\\rustlib\\etc\\libstd.natvis"
+  = note: some arguments are omitted. use `--verbose` to show all linker arguments
+  = note: link: extra operand 'C:\\Users\\darko\\AppData\\Local\\Temp\\rustcpRAuXV\\symbols.o'
+          Try 'link --help' for more information.
+          
+
+note: `link.exe` returned an unexpected error
+
+note: you may need to install Visual Studio build tools with the "C++ build tools" workload
+
+error: could not compile `darling_macro` (lib) due to 1 previous error
+warning: build failed, waiting for other jobs to finish...
+error: linking with `link.exe` failed: exit code: 1
+  |
+  = note: "link.exe" "/DEF:C:\\Users\\darko\\AppData\\Local\\Temp\\rustc21GPrB\\lib.def" "/NOLOGO" "C:\\Users\\darko\\AppData\\Local\\Temp\\rustc21GPrB\\symbols.o" "<8 object files omitted>" "D:\\Projects\\Tauri\\listik\\src-tauri\\target\\debug\\deps\\phf_macros-fc21b3bd32e4792c.e1gzkhkoyerjvwzxve7nikw3s.rcgu.rmeta" "<1 object files omitted>" "D:\\Projects\\Tauri\\listik\\src-tauri\\target\\debug\\deps/{libsyn-ca4600fd545d9023.rlib,libquote-b6c8d9f62eca4461.rlib,libproc_macro2-e244ecf9ca92c722.rlib,libunicode_ident-f7db65657b8daa2b.rlib}.rlib" "<sysroot>\\lib\\rustlib\\x86_64-pc-windows-msvc\\lib/{libproc_macro-*,librustc_literal_escaper-*,librustc_std_workspace_std-*}.rlib" "D:\\Projects\\Tauri\\listik\\src-tauri\\target\\debug\\deps/{libphf_generator-94cd6d8081fda840.rlib,librand-62a57f1ded910f30.rlib,librand_chacha-ce3d2a84a94fcbd6.rlib,libppv_lite86-2ef0089f571558cc.rlib,libzerocopy-1532635560c9a122.rlib,librand_core-f0589c86e913f564.rlib,libgetrandom-dd1de001584cd051.rlib,libcfg_if-36c0f3de40d594fd.rlib,libphf_shared-1a511a8cab983090.rlib,libsiphasher-99959d2f2e51560b.rlib}.rlib" "<sysroot>\\lib\\rustlib\\x86_64-pc-windows-msvc\\lib/{libstd-*,libpanic_unwind-*,libwindows_targets-*,librustc_demangle-*,libstd_detect-*,libhashbrown-*,librustc_std_workspace_alloc-*,libunwind-*,libcfg_if-*,liballoc-*,librustc_std_workspace_core-*,libcore-*,libcompiler_builtins-*}.rlib" "bcrypt.lib" "advapi32.lib" "kernel32.lib" "kernel32.lib" "ntdll.lib" "userenv.lib" "ws2_32.lib" "dbghelp.lib" "/defaultlib:msvcrt" "/NXCOMPAT" "/OUT:D:\\Projects\\Tauri\\listik\\src-tauri\\target\\debug\\deps\\phf_macros-fc21b3bd32e4792c.dll" "/OPT:REF,NOICF" "/DLL" "/IMPLIB:D:\\Projects\\Tauri\\listik\\src-tauri\\target\\debug\\deps\\phf_macros-fc21b3bd32e4792c.dll.lib" "/DEBUG" "/PDBALTPATH:%_PDB%" "/NATVIS:<sysroot>\\lib\\rustlib\\etc\\intrinsic.natvis" "/NATVIS:<sysroot>\\lib\\rustlib\\etc\\liballoc.natvis" "/NATVIS:<sysroot>\\lib\\rustlib\\etc\\libcore.natvis" "/NATVIS:<sysroot>\\lib\\rustlib\\etc\\libstd.natvis"
+  = note: some arguments are omitted. use `--verbose` to show all linker arguments
+  = note: link: extra operand 'C:\\Users\\darko\\AppData\\Local\\Temp\\rustc21GPrB\\symbols.o'
+          Try 'link --help' for more information.
+          
+
+error: could not compile `phf_macros` (lib) due to 1 previous error

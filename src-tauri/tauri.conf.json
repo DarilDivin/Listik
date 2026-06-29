@@ -20,19 +20,20 @@
         "center": true
       },
       {
-        "label": "daily",
-        "title": "Tâches du jour",
-        "url": "/daily",
-        "width": 400,
-        "height": 600,
+        "label": "quick",
+        "title": "Capture rapide",
+        "url": "/quick",
+        "width": 680,
+        "height": 180,
         "resizable": false,
         "fullscreen": false,
         "alwaysOnTop": true,
         "decorations": false,
         "transparent": true,
-        "visible": true,
+        "shadow": false,
+        "skipTaskbar": true,
+        "visible": false,
         "center": true,
-        "backgroundColor": "#ffffff",
         "maximizable": false
       },
       {
@@ -51,7 +52,26 @@
       }
     ],
     "security": {
-      "csp": null
+      "csp": {
+        "default-src": "'self'",
+        "script-src": "'self'",
+        "style-src": "'self' 'unsafe-inline'",
+        "img-src": "'self' asset: http://asset.localhost blob: data:",
+        "font-src": "'self' data:",
+        "connect-src": "'self' ipc: http://ipc.localhost",
+        "object-src": "'none'",
+        "base-uri": "'self'",
+        "frame-src": "'none'"
+      },
+      "devCsp": {
+        "default-src": "'self' blob: data:",
+        "script-src": "'self' 'unsafe-inline' 'unsafe-eval' blob:",
+        "style-src": "'self' 'unsafe-inline'",
+        "img-src": "'self' asset: http://asset.localhost blob: data:",
+        "font-src": "'self' data:",
+        "connect-src": "'self' ipc: http://ipc.localhost ws://localhost:* http://localhost:*"
+      },
+      "dangerousDisableAssetCspModification": ["style-src"]
     }
   },
   "bundle": {
@@ -65,9 +85,5 @@
       "icons/icon.ico"
     ]
   },
-  "plugins": {
-    "autostart": {
-      "mobile" : false
-    }
-  }
+  "plugins": {}
 }

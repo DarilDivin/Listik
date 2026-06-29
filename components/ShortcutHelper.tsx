@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { invoke } from "@tauri-apps/api/core";
 
 export default function ShortcutHelper() {
   const [showHelp, setShowHelp] = useState(false);
@@ -17,11 +16,6 @@ export default function ShortcutHelper() {
       if (e.key === "Escape") {
         setShowHelp(false);
       }
-      // Ctrl+Shift+T pour toggle daily (local)
-      if (e.ctrlKey && e.shiftKey && e.key === "T") {
-        e.preventDefault();
-        invoke("toggle_daily_window").catch(console.error);
-      }
     };
 
     window.addEventListener("keydown", handleKeyDown);
@@ -31,7 +25,7 @@ export default function ShortcutHelper() {
   if (!showHelp) {
     return (
       <div className="fixed bottom-4 right-4 text-xs text-gray-500">
-        Appuyez sur F1 pour l'aide
+        Appuyez sur F1 pour l&apos;aide
       </div>
     );
   }
@@ -64,20 +58,16 @@ export default function ShortcutHelper() {
         <span className="text-sm font-medium">Vue quotidienne :</span>
         <div className="flex gap-1">
           <kbd className="bg-green-200 px-2 py-1 rounded text-xs font-mono">
-            Ctrl
-          </kbd>
-          <span>+</span>
-          <kbd className="bg-green-200 px-2 py-1 rounded text-xs font-mono">
             Alt
           </kbd>
           <span>+</span>
           <kbd className="bg-green-200 px-2 py-1 rounded text-xs font-mono">
-            L
+            Q
           </kbd>
         </div>
       </div>
       <p className="text-xs text-green-700">
-        ✅ Raccourci global - fonctionne depuis n'importe où !
+        ✅ Raccourci global - fonctionne depuis n&apos;importe où !
       </p>
     </div>
   );

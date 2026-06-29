@@ -1,156 +1,58 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod commands;
+mod db;
 mod models;
+mod reminders;
 
-use models::{CreateTodo, Todo};
+use commands::{open_planner_window, show_main_window, toggle_quick_window};
+use db::AppState;
 use tauri::{
     menu::{Menu, MenuItem},
     tray::{TrayIconBuilder, TrayIconEvent},
-    AppHandle, Manager, WebviewUrl, WebviewWindowBuilder,
+    Manager,
 };
-
-// use tauri_plugin_global_shortcut::{GlobalShortcutExt, ShortcutState};
-
-// Commande pour créer un nouveau todo
-#[tauri::command]
-async fn create_todo(todo_data: CreateTodo) -> Result<Todo, String> {
-    let mut todo = Todo::new(todo_data.text);
-
-    if let Some(priority) = todo_data.priority {
-        todo.priority = priority;
-    }
-    if let Some(due_date) = todo_data.due_date {
-        todo.due_date = Some(due_date);
-    }
-    if let Some(scheduled_for) = todo_data.scheduled_for {
-        todo.scheduled_for = Some(scheduled_for);
-    }
-
-    println!("Nouveau todo créé: {:?}", todo);
-    Ok(todo)
-}
-
-#[tauri::command]
-async fn get_today_todos() -> Result<Vec<Todo>, String> {
-    let mut example_todo = Todo::new("Exemple de todo pour aujourd'hui".to_string());
-    example_todo.scheduled_for = Some(chrono::Utc::now().date_naive());
-    Ok(vec![example_todo])
-}
-
-#[tauri::command]
-async fn toggle_todo(todo_id: String) -> Result<Todo, String> {
-    println!("Toggle todo avec ID: {}", todo_id);
-    let mut todo = Todo::new("Todo exemple".to_string());
-    todo.id = todo_id;
-    todo.complete();
-    Ok(todo)
-}
-
-#[tauri::command]
-async fn open_planner_window(app: AppHandle) -> Result<(), String> {
-    let planner_window = app.get_webview_window("planner");
-
-    match planner_window {
-        Some(window) => {
-            window.show().map_err(|e| e.to_string())?;
-            window.set_focus().map_err(|e| e.to_string())?;
-        }
-        None => {
-            let _window =
-                WebviewWindowBuilder::new(&app, "planner", WebviewUrl::App("/planner".into()))
-                    .title("Planificateur Listik")
-                    .inner_size(1200.0, 800.0)
-                    .center()
-                    .decorations(false)
-                    .resizable(true)
-                    .build()
-                    .map_err(|e| e.to_string())?;
-        }
-    }
-
-    Ok(())
-}
-
-#[tauri::command]
-async fn toggle_daily_window(app: AppHandle) -> Result<(), String> {
-    println!("🔍 Toggle daily window...");
-    
-    if let Some(window) = app.get_webview_window("daily") {
-        println!("✅ Fenêtre daily existe → fermeture");
-        // Fermer complètement au lieu de cacher
-        window.close().map_err(|e| e.to_string())?;
-    } else {
-        println!("🆕 Création d'une nouvelle fenêtre daily");
-        let window = WebviewWindowBuilder::new(&app, "daily", WebviewUrl::App("/daily".into()))
-            .title("Tâches du jour")
-            .inner_size(420.0, 650.0)
-            .center()
-            .resizable(false)
-            .decorations(false)
-            .transparent(true)
-            .build()
-            .map_err(|e| e.to_string())?;
-
-        window.show().map_err(|e| e.to_string())?;
-        window.set_focus().map_err(|e| e.to_string())?;
-        println!("✅ Fenêtre daily créée");
-    }
-
-    Ok(())
-}
-
-#[tauri::command]
-async fn show_main_window(app: AppHandle) -> Result<(), String> {
-    let main_window = app.get_webview_window("main");
-
-    match main_window {
-        Some(window) => {
-            window.show().map_err(|e| e.to_string())?;
-            window.set_focus().map_err(|e| e.to_string())?;
-        }
-        None => return Err("Fenêtre principale introuvable".to_string()),
-    }
-
-    Ok(())
-}
 
 fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_process::init())
-        // .plugin(tauri_plugin_global_shortcut::Builder::new().build())
+        .plugin(tauri_plugin_notification::init())
         .setup(|app| {
-            // Créer le menu du tray
+            // --- Base de données (accès SQL côté Rust) ---
+            let handle = app.handle().clone();
+            let pool = tauri::async_runtime::block_on(db::init_pool(&handle))
+                .map_err(std::io::Error::other)?;
+            app.manage(AppState { pool });
+
+            // --- Planificateur de rappels (notifications en arrière-plan) ---
+            reminders::spawn_scheduler(app.handle().clone());
+
+            // --- Menu du tray ---
             let quick_task =
                 MenuItem::with_id(app, "quick_task", "➕ Tâche rapide", true, None::<&str>)?;
-            let daily = MenuItem::with_id(app, "daily", "📅 Vue quotidienne", true, None::<&str>)?;
             let planner =
                 MenuItem::with_id(app, "planner", "📋 Planificateur", true, None::<&str>)?;
             let main_window =
                 MenuItem::with_id(app, "main", "🏠 Fenêtre principale", true, None::<&str>)?;
             let quit = MenuItem::with_id(app, "quit", "❌ Quitter", true, None::<&str>)?;
 
-            let menu =
-                Menu::with_items(app, &[&quick_task, &daily, &planner, &main_window, &quit])?;
+            let menu = Menu::with_items(app, &[&quick_task, &planner, &main_window, &quit])?;
 
-            // Créer l'icône du tray
+            let icon = app
+                .default_window_icon()
+                .cloned()
+                .ok_or_else(|| std::io::Error::other("icône de fenêtre par défaut manquante"))?;
+
             let _tray = TrayIconBuilder::with_id("main-tray")
                 .tooltip("Listik - Gestionnaire de tâches")
-                .icon(app.default_window_icon().unwrap().clone())
+                .icon(icon)
                 .menu(&menu)
                 .on_menu_event(move |app_handle, event| match event.id.as_ref() {
                     "quick_task" => {
                         let app_handle = app_handle.clone();
                         tauri::async_runtime::spawn(async move {
-                            if let Err(e) = toggle_daily_window(app_handle).await {
-                                eprintln!("Erreur quick_task: {}", e);
-                            }
-                        });
-                    }
-                    "daily" => {
-                        let app_handle = app_handle.clone();
-                        tauri::async_runtime::spawn(async move {
-                            if let Err(e) = toggle_daily_window(app_handle).await {
-                                eprintln!("Erreur daily: {}", e);
+                            if let Err(e) = toggle_quick_window(app_handle).await {
+                                eprintln!("Erreur capture rapide: {e}");
                             }
                         });
                     }
@@ -158,7 +60,7 @@ fn main() {
                         let app_handle = app_handle.clone();
                         tauri::async_runtime::spawn(async move {
                             if let Err(e) = open_planner_window(app_handle).await {
-                                eprintln!("Erreur planner: {}", e);
+                                eprintln!("Erreur planner: {e}");
                             }
                         });
                     }
@@ -166,12 +68,12 @@ fn main() {
                         let app_handle = app_handle.clone();
                         tauri::async_runtime::spawn(async move {
                             if let Err(e) = show_main_window(app_handle).await {
-                                eprintln!("Erreur main: {}", e);
+                                eprintln!("Erreur main: {e}");
                             }
                         });
                     }
                     "quit" => {
-                        std::process::exit(0);
+                        app_handle.exit(0);
                     }
                     _ => {}
                 })
@@ -183,8 +85,8 @@ fn main() {
                     {
                         let app_handle = tray.app_handle().clone();
                         tauri::async_runtime::spawn(async move {
-                            if let Err(e) = toggle_daily_window(app_handle).await {
-                                eprintln!("Erreur tray click: {}", e);
+                            if let Err(e) = toggle_quick_window(app_handle).await {
+                                eprintln!("Erreur tray click: {e}");
                             }
                         });
                     }
@@ -192,55 +94,56 @@ fn main() {
                 .build(app)?;
 
             println!("🚀 Application Listik démarrée !");
-            println!("   💡 Raccourcis globaux gérés côté frontend");
-            println!("   🖱️ Icône tray : clic gauche = vue quotidienne");
 
-            // Ok(())
-
+            // --- Raccourci global Alt+Space ---
             #[cfg(desktop)]
             {
-                use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut, ShortcutState};
+                use tauri_plugin_global_shortcut::{
+                    Code, GlobalShortcutExt, Modifiers, Shortcut, ShortcutState,
+                };
 
-                let alt_space_shortcut = Shortcut::new(Some(Modifiers::ALT), Code::Space);
-                let app_handle_clone = app.handle().clone(); // ← Ajouter cette ligne
+                // Alt+Space est réservé par Windows (menu système) → Alt+Q.
+                let toggle_shortcut = Shortcut::new(Some(Modifiers::ALT), Code::KeyQ);
+                let shortcut_handle = app.handle().clone();
+
                 app.handle().plugin(
-                    tauri_plugin_global_shortcut::Builder::new().with_handler(move |_app, shortcut, event| {
-                        println!("{:?}", shortcut);
-                        if shortcut == &alt_space_shortcut {
-                            match event.state() {
-                              ShortcutState::Pressed => {
-                                println!("🎯 Alt+Space Pressed! Toggling daily window...");
-
-                                // Utiliser toggle_daily_window
-                                let app_handle = app_handle_clone.clone();
+                    tauri_plugin_global_shortcut::Builder::new()
+                        .with_handler(move |_app, shortcut, event| {
+                            if shortcut == &toggle_shortcut
+                                && event.state() == ShortcutState::Pressed
+                            {
+                                let app_handle = shortcut_handle.clone();
                                 tauri::async_runtime::spawn(async move {
-                                    if let Err(e) = toggle_daily_window(app_handle).await {
-                                        eprintln!("❌ Erreur toggle daily via raccourci: {}", e);
-                                    } else {
-                                        println!("✅ Daily window toggled via Alt+Space");
+                                    if let Err(e) = toggle_quick_window(app_handle).await {
+                                        eprintln!("❌ Erreur toggle capture rapide via raccourci: {e}");
                                     }
                                 });
-                              }
-                              ShortcutState::Released => {
-                                println!("Alt-Space Released!");
-                              }
                             }
-                        }
-                    })
-                    .build(),
+                        })
+                        .build(),
                 )?;
 
-                app.global_shortcut().register(alt_space_shortcut)?;
+                // Ne pas planter si le raccourci est déjà pris par un autre programme.
+                if let Err(e) = app.global_shortcut().register(toggle_shortcut) {
+                    eprintln!("⚠️ Impossible d'enregistrer Alt+Q (déjà utilisé ?) : {e}");
+                }
             }
+
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
-            create_todo,
-            get_today_todos,
-            toggle_todo,
-            open_planner_window,
-            toggle_daily_window,
-            show_main_window
+            commands::list_todos,
+            commands::list_todos_by_date,
+            commands::create_todo,
+            commands::update_todo,
+            commands::toggle_todo,
+            commands::delete_todo,
+            commands::open_planner_window,
+            commands::toggle_quick_window,
+            commands::hide_quick_window,
+            commands::show_main_window,
+            commands::get_settings,
+            commands::update_settings,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

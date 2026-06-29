@@ -4,7 +4,7 @@
   "description": "enables the default permissions",
   "windows": [
     "main",
-    "daily",
+    "quick",
     "planner"
   ],
   "permissions": [
@@ -33,6 +33,9 @@
     "core:window:allow-outer-size",
     "core:window:allow-start-dragging",
     "core:window:allow-set-position",
-    "core:window:allow-set-size"
+    "core:window:allow-set-size",
+    "core:window:allow-center",
+    "core:event:default",
+    "notification:default"
   ]
 }

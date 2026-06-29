@@ -1,34 +1,98 @@
 "use client";
 
-import { useTodos } from "@/hooks/useTodos";
-import { TodoStatus, Priority } from "@/types/todo";
-import { useState } from "react";
+import { useMemo, useState } from "react";
+import { usePlannerTodos } from "@/hooks/usePlannerTodos";
 import SmartTaskInput from "@/components/SmartTaskInput";
-import TodoList from "@/components/TodoList";
-import TitleBar from "@/components/TitleBar";
+import { SettingsMenu } from "@/components/SettingsMenu";
+import { AnimatedTodoList } from "@/components/todo/AnimatedTodoList";
+import { EmptyState } from "@/components/todo/EmptyState";
+import { FilterTabs, type TodoFilter } from "@/components/todo/FilterTabs";
+import { ListFilter } from "@/components/todo/ListFilter";
+import { PlannerHeader } from "@/components/planner/PlannerHeader";
+import {
+  TimelineSection,
+  type SectionTone,
+} from "@/components/planner/TimelineSection";
+import { groupTodosByDate } from "@/features/todos/grouping";
+import { todayLocalISODate, toLocalISODate } from "@/lib/date";
+import type { Priority, Todo } from "@/features/todos/types";
+
+interface ActiveSection {
+  key: string;
+  label: string;
+  items: Todo[];
+  tone: SectionTone;
+  overdue?: boolean;
+}
 
 export default function PlannerPage() {
-  const { todos, loading, error, createTodoFromSmart, toggleTodo } = useTodos();
-  const [filter, setFilter] = useState<"all" | "pending" | "completed">("all");
+  const {
+    todos,
+    loading,
+    error,
+    createTodoFromSmart,
+    toggleTodo,
+    deleteTodo,
+    updateTodo,
+    lists,
+  } = usePlannerTodos();
 
-  const filteredTodos = todos.filter((todo) => {
-    if (filter === "pending") return todo.status === TodoStatus.Pending;
-    if (filter === "completed") return todo.status === TodoStatus.Completed;
-    return true;
-  });
+  const [filter, setFilter] = useState<TodoFilter>("all");
+  const [listFilter, setListFilter] = useState<string | null>(null);
+
+  const todayISO = todayLocalISODate();
+
+  // Filtre par liste, puis regroupement temporel.
+  const { overdue, today: todayTodos, tomorrow, upcoming, someday, completed } =
+    useMemo(() => {
+      const visible = listFilter
+        ? todos.filter((t) => t.list === listFilter)
+        : todos;
+      const t = new Date();
+      t.setDate(t.getDate() + 1);
+      return groupTodosByDate(visible, todayISO, toLocalISODate(t));
+    }, [todos, listFilter, todayISO]);
+
+  // Pouls du jour (global, indépendant du filtre liste).
+  const { doneToday, totalToday } = useMemo(() => {
+    const day = todos.filter((t) => t.scheduled_for === todayISO);
+    return {
+      doneToday: day.filter((t) => t.status === "completed").length,
+      totalToday: day.length,
+    };
+  }, [todos, todayISO]);
+
+  const activeSections: ActiveSection[] = [
+    { key: "overdue", label: "En retard", items: overdue, tone: "danger", overdue: true },
+    { key: "today", label: "Aujourd'hui", items: todayTodos, tone: "today" },
+    { key: "tomorrow", label: "Demain", items: tomorrow, tone: "default" },
+    { key: "upcoming", label: "À venir", items: upcoming, tone: "default" },
+    { key: "someday", label: "Sans date", items: someday, tone: "default" },
+  ];
+
+  const activeCount = activeSections.reduce((n, s) => n + s.items.length, 0);
+
+  const showActive = filter === "all" || filter === "pending";
+  const showCompleted = filter === "all" || filter === "completed";
+  const isEmpty =
+    (filter === "pending" && activeCount === 0) ||
+    (filter === "completed" && completed.length === 0) ||
+    (filter === "all" && activeCount === 0 && completed.length === 0);
 
   const handleCreateTodo = async (taskData: {
     text: string;
+    note?: string;
     dueDate?: Date | null;
     priority?: Priority;
+    list?: string | null;
   }) => {
     await createTodoFromSmart(taskData);
   };
 
   if (loading) {
     return (
-      <div className="min-h-[calc(100vh-16px)] rounded bg-gray-50 flex items-center justify-center">
-        <div className="text-lg text-gray-600">Loading...</div>
+      <div className="flex h-full items-center justify-center bg-background">
+        <div className="text-sm text-muted-foreground">Chargement…</div>
       </div>
     );
   }
@@ -36,76 +100,136 @@ export default function PlannerPage() {
   const today = new Date();
 
   return (
-    <div className="h-full rounded bg-gradient-to-br from-gray-200 to-gray-300 overflow-y-scroll">
-      {/* Header avec date */}
-      <header className="px-8 py-6 h-[40vh]">
-        <div className="flex flex-col justify-center items-center max-w-7xl mx-auto h-full gap-10">
-          <div>
-            <h1 className="text-6xl font-semibold text-gray-900">
-              {today.toLocaleDateString("en-US", {
-                weekday: "long",
-                day: "numeric",
-              })}
-              ,
-              <span className="text-gray-400 ml-2">
-                {today.toLocaleDateString("en-US", { month: "long" })}
-              </span>
-            </h1>
-          </div>
-          <div className="font-sans flex flex-col items-center justify-center w-full">
-            <SmartTaskInput
-              onSubmit={handleCreateTodo}
-              placeholder="Ajouter une tâche"
-            />
-          </div>
-        </div>
-      </header>
+    <div className="relative flex h-full flex-col overflow-hidden bg-background">
+      {/* Halo d'ambiance (stable, remplit les écrans larges) */}
+      <div
+        aria-hidden
+        className="pointer-events-none absolute inset-x-0 top-0 z-0 h-[460px]"
+        style={{
+          background:
+            "radial-gradient(46% 60% at 50% -6%, oklch(0.62 0.10 265 / 0.11), transparent 70%)",
+        }}
+      />
 
-            <div className="max-w-6xl mx-auto px-8 py-8">
-        {error && (
-          <div className="text-red-600 text-sm mb-8 flex items-center gap-2">
-            <div className="w-1 h-1 bg-red-500 rounded-full"></div>
-            {error}
+      {/* Réglages + thème, coin supérieur droit */}
+      <div className="absolute right-5 top-5 z-20">
+        <SettingsMenu />
+      </div>
+
+      {/* ───────── Zone défilante : agenda ───────── */}
+      <div className="relative z-10 flex-1 overflow-y-auto">
+        <div className="mx-auto max-w-[44rem] px-8">
+          <div className="pt-16">
+            <PlannerHeader date={today} done={doneToday} total={totalToday} />
           </div>
-        )}
-      
-        {/* Filtres ultra-propres */}
-        <div className="flex items-center gap-8 mb-12 pb-6 border-b border-gray-100/50">
-          {[
-            { key: "all", label: "All", count: todos.length },
-            { key: "pending", label: "Pending", count: todos.filter((t) => t.status === TodoStatus.Pending).length },
-            { key: "completed", label: "Completed", count: todos.filter((t) => t.status === TodoStatus.Completed).length }
-          ].map(({ key, label, count }) => (
-            <button
-              key={key}
-              onClick={() => setFilter(key as any)}
-              className={`
-                group flex items-center gap-3 text-sm transition-all duration-200
-                ${filter === key
-                  ? "text-gray-900 font-medium"
-                  : "text-gray-500 hover:text-gray-700"
+
+          {/* Filtres collants en haut de la zone défilante */}
+          <div className="sticky top-0 z-10 -mx-8 bg-background/80 px-8 pt-4 pb-3 backdrop-blur-sm">
+            <FilterTabs
+              value={filter}
+              onChange={setFilter}
+              counts={{
+                all: activeCount + completed.length,
+                pending: activeCount,
+                completed: completed.length,
+              }}
+            />
+            {lists.length > 0 && (
+              <div className="mt-3">
+                <ListFilter lists={lists} value={listFilter} onChange={setListFilter} />
+              </div>
+            )}
+          </div>
+
+          {error && (
+            <div className="mt-6 flex items-center gap-2 text-sm text-destructive">
+              <span className="h-1 w-1 rounded-full bg-destructive" />
+              {error}
+            </div>
+          )}
+
+          <div className="space-y-9 pb-10 pt-7">
+            {showActive && activeCount > 0 && (
+              <div className="relative space-y-9">
+                {/* Épine timeline partagée */}
+                <span
+                  aria-hidden
+                  className="absolute left-[7px] top-2 bottom-2 w-px bg-gradient-to-b from-border via-border to-transparent"
+                />
+                {activeSections.map(
+                  (section, i) =>
+                    section.items.length > 0 && (
+                      <TimelineSection
+                        key={section.key}
+                        title={section.label}
+                        count={section.items.length}
+                        tone={section.tone}
+                        delay={i * 0.04}
+                      >
+                        <AnimatedTodoList
+                          todos={section.items}
+                          onToggle={toggleTodo}
+                          onDelete={deleteTodo}
+                          showDate
+                          overdue={section.overdue}
+                          lists={lists}
+                          onUpdate={updateTodo}
+                        />
+                      </TimelineSection>
+                    ),
+                )}
+              </div>
+            )}
+
+            {showCompleted && completed.length > 0 && (
+              <section className="relative space-y-2 pl-7">
+                <h3 className="flex items-center gap-2 text-xs font-medium uppercase tracking-[0.1em] text-muted-foreground/60">
+                  Terminées
+                  <span className="font-mono text-[11px] tabular-nums text-muted-foreground/40">
+                    {completed.length}
+                  </span>
+                </h3>
+                <AnimatedTodoList
+                  todos={completed}
+                  onToggle={toggleTodo}
+                  onDelete={deleteTodo}
+                  showDate
+                  lists={lists}
+                  onUpdate={updateTodo}
+                />
+              </section>
+            )}
+
+            {isEmpty && (
+              <EmptyState
+                title={
+                  filter === "pending"
+                    ? "Aucune tâche en cours"
+                    : filter === "completed"
+                      ? "Aucune tâche terminée"
+                      : "Aucune tâche planifiée"
                 }
-              `}
-            >
-              <span>{label}</span>
-              <span className={`
-                text-xs px-2 py-1 rounded-full transition-all duration-200
-                ${filter === key
-                  ? "bg-gray-900 text-white"
-                  : "bg-gray-100 text-gray-500 group-hover:bg-gray-200"
-                }
-              `}>
-                {count}
-              </span>
-              {filter === key && (
-                <div className="w-1 h-1 bg-gray-900 rounded-full"></div>
-              )}
-            </button>
-          ))}
+                subtitle="Capturez votre première tâche ci-dessous."
+              />
+            )}
+          </div>
         </div>
-      
-        {/* Liste simple */}
-        <TodoList todos={filteredTodos} onToggle={toggleTodo} />
+      </div>
+
+      {/* ───────── Capture épinglée en bas ───────── */}
+      <div className="relative z-10 shrink-0 bg-background/90 backdrop-blur-sm">
+        {/* Fondu doux au-dessus de la capture (au lieu d'un trait) */}
+        <div
+          aria-hidden
+          className="pointer-events-none absolute inset-x-0 -top-8 h-8 bg-gradient-to-t from-background to-transparent"
+        />
+        <div className="mx-auto max-w-[44rem] px-8 py-4">
+          <SmartTaskInput
+            onSubmit={handleCreateTodo}
+            placeholder="Capturer une tâche…"
+            lists={lists}
+          />
+        </div>
       </div>
     </div>
   );

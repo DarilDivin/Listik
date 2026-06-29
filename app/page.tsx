@@ -1,75 +1,79 @@
 "use client";
 
 import { invoke } from "@tauri-apps/api/core";
+import { useRouter } from "next/navigation";
+import { ThemeToggle } from "@/components/ThemeToggle";
+import { Zap, LayoutList, Settings } from "lucide-react";
 
 export default function HomePage() {
-  const openPlanner = async () => {
-    try {
-      await invoke("open_planner_window");
-    } catch (error) {
-      console.error("Erreur lors de l'ouverture du planificateur:", error);
-    }
-  };
+  const router = useRouter();
 
-  const toggleDaily = async () => {
-    try {
-      await invoke("toggle_daily_window");
-    } catch (error) {
-      console.error("Erreur lors de l'ouverture de la vue quotidienne:", error);
-    }
-  };
+  const openPlanner = () =>
+    invoke("open_planner_window").catch((e) =>
+      console.error("Ouverture du planificateur impossible:", e),
+    );
+
+  const toggleQuick = () =>
+    invoke("toggle_quick_window").catch((e) =>
+      console.error("Ouverture de la capture rapide impossible:", e),
+    );
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-indigo-50 to-blue-100 flex items-center justify-center m-4">
-      <div className="text-center">
-        <div className="mb-8">
-          <h1 className="text-4xl font-bold text-gray-900 mb-2">📝 Listik</h1>
-          <p className="text-xl text-gray-600">
-            Votre gestionnaire de tâches quotidiennes
-          </p>
+    <div className="relative flex h-full flex-col items-center justify-center overflow-hidden rounded-2xl bg-background p-6">
+      <div
+        aria-hidden
+        className="pointer-events-none absolute inset-x-0 top-0 h-64"
+        style={{
+          background:
+            "radial-gradient(60% 70% at 50% -10%, oklch(0.62 0.09 265 / 0.13), transparent 70%)",
+        }}
+      />
+
+      <div className="absolute right-5 top-5 flex items-center gap-0.5">
+        <button
+          type="button"
+          onClick={() => router.push("/settings")}
+          aria-label="Paramètres"
+          className="flex size-8 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-accent/50 hover:text-foreground"
+        >
+          <Settings size={16} />
+        </button>
+        <ThemeToggle />
+      </div>
+
+      <div className="w-full max-w-sm text-center">
+        <h1 className="font-serif text-5xl tracking-tight text-foreground">Listik</h1>
+        <p className="mt-2 text-sm text-muted-foreground">
+          Votre gestionnaire de tâches, épuré.
+        </p>
+
+        <div className="mt-9 space-y-2.5">
+          <button
+            onClick={toggleQuick}
+            className="flex w-full items-center justify-center gap-2.5 rounded-xl bg-primary px-4 py-3 text-sm font-medium text-primary-foreground transition-opacity hover:opacity-90"
+          >
+            <Zap size={16} />
+            Tâche rapide
+          </button>
+
+          <button
+            onClick={openPlanner}
+            className="flex w-full items-center justify-center gap-2.5 rounded-xl border border-border bg-card/40 px-4 py-3 text-sm font-medium text-foreground transition-colors hover:bg-accent"
+          >
+            <LayoutList size={16} />
+            Planificateur
+          </button>
         </div>
 
-        <div className="bg-white rounded-lg shadow-lg p-6 max-w-md">
-          <h2 className="text-lg font-semibold mb-4">Ouvrir une fenêtre :</h2>
-
-          <div className="space-y-3">
-            <button
-              onClick={toggleDaily}
-              className="w-full bg-indigo-600 text-white px-6 py-3 rounded-lg hover:bg-indigo-700 flex items-center justify-center gap-2"
-            >
-              <span>📅</span>
-              Vue quotidienne
-            </button>
-
-            <button
-              onClick={openPlanner}
-              className="w-full bg-gray-600 text-white px-6 py-3 rounded-lg hover:bg-gray-700 flex items-center justify-center gap-2"
-            >
-              <span>📋</span>
-              Planificateur
-            </button>
-          </div>
-          <div className="mt-6 p-4 bg-gray-50 rounded-lg">
-            <h3 className="text-sm font-semibold text-gray-800 mb-2">
-              Raccourci clavier :
-            </h3>
-            <div className="flex items-center justify-center gap-2">
-              <kbd className="bg-gray-200 px-2 py-1 rounded text-xs font-mono">
-                Ctrl
-              </kbd>
-              <span>+</span>
-              <kbd className="bg-gray-200 px-2 py-1 rounded text-xs font-mono">
-                Shift
-              </kbd>
-              <span>+</span>
-              <kbd className="bg-gray-200 px-2 py-1 rounded text-xs font-mono">
-                T
-              </kbd>
-            </div>
-            <p className="text-xs text-gray-600 mt-2">
-              Ouvre/ferme la vue quotidienne depuis n'importe où
-            </p>
-          </div>
+        <div className="mt-8 flex items-center justify-center gap-1.5 text-xs text-muted-foreground">
+          <span>Ouvrir d&apos;un raccourci</span>
+          <kbd className="rounded-md border border-border bg-card px-1.5 py-0.5 font-mono text-[11px] text-foreground/80">
+            Alt
+          </kbd>
+          <span className="text-muted-foreground/50">+</span>
+          <kbd className="rounded-md border border-border bg-card px-1.5 py-0.5 font-mono text-[11px] text-foreground/80">
+            Q
+          </kbd>
         </div>
       </div>
     </div>
