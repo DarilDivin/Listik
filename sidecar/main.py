@@ -9,6 +9,8 @@ from fastapi import FastAPI, HTTPException
 from openai import OpenAI
 from pydantic import BaseModel
 
+import vecstore
+
 load_dotenv()
 
 app = FastAPI()
@@ -82,6 +84,78 @@ def parse(req: ParseRequest) -> SmartTaskData:
         return SmartTaskData.model_validate_json(raw)
     except Exception as e:
         raise HTTPException(status_code=502, detail=str(e)) from e
+
+
+# ---------------------------------------------------------------------------
+# D2 — RAG : indexation + recherche sémantique (tâches et notes)
+# ---------------------------------------------------------------------------
+
+
+class IndexRequest(BaseModel):
+    id: str
+    type: Literal["task", "note"]
+    text: str
+
+
+@app.post("/index")
+def index(req: IndexRequest) -> dict[str, str]:
+    vecstore.upsert_item(req.id, req.type, req.text)
+    return {"status": "ok"}
+
+
+class SearchRequest(BaseModel):
+    query: str
+    k: int = 5
+
+
+class SearchResult(BaseModel):
+    id: str
+    type: str
+    text: str
+    score: float
+
+
+@app.post("/search")
+def search(req: SearchRequest) -> list[SearchResult]:
+    return [SearchResult(**r) for r in vecstore.search(req.query, req.k)]
+
+
+class AskRequest(BaseModel):
+    question: str
+
+
+class AskResponse(BaseModel):
+    answer: str
+    sources: list[SearchResult]
+
+
+@app.post("/ask")
+def ask(req: AskRequest) -> AskResponse:
+    results = vecstore.search(req.question, k=5)
+    context = "\n".join(f"- ({r['type']}) {r['text']}" for r in results) or "(aucun résultat trouvé)"
+
+    try:
+        completion = llm.chat.completions.create(
+            model=LLM_MODEL,
+            messages=[
+                {
+                    "role": "system",
+                    "content": (
+                        "Tu réponds à la question de l'utilisateur en te basant UNIQUEMENT sur "
+                        "le contexte fourni (ses tâches et notes). Si le contexte ne permet pas "
+                        "de répondre, dis-le clairement plutôt que d'inventer.\n\n"
+                        f"Contexte :\n{context}"
+                    ),
+                },
+                {"role": "user", "content": req.question},
+            ],
+            temperature=0.2,
+        )
+        answer = completion.choices[0].message.content
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=str(e)) from e
+
+    return AskResponse(answer=answer, sources=[SearchResult(**r) for r in results])
 
 
 def main() -> None:
