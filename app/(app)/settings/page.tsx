@@ -1,8 +1,6 @@
 "use client";
 
-import { useRouter } from "next/navigation";
-import { ChevronLeft } from "lucide-react";
-
+import { Bell, Download, Info, Keyboard, List, Palette, Zap } from "lucide-react";
 import { useSettings } from "@/hooks/useSettings";
 import { ThemeSetting } from "@/components/ThemeSetting";
 import { ToggleSwitch } from "@/components/ToggleSwitch";
@@ -22,11 +20,10 @@ function SoonBadge() {
 }
 
 export default function SettingsPage() {
-  const router = useRouter();
   const { settings, update } = useSettings();
 
   return (
-    <div className="relative h-full overflow-y-auto bg-background">
+    <div className="relative h-full overflow-y-auto bg-secondary dark:bg-background">
       {/* Halo d'ambiance, cohérent avec le planner */}
       <div
         aria-hidden
@@ -37,35 +34,28 @@ export default function SettingsPage() {
         }}
       />
 
-      <div className="relative z-10 mx-auto max-w-[40rem] px-8 pb-24 pt-10">
-        <button
-          type="button"
-          onClick={() => router.back()}
-          className="-ml-1.5 inline-flex items-center gap-1 rounded-lg px-1.5 py-1 text-sm text-muted-foreground transition-colors hover:text-foreground"
-        >
-          <ChevronLeft size={16} />
-          Retour
-        </button>
+      <div className="relative z-10 mx-auto max-w-[42rem] px-6 pb-24 pt-12">
+        <h1 className="text-large-title text-foreground">Réglages</h1>
 
-        <h1 className="mt-5 font-serif text-4xl leading-none tracking-tight text-foreground">
-          Paramètres
-        </h1>
-
-        <div className="mt-9 space-y-8">
-          <SettingsGroup title="Apparence">
+        <div className="mt-8 space-y-7">
+          <SettingsGroup title="Apparence" index={0}>
             <SettingsRow
               label="Thème"
               description="Suit le système par défaut."
+              icon={Palette}
+              iconClassName="bg-indigo-500/8 text-indigo-600 dark:text-indigo-400"
               stacked
             >
               <ThemeSetting />
             </SettingsRow>
           </SettingsGroup>
 
-          <SettingsGroup title="Notifications">
+          <SettingsGroup title="Notifications" index={1}>
             <SettingsRow
               label="Résumé quotidien"
               description="Une notification listant les tâches du jour, à heure fixe."
+              icon={Bell}
+              iconClassName="bg-rose-500/8 text-rose-600 dark:text-rose-400"
             >
               <ToggleSwitch
                 checked={settings.daily_digest_enabled}
@@ -86,21 +76,25 @@ export default function SettingsPage() {
             )}
           </SettingsGroup>
 
-          <SettingsGroup title="Raccourcis">
+          <SettingsGroup title="Raccourcis" index={2}>
             <SettingsRow
               label="Capture rapide"
               description="Ouvrir la barre de capture depuis n'importe où."
+              icon={Zap}
+              iconClassName="bg-orange-500/8 text-orange-600 dark:text-orange-400"
             >
-              <kbd className="rounded-md border border-border bg-card px-2 py-1 font-mono text-[11px] text-foreground/80">
+              <kbd className="rounded-md border border-border bg-muted px-2 py-1 font-mono text-[11px] text-foreground/80">
                 Alt + Q
               </kbd>
             </SettingsRow>
           </SettingsGroup>
 
-          <SettingsGroup title="Prévu">
+          <SettingsGroup title="Prévu" index={3}>
             <SettingsRow
               label="Listes & projets"
               description="Renommer, réordonner et colorer tes listes."
+              icon={List}
+              iconClassName="bg-sky-500/8 text-sky-600 dark:text-sky-400"
               dimmed
             >
               <SoonBadge />
@@ -108,6 +102,8 @@ export default function SettingsPage() {
             <SettingsRow
               label="Export des données"
               description="Sauvegarder et restaurer tes tâches."
+              icon={Download}
+              iconClassName="bg-emerald-500/8 text-emerald-600 dark:text-emerald-400"
               dimmed
             >
               <SoonBadge />
@@ -115,14 +111,21 @@ export default function SettingsPage() {
             <SettingsRow
               label="Raccourcis personnalisés"
               description="Choisir tes propres combinaisons de touches."
+              icon={Keyboard}
+              iconClassName="bg-violet-500/8 text-violet-600 dark:text-violet-400"
               dimmed
             >
               <SoonBadge />
             </SettingsRow>
           </SettingsGroup>
 
-          <SettingsGroup title="À propos">
-            <SettingsRow label="Listik" description="Gestionnaire de tâches, épuré.">
+          <SettingsGroup title="À propos" index={4}>
+            <SettingsRow
+              label="Listik"
+              description="Gestionnaire de tâches, épuré."
+              icon={Info}
+              iconClassName="bg-slate-500/8 text-slate-600 dark:text-slate-400"
+            >
               <span className="font-mono text-xs text-muted-foreground/70">
                 v{APP_VERSION}
               </span>

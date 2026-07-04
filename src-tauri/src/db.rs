@@ -1,4 +1,7 @@
-use crate::models::{CreateTodo, Recurrence, Settings, Todo, TodoStatus, UpdateSettings, UpdateTodo};
+use crate::models::{
+    CreateNote, CreateTodo, Note, Recurrence, Settings, Todo, TodoStatus, UpdateNote,
+    UpdateSettings, UpdateTodo,
+};
 use sqlx::sqlite::{SqliteConnectOptions, SqlitePoolOptions};
 use sqlx::{QueryBuilder, Sqlite, SqlitePool};
 use tauri::{AppHandle, Manager};
@@ -11,6 +14,8 @@ pub struct AppState {
 
 const SELECT_COLUMNS: &str =
     "id, text, note, list, status, priority, recurrence, scheduled_for, due_date, remind_at, created_at, updated_at";
+
+const NOTE_COLUMNS: &str = "id, title, content, pinned, created_at, updated_at";
 
 fn now_iso() -> String {
     chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, true)
@@ -310,13 +315,111 @@ pub async fn take_due_digest(
     Ok(Some(digest_tasks(pool, today).await?))
 }
 
+// ---------------------------------------------------------------------------
+// Notes (entité autonome, contenu Markdown)
+// ---------------------------------------------------------------------------
+
+/// Liste les notes, épinglées d'abord, puis les plus récemment modifiées.
+pub async fn list_notes(pool: &SqlitePool) -> Result<Vec<Note>, sqlx::Error> {
+    let query =
+        format!("SELECT {NOTE_COLUMNS} FROM notes ORDER BY pinned DESC, updated_at DESC");
+    sqlx::query_as::<_, Note>(&query).fetch_all(pool).await
+}
+
+pub async fn get_note(pool: &SqlitePool, id: &str) -> Result<Option<Note>, sqlx::Error> {
+    let query = format!("SELECT {NOTE_COLUMNS} FROM notes WHERE id = ?");
+    sqlx::query_as::<_, Note>(&query)
+        .bind(id)
+        .fetch_optional(pool)
+        .await
+}
+
+pub async fn create_note(pool: &SqlitePool, input: CreateNote) -> Result<Note, sqlx::Error> {
+    let now = now_iso();
+    let note = Note {
+        id: Uuid::new_v4().to_string(),
+        title: input.title.unwrap_or_default(),
+        content: input.content.unwrap_or_default(),
+        pinned: false,
+        created_at: now.clone(),
+        updated_at: now,
+    };
+
+    sqlx::query(
+        "INSERT INTO notes (id, title, content, pinned, created_at, updated_at) \
+         VALUES (?, ?, ?, ?, ?, ?)",
+    )
+    .bind(&note.id)
+    .bind(&note.title)
+    .bind(&note.content)
+    .bind(note.pinned)
+    .bind(&note.created_at)
+    .bind(&note.updated_at)
+    .execute(pool)
+    .await?;
+
+    Ok(note)
+}
+
+pub async fn update_note(
+    pool: &SqlitePool,
+    id: &str,
+    input: UpdateNote,
+) -> Result<Note, sqlx::Error> {
+    let now = now_iso();
+
+    let mut qb: QueryBuilder<Sqlite> = QueryBuilder::new("UPDATE notes SET ");
+    let mut sep = qb.separated(", ");
+
+    if let Some(title) = input.title {
+        sep.push("title = ").push_bind_unseparated(title);
+    }
+    if let Some(content) = input.content {
+        sep.push("content = ").push_bind_unseparated(content);
+    }
+    if let Some(pinned) = input.pinned {
+        sep.push("pinned = ").push_bind_unseparated(pinned);
+    }
+    sep.push("updated_at = ").push_bind_unseparated(now);
+
+    qb.push(" WHERE id = ").push_bind(id);
+    qb.build().execute(pool).await?;
+
+    get_note(pool, id).await?.ok_or(sqlx::Error::RowNotFound)
+}
+
+pub async fn delete_note(pool: &SqlitePool, id: &str) -> Result<(), sqlx::Error> {
+    sqlx::query("DELETE FROM notes WHERE id = ?")
+        .bind(id)
+        .execute(pool)
+        .await?;
+    Ok(())
+}
+
+/// Recherche plein-texte simple (LIKE) sur le titre et le contenu.
+pub async fn search_notes(pool: &SqlitePool, query: &str) -> Result<Vec<Note>, sqlx::Error> {
+    let like = format!("%{}%", query.replace('%', "\\%").replace('_', "\\_"));
+    let sql = format!(
+        "SELECT {NOTE_COLUMNS} FROM notes \
+         WHERE title LIKE ?1 ESCAPE '\\' OR content LIKE ?1 ESCAPE '\\' \
+         ORDER BY pinned DESC, updated_at DESC"
+    );
+    sqlx::query_as::<_, Note>(&sql)
+        .bind(like)
+        .fetch_all(pool)
+        .await
+}
+
 #[cfg(test)]
 mod tests {
     use super::{
-        create, delete, due_reminders, get_settings, list_all, list_by_date, mark_reminded,
-        take_due_digest, toggle, update, update_settings,
+        create, create_note, delete, delete_note, due_reminders, get_settings, list_all,
+        list_by_date, list_notes, mark_reminded, search_notes, take_due_digest, toggle, update,
+        update_note, update_settings,
     };
-    use crate::models::{CreateTodo, TodoStatus, UpdateSettings, UpdateTodo};
+    use crate::models::{
+        CreateNote, CreateTodo, TodoStatus, UpdateNote, UpdateSettings, UpdateTodo,
+    };
     use sqlx::sqlite::SqlitePoolOptions;
     use sqlx::SqlitePool;
 
@@ -591,5 +694,68 @@ mod tests {
             .await
             .unwrap()
             .is_none());
+    }
+
+    #[tokio::test]
+    async fn notes_crud_search_and_pin_ordering() {
+        let pool = memory_pool().await;
+
+        let a = create_note(
+            &pool,
+            CreateNote {
+                title: Some("Idées".to_string()),
+                content: Some("acheter un cadeau".to_string()),
+            },
+        )
+        .await
+        .unwrap();
+        create_note(
+            &pool,
+            CreateNote {
+                title: Some("Courses".to_string()),
+                content: Some("lait".to_string()),
+            },
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(list_notes(&pool).await.unwrap().len(), 2);
+
+        // Recherche sur le contenu.
+        let found = search_notes(&pool, "cadeau").await.unwrap();
+        assert_eq!(found.len(), 1);
+        assert_eq!(found[0].id, a.id);
+
+        // Épingler `a` → remonte en tête de liste.
+        update_note(
+            &pool,
+            &a.id,
+            UpdateNote {
+                pinned: Some(true),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let listed = list_notes(&pool).await.unwrap();
+        assert_eq!(listed[0].id, a.id);
+        assert!(listed[0].pinned);
+
+        // Mise à jour partielle du contenu (ne touche pas au titre).
+        let upd = update_note(
+            &pool,
+            &a.id,
+            UpdateNote {
+                content: Some("acheter deux cadeaux".to_string()),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        assert_eq!(upd.content, "acheter deux cadeaux");
+        assert_eq!(upd.title, "Idées");
+
+        delete_note(&pool, &a.id).await.unwrap();
+        assert_eq!(list_notes(&pool).await.unwrap().len(), 1);
     }
 }

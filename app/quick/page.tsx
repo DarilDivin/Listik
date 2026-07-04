@@ -4,13 +4,14 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import useSWR from "swr";
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow, LogicalSize } from "@tauri-apps/api/window";
-import SmartTaskInput from "@/components/SmartTaskInput";
+import Omnibar from "@/components/Omnibar";
 import { todosApi } from "@/features/todos/api";
 import { useTodosSync } from "@/features/todos/useTodosSync";
 import { useTodoMutations } from "@/features/todos/useTodoMutations";
+import { useNotesMutations } from "@/features/notes/useNotesMutations";
 import { SWR_KEYS } from "@/lib/swr-config";
 import { todayLocalISODate, toLocalISODate } from "@/lib/date";
-import type { SmartTaskData } from "@/features/todos/useSmartTaskInput";
+import type { SmartTaskData } from "@/features/todos/useTaskMode";
 
 const WINDOW_WIDTH = 680;
 const MIN_HEIGHT = 96;
@@ -37,6 +38,7 @@ function isOverlayOpen() {
 export default function QuickPage() {
   useTodosSync();
   const { createTodo } = useTodoMutations();
+  const { createNote } = useNotesMutations();
   const { data: allTodos = [] } = useSWR(SWR_KEYS.ALL_TODOS, () => todosApi.list());
   const lists = useMemo(
     () =>
@@ -175,16 +177,26 @@ export default function QuickPage() {
     [createTodo, hide],
   );
 
+  const handleSubmitNote = useCallback(
+    async (text: string) => {
+      await createNote({ content: text });
+      hide();
+    },
+    [createNote, hide],
+  );
+
   return (
     <div className="flex h-screen w-screen items-start justify-center bg-transparent">
       <div
         ref={contentRef}
         className="max-h-screen w-full overflow-y-auto p-7"
       >
-        <SmartTaskInput
+        <Omnibar
           key={mountKey}
           autoFocus
+          defaultMode="task"
           onSubmit={handleSubmit}
+          onSubmitNote={handleSubmitNote}
           placeholder="Capturer une tâche…"
           lists={lists}
         />

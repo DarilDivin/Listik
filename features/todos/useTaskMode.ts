@@ -19,41 +19,31 @@ export interface SmartTaskData {
   list?: string | null;
 }
 
-// Sélecteurs gardant la barre ouverte quand le focus part vers un portail Radix
-// (popover du calendrier, listbox du select…).
-const KEEP_OPEN_SELECTORS = [
-  "[data-radix-portal]",
-  "[data-radix-popper-content-wrapper]",
-  '[role="listbox"]',
-  '[role="option"]',
-  '[role="dialog"]',
-  '[data-state="open"]',
-  ".calendar",
-];
-
 /**
- * État et logique de SmartTaskInput, isolés de la vue.
- * - parse date/priorité/note du texte ;
+ * Logique du mode « Tâche » de l'Omnibar, en version **contrôlée** : le texte
+ * (`value`/`setValue`) est détenu par l'Omnibar, ce qui permet de partager une
+ * seule barre de saisie entre les différents modes et le menu de commandes.
+ *
+ * - parse date / priorité / liste depuis le texte ;
  * - synchronise le DatePicker manuel avec le texte ;
- * - la priorité auto-détectée n'écrase plus une sélection manuelle (fix B3).
+ * - la priorité auto-détectée n'écrase pas une sélection manuelle.
  */
-export function useSmartTaskInput(
+export function useTaskMode(
+  value: string,
+  setValue: (v: string) => void,
   onSubmit: (data: SmartTaskData) => Promise<void>,
   lists: string[] = [],
 ) {
-  const [task, setTask] = useState("");
   const [dueDate, setDueDate] = useState<Date | null>(null);
   const [priority, setPriority] = useState<Priority>("normal");
   const [list, setList] = useState<string | null>(null);
   const [dateMatch, setDateMatch] = useState<DateMatch | null>(null);
   const [listMatch, setListMatch] = useState<DateMatch | null>(null);
-  const [isFocused, setIsFocused] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const formRef = useRef<HTMLFormElement>(null);
   const isManualDateUpdate = useRef(false);
-  // Dernière valeur issue de la détection : on ne ré-applique l'auto-détection
-  // que lorsque le RÉSULTAT change, sans effacer un choix manuel entre-temps.
+  // Dernier résultat de détection : on ne ré-applique l'auto-détection que
+  // lorsque le RÉSULTAT change, sans effacer un choix manuel entre-temps.
   const lastDetectedPriority = useRef<Priority>("normal");
   const lastDetectedList = useRef<string | null>(null);
 
@@ -64,31 +54,31 @@ export function useSmartTaskInput(
       return;
     }
 
-    const parsed = parseTaskDate(task);
+    const parsed = parseTaskDate(value);
     setDueDate(parsed?.date ?? null);
     setDateMatch(parsed?.match ?? null);
 
-    const detected = detectPriorityFromText(task);
+    const detected = detectPriorityFromText(value);
     if (detected !== lastDetectedPriority.current) {
       setPriority(detected);
       lastDetectedPriority.current = detected;
     }
 
-    const detectedList = detectListFromText(task);
+    const detectedList = detectListFromText(value);
     setListMatch(detectedList?.match ?? null);
     const listName = detectedList?.list ?? null;
     if (listName !== lastDetectedList.current) {
       setList(listName);
       lastDetectedList.current = listName;
     }
-  }, [task]);
+  }, [value]);
 
   const handleDateChange = (newDate?: Date) => {
     const selected = newDate ?? null;
     isManualDateUpdate.current = true;
 
-    const updated = replaceDateInText(task, selected, dateMatch);
-    setTask(updated);
+    const updated = replaceDateInText(value, selected, dateMatch);
+    setValue(updated);
     setDueDate(selected);
 
     if (selected) {
@@ -99,27 +89,32 @@ export function useSmartTaskInput(
     }
   };
 
+  const resetMeta = () => {
+    setDueDate(null);
+    setDateMatch(null);
+    setPriority("normal");
+    lastDetectedPriority.current = "normal";
+    setList(null);
+    setListMatch(null);
+    lastDetectedList.current = null;
+  };
+
   const submit = async () => {
-    if (!task.trim() || isSubmitting) return;
+    if (!value.trim() || isSubmitting) return;
 
     setIsSubmitting(true);
     try {
-      const { mainText, note } = splitNote(task);
+      const { mainText, note } = splitNote(value);
       const text = stripListFromText(mainText); // retire le tag #liste du texte
       // Canonise vers une liste existante (à la casse près) pour éviter les doublons.
       const canonicalList = list
         ? lists.find((l) => l.toLowerCase() === list.toLowerCase()) ?? list
         : null;
+
       await onSubmit({ text, note, dueDate, priority, list: canonicalList });
 
-      setTask("");
-      setDueDate(null);
-      setDateMatch(null);
-      setPriority("normal");
-      lastDetectedPriority.current = "normal";
-      setList(null);
-      setListMatch(null);
-      lastDetectedList.current = null;
+      setValue("");
+      resetMeta();
     } catch (error) {
       console.error("Erreur lors de la soumission:", error);
     } finally {
@@ -127,26 +122,9 @@ export function useSmartTaskInput(
     }
   };
 
-  // Ferme la barre seulement si le focus quitte réellement le formulaire
-  // (et pas vers un portail Radix).
-  const handleFormBlur = () => {
-    setTimeout(() => {
-      if (!formRef.current) return;
-      const active = document.activeElement;
-      const staysOpen = KEEP_OPEN_SELECTORS.some(
-        (selector) => active?.closest(selector) !== null,
-      );
-      if (!formRef.current.contains(active as Node) && !staysOpen) {
-        setIsFocused(false);
-      }
-    }, 150);
-  };
-
-  const hasGlow = task.includes("//") || dateMatch !== null || listMatch !== null;
+  const hasGlow = value.includes("//") || dateMatch !== null || listMatch !== null;
 
   return {
-    task,
-    setTask,
     dueDate,
     priority,
     setPriority,
@@ -154,13 +132,9 @@ export function useSmartTaskInput(
     setList,
     dateMatch,
     listMatch,
-    isFocused,
-    setIsFocused,
     isSubmitting,
-    formRef,
     hasGlow,
     handleDateChange,
-    handleFormBlur,
     submit,
   };
 }

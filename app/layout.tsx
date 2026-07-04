@@ -1,5 +1,5 @@
 "use client";
-import { Geist, Geist_Mono, Instrument_Serif } from "next/font/google";
+import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import TitleBar from "@/components/TitleBar";
 import { useState } from "react";
@@ -27,12 +27,6 @@ const geistMono = Geist_Mono({
   subsets: ["latin"],
 });
 
-const instrumentSerif = Instrument_Serif({
-  variable: "--font-instrument-serif",
-  subsets: ["latin"],
-  weight: "400",
-});
-
 export default function RootLayout({
   children,
 }: Readonly<{
@@ -47,7 +41,7 @@ export default function RootLayout({
   return (
     <html lang="fr" className="h-full scroll-smooth" suppressHydrationWarning>
       <body
-        className={`h-full m-0 p-0 ${geistSans.variable} ${geistMono.variable} ${instrumentSerif.variable} antialiased text-foreground ${
+        className={`h-full m-0 p-0 ${geistSans.variable} ${geistMono.variable} antialiased text-foreground ${
           isQuick ? "bg-transparent" : "bg-background"
         }`}
       >

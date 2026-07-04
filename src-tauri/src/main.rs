@@ -5,10 +5,10 @@ mod db;
 mod models;
 mod reminders;
 
-use commands::{open_planner_window, show_main_window, toggle_quick_window};
+use commands::{show_main_window, toggle_quick_window};
 use db::AppState;
 use tauri::{
-    menu::{Menu, MenuItem},
+    menu::{Menu, MenuItem, PredefinedMenuItem},
     tray::{TrayIconBuilder, TrayIconEvent},
     Manager,
 };
@@ -28,15 +28,26 @@ fn main() {
             reminders::spawn_scheduler(app.handle().clone());
 
             // --- Menu du tray ---
+            // Menu natif du tray : en-tête + groupes séparés (le style est géré
+            // par l'OS ; on soigne la structure, les libellés et le raccourci).
+            let header = MenuItem::with_id(app, "header", "Listik", false, None::<&str>)?;
             let quick_task =
-                MenuItem::with_id(app, "quick_task", "➕ Tâche rapide", true, None::<&str>)?;
-            let planner =
-                MenuItem::with_id(app, "planner", "📋 Planificateur", true, None::<&str>)?;
-            let main_window =
-                MenuItem::with_id(app, "main", "🏠 Fenêtre principale", true, None::<&str>)?;
-            let quit = MenuItem::with_id(app, "quit", "❌ Quitter", true, None::<&str>)?;
+                MenuItem::with_id(app, "quick_task", "Tâche rapide", true, Some("Alt+Q"))?;
+            let open_app =
+                MenuItem::with_id(app, "main", "Ouvrir Listik", true, None::<&str>)?;
+            let quit = MenuItem::with_id(app, "quit", "Quitter Listik", true, None::<&str>)?;
 
-            let menu = Menu::with_items(app, &[&quick_task, &planner, &main_window, &quit])?;
+            let menu = Menu::with_items(
+                app,
+                &[
+                    &header,
+                    &PredefinedMenuItem::separator(app)?,
+                    &quick_task,
+                    &open_app,
+                    &PredefinedMenuItem::separator(app)?,
+                    &quit,
+                ],
+            )?;
 
             let icon = app
                 .default_window_icon()
@@ -53,14 +64,6 @@ fn main() {
                         tauri::async_runtime::spawn(async move {
                             if let Err(e) = toggle_quick_window(app_handle).await {
                                 eprintln!("Erreur capture rapide: {e}");
-                            }
-                        });
-                    }
-                    "planner" => {
-                        let app_handle = app_handle.clone();
-                        tauri::async_runtime::spawn(async move {
-                            if let Err(e) = open_planner_window(app_handle).await {
-                                eprintln!("Erreur planner: {e}");
                             }
                         });
                     }
@@ -85,7 +88,7 @@ fn main() {
                     {
                         let app_handle = tray.app_handle().clone();
                         tauri::async_runtime::spawn(async move {
-                            if let Err(e) = toggle_quick_window(app_handle).await {
+                            if let Err(e) = show_main_window(app_handle).await {
                                 eprintln!("Erreur tray click: {e}");
                             }
                         });
@@ -138,7 +141,11 @@ fn main() {
             commands::update_todo,
             commands::toggle_todo,
             commands::delete_todo,
-            commands::open_planner_window,
+            commands::list_notes,
+            commands::search_notes,
+            commands::create_note,
+            commands::update_note,
+            commands::delete_note,
             commands::toggle_quick_window,
             commands::hide_quick_window,
             commands::show_main_window,

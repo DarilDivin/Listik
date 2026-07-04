@@ -14,10 +14,14 @@
       {
         "label": "main",
         "title": "Listik",
-        "width": 800,
-        "height": 600,
-        "visible": false,
-        "center": true
+        "width": 1200,
+        "height": 800,
+        "minWidth": 800,
+        "minHeight": 560,
+        "visible": true,
+        "center": true,
+        "decorations": false,
+        "resizable": true
       },
       {
         "label": "quick",
@@ -35,20 +39,6 @@
         "visible": false,
         "center": true,
         "maximizable": false
-      },
-      {
-        "label": "planner",
-        "title": "Planificateur Listik",
-        "url": "/planner",
-        "width": 1200,
-        "height": 800,
-        "resizable": true,
-        "decorations": false,
-        "fullscreen": false,
-        "center": true,
-        "visible": false,
-        "backgroundColor": "#ffffff",
-        "maximizable": true
       }
     ],
     "security": {

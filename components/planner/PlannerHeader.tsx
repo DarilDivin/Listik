@@ -56,7 +56,7 @@ export function PlannerHeader({ date, done, total }: PlannerHeaderProps) {
         <p className="text-[11px] font-medium uppercase tracking-[0.22em] text-muted-foreground">
           {weekday}
         </p>
-        <h1 className="mt-2 font-serif text-5xl leading-none tracking-tight text-foreground">
+        <h1 className="mt-2 text-5xl font-semibold leading-none tracking-[-0.022em] text-foreground">
           {dayMonth} <span className="text-muted-foreground/45">{year}</span>
         </h1>
       </div>

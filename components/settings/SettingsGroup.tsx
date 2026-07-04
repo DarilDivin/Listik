@@ -1,25 +1,36 @@
+"use client";
+
 import type { ReactNode } from "react";
+import { motion } from "motion/react";
+import { spring } from "@/lib/motion";
 
 interface SettingsGroupProps {
   title?: string;
   children: ReactNode;
+  /** Position dans la liste, pour une entrée échelonnée (stagger). */
+  index?: number;
 }
 
 /**
- * Groupe de réglages : libellé en capitales + surface douce translucide
- * (façon iOS, sans cadre dur). Les lignes sont aérées par l'espace.
+ * Groupe de réglages façon « liste groupée inset » iOS : en-tête discret +
+ * carte surélevée (plus claire que le fond), lignes séparées par des hairlines.
+ * Entrée en ressort, échelonnée par `index`.
  */
-export function SettingsGroup({ title, children }: SettingsGroupProps) {
+export function SettingsGroup({ title, children, index = 0 }: SettingsGroupProps) {
   return (
-    <section>
+    <motion.section
+      initial={{ opacity: 0, y: 8 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ ...spring.smooth, delay: index * 0.05 }}
+    >
       {title && (
-        <h2 className="mb-2 px-1.5 text-[11px] font-medium uppercase tracking-[0.16em] text-muted-foreground/60">
+        <h2 className="mb-2 px-4 text-[0.72rem] font-semibold uppercase tracking-[0.05em] text-muted-foreground">
           {title}
         </h2>
       )}
-      <div className="overflow-hidden rounded-2xl bg-foreground/[0.03] backdrop-blur-sm">
+      <div className="divide-y divide-border/70 overflow-hidden rounded-[14px] bg-background dark:bg-card">
         {children}
       </div>
-    </section>
+    </motion.section>
   );
 }

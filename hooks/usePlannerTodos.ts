@@ -6,16 +6,9 @@ import { useTodoMutations } from "@/features/todos/useTodoMutations";
 import { useTodosSync } from "@/features/todos/useTodosSync";
 import { sortTodos } from "@/features/todos/sort";
 import type { Priority, TodoStatus } from "@/features/todos/types";
+import type { SmartTaskData } from "@/features/todos/useTaskMode";
 import { SWR_KEYS } from "@/lib/swr-config";
 import { todayLocalISODate, toLocalISODate } from "@/lib/date";
-
-interface SmartTaskData {
-  text: string;
-  note?: string;
-  dueDate?: Date | null;
-  priority?: Priority;
-  list?: string | null;
-}
 
 export const usePlannerTodos = () => {
   useTodosSync();

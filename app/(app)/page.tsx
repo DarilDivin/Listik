@@ -1,9 +1,10 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { toast } from "sonner";
 import { usePlannerTodos } from "@/hooks/usePlannerTodos";
-import SmartTaskInput from "@/components/SmartTaskInput";
-import { SettingsMenu } from "@/components/SettingsMenu";
+import { useNotesMutations } from "@/features/notes/useNotesMutations";
+import Omnibar from "@/components/Omnibar";
 import { AnimatedTodoList } from "@/components/todo/AnimatedTodoList";
 import { EmptyState } from "@/components/todo/EmptyState";
 import { FilterTabs, type TodoFilter } from "@/components/todo/FilterTabs";
@@ -36,6 +37,7 @@ export default function PlannerPage() {
     updateTodo,
     lists,
   } = usePlannerTodos();
+  const { createNote } = useNotesMutations();
 
   const [filter, setFilter] = useState<TodoFilter>("all");
   const [listFilter, setListFilter] = useState<string | null>(null);
@@ -89,6 +91,11 @@ export default function PlannerPage() {
     await createTodoFromSmart(taskData);
   };
 
+  const handleCreateNote = async (text: string) => {
+    await createNote({ content: text });
+    toast.success("Note créée");
+  };
+
   if (loading) {
     return (
       <div className="flex h-full items-center justify-center bg-background">
@@ -110,11 +117,6 @@ export default function PlannerPage() {
             "radial-gradient(46% 60% at 50% -6%, oklch(0.62 0.10 265 / 0.11), transparent 70%)",
         }}
       />
-
-      {/* Réglages + thème, coin supérieur droit */}
-      <div className="absolute right-5 top-5 z-20">
-        <SettingsMenu />
-      </div>
 
       {/* ───────── Zone défilante : agenda ───────── */}
       <div className="relative z-10 flex-1 overflow-y-auto">
@@ -224,8 +226,10 @@ export default function PlannerPage() {
           className="pointer-events-none absolute inset-x-0 -top-8 h-8 bg-gradient-to-t from-background to-transparent"
         />
         <div className="mx-auto max-w-[44rem] px-8 py-4">
-          <SmartTaskInput
+          <Omnibar
+            defaultMode="task"
             onSubmit={handleCreateTodo}
+            onSubmitNote={handleCreateNote}
             placeholder="Capturer une tâche…"
             lists={lists}
           />

@@ -1,5 +1,7 @@
 use crate::db::{self, AppState};
-use crate::models::{CreateTodo, Settings, Todo, UpdateSettings, UpdateTodo};
+use crate::models::{
+    CreateNote, CreateTodo, Note, Settings, Todo, UpdateNote, UpdateSettings, UpdateTodo,
+};
 use tauri::{AppHandle, Emitter, Manager, State, WebviewUrl, WebviewWindowBuilder};
 
 /// Événement diffusé à toutes les fenêtres après une mutation,
@@ -104,6 +106,74 @@ pub async fn update_settings(
 }
 
 // ---------------------------------------------------------------------------
+// Commandes Notes
+// ---------------------------------------------------------------------------
+
+/// Événement diffusé après une mutation de note (synchro multi-vues).
+pub const NOTES_CHANGED: &str = "notes:changed";
+
+fn notify_notes_changed(app: &AppHandle) {
+    if let Err(e) = app.emit(NOTES_CHANGED, ()) {
+        eprintln!("⚠️ Émission '{NOTES_CHANGED}' échouée: {e}");
+    }
+}
+
+#[tauri::command]
+pub async fn list_notes(state: State<'_, AppState>) -> Result<Vec<Note>, String> {
+    db::list_notes(&state.pool).await.map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn search_notes(
+    state: State<'_, AppState>,
+    query: String,
+) -> Result<Vec<Note>, String> {
+    db::search_notes(&state.pool, &query)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn create_note(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    payload: CreateNote,
+) -> Result<Note, String> {
+    let note = db::create_note(&state.pool, payload)
+        .await
+        .map_err(|e| e.to_string())?;
+    notify_notes_changed(&app);
+    Ok(note)
+}
+
+#[tauri::command]
+pub async fn update_note(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    id: String,
+    payload: UpdateNote,
+) -> Result<Note, String> {
+    let note = db::update_note(&state.pool, &id, payload)
+        .await
+        .map_err(|e| e.to_string())?;
+    notify_notes_changed(&app);
+    Ok(note)
+}
+
+#[tauri::command]
+pub async fn delete_note(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    id: String,
+) -> Result<(), String> {
+    db::delete_note(&state.pool, &id)
+        .await
+        .map_err(|e| e.to_string())?;
+    notify_notes_changed(&app);
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
 // Commandes fenêtres (show/hide au lieu de close/recreate)
 // ---------------------------------------------------------------------------
 
@@ -139,24 +209,6 @@ pub async fn toggle_quick_window(app: AppHandle) -> Result<(), String> {
 pub async fn hide_quick_window(app: AppHandle) -> Result<(), String> {
     if let Some(window) = app.get_webview_window("quick") {
         window.hide().map_err(|e| e.to_string())?;
-    }
-    Ok(())
-}
-
-#[tauri::command]
-pub async fn open_planner_window(app: AppHandle) -> Result<(), String> {
-    if let Some(window) = app.get_webview_window("planner") {
-        window.show().map_err(|e| e.to_string())?;
-        window.set_focus().map_err(|e| e.to_string())?;
-    } else {
-        WebviewWindowBuilder::new(&app, "planner", WebviewUrl::App("/planner".into()))
-            .title("Planificateur Listik")
-            .inner_size(1200.0, 800.0)
-            .center()
-            .decorations(false)
-            .resizable(true)
-            .build()
-            .map_err(|e| e.to_string())?;
     }
     Ok(())
 }
