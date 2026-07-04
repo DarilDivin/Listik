@@ -44,3 +44,4 @@ next-env.d.ts
 sidecar/.venv
 sidecar/__pycache__
 sidecar/*.pyc
+sidecar/listik_vec.db

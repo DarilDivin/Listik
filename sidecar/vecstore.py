@@ -97,3 +97,16 @@ def search(query: str, k: int = 5) -> list[dict]:
         return [{"id": r[0], "type": r[1], "text": r[2], "score": r[3]} for r in rows]
     finally:
         conn.close()
+
+
+def remove_item(item_id: str) -> None:
+    """Retire une tâche/note de l'index (appelé quand elle est supprimée)."""
+    conn = _connect()
+    try:
+        row = conn.execute("SELECT rowid FROM items WHERE id = ?", (item_id,)).fetchone()
+        if row is not None:
+            conn.execute("DELETE FROM vec_items WHERE rowid = ?", (row[0],))
+            conn.execute("DELETE FROM items WHERE id = ?", (item_id,))
+            conn.commit()
+    finally:
+        conn.close()

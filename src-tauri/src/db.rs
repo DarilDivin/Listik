@@ -143,6 +143,8 @@ pub async fn update(pool: &SqlitePool, id: &str, input: UpdateTodo) -> Result<To
         sep.push("reminded = ").push_bind_unseparated(0_i64);
     }
     sep.push("updated_at = ").push_bind_unseparated(now);
+    // Contenu potentiellement modifié → à ré-indexer côté sidecar (D3).
+    sep.push("needs_embedding = ").push_bind_unseparated(1_i64);
 
     qb.push(" WHERE id = ").push_bind(id);
     qb.build().execute(pool).await?;
@@ -171,7 +173,8 @@ pub async fn toggle(pool: &SqlitePool, id: &str) -> Result<Todo, sqlx::Error> {
                     .map(|dt| (dt + (next - base)).format("%Y-%m-%dT%H:%M").to_string())
             });
             sqlx::query(
-                "UPDATE todos SET scheduled_for = ?, due_date = ?, remind_at = ?, reminded = 0, updated_at = ? WHERE id = ?",
+                "UPDATE todos SET scheduled_for = ?, due_date = ?, remind_at = ?, reminded = 0, \
+                 needs_embedding = 1, updated_at = ? WHERE id = ?",
             )
             .bind(&next_str)
             .bind(&next_str)
@@ -185,7 +188,7 @@ pub async fn toggle(pool: &SqlitePool, id: &str) -> Result<Todo, sqlx::Error> {
     }
 
     let new_status = current.status.toggled();
-    sqlx::query("UPDATE todos SET status = ?, updated_at = ? WHERE id = ?")
+    sqlx::query("UPDATE todos SET status = ?, needs_embedding = 1, updated_at = ? WHERE id = ?")
         .bind(new_status)
         .bind(now_iso())
         .bind(id)
@@ -200,7 +203,7 @@ pub async fn delete(pool: &SqlitePool, id: &str) -> Result<(), sqlx::Error> {
         .bind(id)
         .execute(pool)
         .await?;
-    Ok(())
+    queue_deindex(pool, id, "task").await
 }
 
 /// Tâches dont le rappel est dû : `remind_at` <= `now` (date-heure locale),
@@ -221,6 +224,113 @@ pub async fn due_reminders(pool: &SqlitePool, now: &str) -> Result<Vec<Todo>, sq
 /// Marque un rappel comme envoyé (évite de le rejouer à chaque tick).
 pub async fn mark_reminded(pool: &SqlitePool, id: &str) -> Result<(), sqlx::Error> {
     sqlx::query("UPDATE todos SET reminded = 1 WHERE id = ?")
+        .bind(id)
+        .execute(pool)
+        .await?;
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// Synchronisation vectorielle (D3) : items à (dés)indexer côté sidecar.
+// Lu/écrit par `vectorizer.rs` (tâche de fond, calquée sur le planificateur
+// de rappels ci-dessus).
+// ---------------------------------------------------------------------------
+
+/// Tâche ou note prête à être envoyée au sidecar (`POST /index`).
+pub struct EmbeddingItem {
+    pub id: String,
+    pub kind: &'static str, // "task" ou "note"
+    pub text: String,
+}
+
+/// Pose la suppression en attente : la ligne d'origine a déjà disparu au
+/// moment où la tâche de fond tourne, impossible de lui poser un drapeau.
+async fn queue_deindex(pool: &SqlitePool, id: &str, kind: &str) -> Result<(), sqlx::Error> {
+    sqlx::query(
+        "INSERT INTO pending_deindex (id, type, queued_at) VALUES (?, ?, ?) \
+         ON CONFLICT(id) DO NOTHING",
+    )
+    .bind(id)
+    .bind(kind)
+    .bind(now_iso())
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
+/// Suppressions en attente de répercussion (`POST /deindex`).
+pub async fn pending_deindex(pool: &SqlitePool, limit: i64) -> Result<Vec<(String, String)>, sqlx::Error> {
+    sqlx::query_as("SELECT id, type FROM pending_deindex LIMIT ?")
+        .bind(limit)
+        .fetch_all(pool)
+        .await
+}
+
+/// Retire une suppression de la file une fois répercutée avec succès.
+pub async fn clear_pending_deindex(pool: &SqlitePool, id: &str) -> Result<(), sqlx::Error> {
+    sqlx::query("DELETE FROM pending_deindex WHERE id = ?")
+        .bind(id)
+        .execute(pool)
+        .await?;
+    Ok(())
+}
+
+/// Tâches à (ré)indexer. Texte envoyé = titre + note éventuelle (une seule
+/// chaîne, comme cherché sémantiquement d'un bloc).
+pub async fn todos_needing_embedding(
+    pool: &SqlitePool,
+    limit: i64,
+) -> Result<Vec<EmbeddingItem>, sqlx::Error> {
+    let rows: Vec<(String, String, Option<String>)> =
+        sqlx::query_as("SELECT id, text, note FROM todos WHERE needs_embedding = 1 LIMIT ?")
+            .bind(limit)
+            .fetch_all(pool)
+            .await?;
+
+    Ok(rows
+        .into_iter()
+        .map(|(id, text, note)| {
+            let text = match note {
+                Some(n) if !n.is_empty() => format!("{text}\n{n}"),
+                _ => text,
+            };
+            EmbeddingItem { id, kind: "task", text }
+        })
+        .collect())
+}
+
+/// Redescend le drapeau une fois l'indexation confirmée par le sidecar.
+pub async fn mark_todo_embedded(pool: &SqlitePool, id: &str) -> Result<(), sqlx::Error> {
+    sqlx::query("UPDATE todos SET needs_embedding = 0 WHERE id = ?")
+        .bind(id)
+        .execute(pool)
+        .await?;
+    Ok(())
+}
+
+/// Notes à (ré)indexer. Texte envoyé = titre + contenu.
+pub async fn notes_needing_embedding(
+    pool: &SqlitePool,
+    limit: i64,
+) -> Result<Vec<EmbeddingItem>, sqlx::Error> {
+    let rows: Vec<(String, String, String)> =
+        sqlx::query_as("SELECT id, title, content FROM notes WHERE needs_embedding = 1 LIMIT ?")
+            .bind(limit)
+            .fetch_all(pool)
+            .await?;
+
+    Ok(rows
+        .into_iter()
+        .map(|(id, title, content)| {
+            let text = if title.is_empty() { content } else { format!("{title}\n{content}") };
+            EmbeddingItem { id, kind: "note", text }
+        })
+        .collect())
+}
+
+/// Redescend le drapeau une fois l'indexation confirmée par le sidecar.
+pub async fn mark_note_embedded(pool: &SqlitePool, id: &str) -> Result<(), sqlx::Error> {
+    sqlx::query("UPDATE notes SET needs_embedding = 0 WHERE id = ?")
         .bind(id)
         .execute(pool)
         .await?;
@@ -381,6 +491,8 @@ pub async fn update_note(
         sep.push("pinned = ").push_bind_unseparated(pinned);
     }
     sep.push("updated_at = ").push_bind_unseparated(now);
+    // Contenu potentiellement modifié → à ré-indexer côté sidecar (D3).
+    sep.push("needs_embedding = ").push_bind_unseparated(1_i64);
 
     qb.push(" WHERE id = ").push_bind(id);
     qb.build().execute(pool).await?;
@@ -393,7 +505,7 @@ pub async fn delete_note(pool: &SqlitePool, id: &str) -> Result<(), sqlx::Error>
         .bind(id)
         .execute(pool)
         .await?;
-    Ok(())
+    queue_deindex(pool, id, "note").await
 }
 
 /// Recherche plein-texte simple (LIKE) sur le titre et le contenu.

@@ -5,6 +5,7 @@ mod db;
 mod models;
 mod reminders;
 mod sidecar;
+mod vectorizer;
 
 use commands::{show_main_window, toggle_quick_window};
 use db::AppState;
@@ -31,6 +32,9 @@ fn main() {
             // --- Sidecar Python (IA) ---
             app.manage(sidecar::SidecarState::empty());
             sidecar::spawn(app.handle().clone());
+
+            // --- Pipeline d'indexation asynchrone (tâches/notes → sidecar) ---
+            vectorizer::spawn_indexer(app.handle().clone());
 
             // --- Menu du tray ---
             // Menu natif du tray : en-tête + groupes séparés (le style est géré

@@ -103,6 +103,16 @@ def index(req: IndexRequest) -> dict[str, str]:
     return {"status": "ok"}
 
 
+class DeindexRequest(BaseModel):
+    id: str
+
+
+@app.post("/deindex")
+def deindex(req: DeindexRequest) -> dict[str, str]:
+    vecstore.remove_item(req.id)
+    return {"status": "ok"}
+
+
 class SearchRequest(BaseModel):
     query: str
     k: int = 5
