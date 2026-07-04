@@ -1,7 +1,7 @@
 use crate::db::{self, AppState};
 use crate::models::{
-    AiParsedTask, CreateNote, CreateTodo, Note, Settings, Todo, UpdateNote, UpdateSettings,
-    UpdateTodo,
+    AiAgentResponse, AiParsedTask, CreateNote, CreateTodo, Note, Settings, SidecarAgentResponse,
+    Todo, UpdateNote, UpdateSettings, UpdateTodo,
 };
 use tauri::{AppHandle, Emitter, Manager, State, WebviewUrl, WebviewWindowBuilder};
 
@@ -264,4 +264,79 @@ pub async fn ai_parse(text: String) -> Result<AiParsedTask, String> {
         return Err(format!("Sidecar /parse a répondu {}", resp.status()));
     }
     resp.json::<AiParsedTask>().await.map_err(|e| e.to_string())
+}
+
+#[derive(serde::Serialize)]
+struct AgentRequest<'a> {
+    text: &'a str,
+}
+
+/// Un tour d'agent : le sidecar (LLM) choisit un outil ; Rust exécute les
+/// mutations (propriétaire de SQLite) en réutilisant ses commandes existantes,
+/// et renvoie le message + sources à afficher. `answer_question` est déjà
+/// résolu côté sidecar (RAG), il n'y a rien à exécuter ici.
+#[tauri::command]
+pub async fn ai_agent(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    text: String,
+) -> Result<AiAgentResponse, String> {
+    let url = format!("http://127.0.0.1:{}/agent", crate::sidecar::SIDECAR_PORT);
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(20))
+        .build()
+        .map_err(|e| e.to_string())?;
+
+    let resp = client
+        .post(&url)
+        .json(&AgentRequest { text: &text })
+        .send()
+        .await
+        .map_err(|e| e.to_string())?;
+
+    if !resp.status().is_success() {
+        return Err(format!("Sidecar /agent a répondu {}", resp.status()));
+    }
+    let agent: SidecarAgentResponse = resp.json().await.map_err(|e| e.to_string())?;
+
+    match agent.tool.as_str() {
+        "create_task" => {
+            if let Some(task) = agent.task {
+                let today = chrono::Local::now().format("%Y-%m-%d").to_string();
+                let payload = CreateTodo {
+                    text: task.text,
+                    note: task.note,
+                    list: task.list,
+                    priority: Some(task.priority),
+                    recurrence: None,
+                    scheduled_for: Some(task.due_date.clone().unwrap_or(today)),
+                    due_date: task.due_date,
+                    remind_at: None,
+                };
+                db::create(&state.pool, payload)
+                    .await
+                    .map_err(|e| e.to_string())?;
+                notify_changed(&app);
+            }
+        }
+        "create_note" => {
+            if let Some(note) = agent.note {
+                let payload = CreateNote {
+                    title: Some(note.title),
+                    content: Some(note.content),
+                };
+                db::create_note(&state.pool, payload)
+                    .await
+                    .map_err(|e| e.to_string())?;
+                notify_notes_changed(&app);
+            }
+        }
+        _ => {} // answer_question : déjà résolu par le sidecar.
+    }
+
+    Ok(AiAgentResponse {
+        message: agent.message,
+        tool: agent.tool,
+        sources: agent.sources,
+    })
 }

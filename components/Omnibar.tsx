@@ -37,6 +37,8 @@ interface OmnibarProps {
   onSubmit: (taskData: SmartTaskData) => Promise<void>;
   /** Soumission d'une note (mode « note » / `/note`). */
   onSubmitNote?: (text: string) => void | Promise<void>;
+  /** Soumission d'une question à l'agent (mode « ask » / `/question`). */
+  onSubmitAsk?: (text: string) => void | Promise<void>;
   placeholder?: string;
   autoFocus?: boolean;
   /** Si fourni, affiche un sélecteur de liste (avec ces suggestions). */
@@ -48,6 +50,7 @@ interface OmnibarProps {
 export default function Omnibar({
   onSubmit,
   onSubmitNote,
+  onSubmitAsk,
   placeholder,
   autoFocus,
   lists,
@@ -97,10 +100,21 @@ export default function Omnibar({
     }
   };
 
+  const submitAsk = async () => {
+    const text = value.trim();
+    if (!text || !onSubmitAsk) return;
+    try {
+      await onSubmitAsk(text);
+      setValue(""); // on reste en mode « ask » pour enchaîner les questions
+    } catch {
+      // l'erreur (toast) est gérée côté handler
+    }
+  };
+
   const handleSubmit = () => {
     if (isTask) task.submit();
     else if (mode === "note") void submitNote();
-    // Mode « ask » : Phase D.
+    else if (mode === "ask") void submitAsk();
   };
 
   // Ferme la barre seulement si le focus quitte réellement le formulaire

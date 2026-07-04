@@ -1,4 +1,5 @@
 import argparse
+import json
 import os
 from datetime import date
 from typing import Literal
@@ -166,6 +167,154 @@ def ask(req: AskRequest) -> AskResponse:
         raise HTTPException(status_code=502, detail=str(e)) from e
 
     return AskResponse(answer=answer, sources=[SearchResult(**r) for r in results])
+
+
+# ---------------------------------------------------------------------------
+# D4 — Agent : function calling (le LLM choisit l'outil, notre code exécute)
+# ---------------------------------------------------------------------------
+
+
+class AgentRequest(BaseModel):
+    text: str
+
+
+class NoteDraft(BaseModel):
+    title: str = ""
+    content: str = ""
+
+
+class AgentResponse(BaseModel):
+    # Outil choisi par le LLM. `create_task`/`create_note` = à exécuter par Rust
+    # (propriétaire de SQLite) ; `answer_question` déjà exécuté ici (RAG).
+    tool: Literal["create_task", "create_note", "answer_question"]
+    message: str
+    task: SmartTaskData | None = None
+    note: NoteDraft | None = None
+    sources: list[SearchResult] = []
+
+
+# Description des outils exposés au LLM (schéma JSON des paramètres). Le modèle
+# ne voit que ça pour décider quoi appeler — d'où l'importance des descriptions.
+AGENT_TOOLS = [
+    {
+        "type": "function",
+        "function": {
+            "name": "create_task",
+            "description": "Créer une tâche à faire quand l'utilisateur demande d'ajouter/créer une tâche, un rappel, une chose à faire.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "text": {"type": "string", "description": "L'intitulé de la tâche, sans la date."},
+                    "note": {"type": "string", "description": "Détail optionnel."},
+                    "due_date": {"type": "string", "description": "Date ISO YYYY-MM-DD si mentionnée, sinon omettre."},
+                    "priority": {"type": "string", "enum": ["low", "normal", "high"]},
+                    "list": {"type": "string", "description": "Projet/liste si mentionné (ex. #courses)."},
+                },
+                "required": ["text"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "create_note",
+            "description": "Enregistrer une note libre quand l'utilisateur veut noter une idée, une information, un texte à garder.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "title": {"type": "string", "description": "Titre court, optionnel."},
+                    "content": {"type": "string", "description": "Le corps de la note."},
+                },
+                "required": ["content"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "answer_question",
+            "description": "Répondre à une question de l'utilisateur sur ses tâches et notes existantes (ex. « qu'est-ce que j'ai cette semaine ? »).",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string", "description": "La question, reformulée pour la recherche."},
+                },
+                "required": ["query"],
+            },
+        },
+    },
+]
+
+
+def _run_rag(query: str) -> tuple[str, list[SearchResult]]:
+    """Retrieve + generate : cœur de answer_question (réutilise D2)."""
+    results = vecstore.search(query, k=5)
+    context = "\n".join(f"- ({r['type']}) {r['text']}" for r in results) or "(aucun résultat trouvé)"
+    completion = llm.chat.completions.create(
+        model=LLM_MODEL,
+        messages=[
+            {
+                "role": "system",
+                "content": (
+                    "Tu réponds à la question en te basant UNIQUEMENT sur le contexte (tâches "
+                    "et notes de l'utilisateur). Si le contexte ne suffit pas, dis-le plutôt "
+                    f"que d'inventer.\n\nContexte :\n{context}"
+                ),
+            },
+            {"role": "user", "content": query},
+        ],
+        temperature=0.2,
+    )
+    return completion.choices[0].message.content, [SearchResult(**r) for r in results]
+
+
+@app.post("/agent")
+def agent(req: AgentRequest) -> AgentResponse:
+    today = date.today().isoformat()
+    try:
+        completion = llm.chat.completions.create(
+            model=LLM_MODEL,
+            messages=[
+                {
+                    "role": "system",
+                    "content": (
+                        f"Tu es l'assistant de Listik (aujourd'hui = {today}). À partir du "
+                        "message de l'utilisateur, choisis exactement UN outil : créer une "
+                        "tâche, créer une note, ou répondre à une question sur ses données."
+                    ),
+                },
+                {"role": "user", "content": req.text},
+            ],
+            tools=AGENT_TOOLS,
+            tool_choice="auto",
+            temperature=0,
+        )
+        choice = completion.choices[0].message
+        calls = choice.tool_calls or []
+
+        # Pas d'outil choisi → on retombe sur une réponse RAG (best-effort).
+        if not calls:
+            answer, sources = _run_rag(req.text)
+            return AgentResponse(tool="answer_question", message=answer, sources=sources)
+
+        call = calls[0]
+        name = call.function.name
+        args = json.loads(call.function.arguments or "{}")
+
+        if name == "create_task":
+            task = SmartTaskData(**args)
+            return AgentResponse(tool="create_task", message=f"Tâche créée : « {task.text} »", task=task)
+
+        if name == "create_note":
+            note = NoteDraft(**args)
+            label = note.title or note.content[:40]
+            return AgentResponse(tool="create_note", message=f"Note enregistrée : « {label} »", note=note)
+
+        # answer_question
+        answer, sources = _run_rag(args.get("query", req.text))
+        return AgentResponse(tool="answer_question", message=answer, sources=sources)
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=str(e)) from e
 
 
 def main() -> None:

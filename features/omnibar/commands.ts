@@ -60,11 +60,11 @@ export const OMNIBAR_COMMANDS: OmnibarCommand[] = [
     aliases: ["/q", "/ask", "/?"],
     mode: "ask",
     label: "Question",
-    description: "Poser une question à l'assistant",
-    placeholder: "Poser une question… (bientôt — Phase D)",
+    description: "Demander à l'assistant",
+    placeholder: "Demander, créer, chercher… en langage naturel",
     icon: Sparkles,
     color: "bg-violet-500/8 text-violet-600 dark:text-violet-400",
-    enabled: false,
+    enabled: true,
   },
 ];
 
