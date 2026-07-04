@@ -224,3 +224,14 @@ pub async fn show_main_window(app: AppHandle) -> Result<(), String> {
         None => Err("Fenêtre principale introuvable".to_string()),
     }
 }
+
+// ---------------------------------------------------------------------------
+// Commandes IA (sidecar Python) — D0 : juste un ping de santé.
+// ---------------------------------------------------------------------------
+
+#[tauri::command]
+pub async fn ai_ping() -> Result<String, String> {
+    let url = format!("http://127.0.0.1:{}/health", crate::sidecar::SIDECAR_PORT);
+    let resp = reqwest::get(&url).await.map_err(|e| e.to_string())?;
+    resp.text().await.map_err(|e| e.to_string())
+}

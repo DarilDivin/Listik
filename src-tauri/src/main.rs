@@ -4,6 +4,7 @@ mod commands;
 mod db;
 mod models;
 mod reminders;
+mod sidecar;
 
 use commands::{show_main_window, toggle_quick_window};
 use db::AppState;
@@ -26,6 +27,10 @@ fn main() {
 
             // --- Planificateur de rappels (notifications en arrière-plan) ---
             reminders::spawn_scheduler(app.handle().clone());
+
+            // --- Sidecar Python (IA) ---
+            app.manage(sidecar::SidecarState::empty());
+            sidecar::spawn(app.handle().clone());
 
             // --- Menu du tray ---
             // Menu natif du tray : en-tête + groupes séparés (le style est géré
@@ -151,7 +156,13 @@ fn main() {
             commands::show_main_window,
             commands::get_settings,
             commands::update_settings,
+            commands::ai_ping,
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application")
+        .run(|app_handle, event| {
+            if let tauri::RunEvent::Exit = event {
+                sidecar::kill(app_handle);
+            }
+        });
 }
