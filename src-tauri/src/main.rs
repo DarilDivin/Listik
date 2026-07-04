@@ -157,6 +157,7 @@ fn main() {
             commands::get_settings,
             commands::update_settings,
             commands::ai_ping,
+            commands::ai_parse,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

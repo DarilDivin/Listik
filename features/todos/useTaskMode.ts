@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import type { Priority } from "./types";
+import { aiParseTask } from "./aiParse";
 import {
   type DateMatch,
   detectListFromText,
@@ -111,7 +112,15 @@ export function useTaskMode(
         ? lists.find((l) => l.toLowerCase() === list.toLowerCase()) ?? list
         : null;
 
-      await onSubmit({ text, note, dueDate, priority, list: canonicalList });
+      // Correction IA de la priorité (négation/contexte) — seulement si elle
+      // n'a pas été choisie manuellement depuis la dernière auto-détection.
+      let finalPriority = priority;
+      const aiResult = await aiParseTask(value);
+      if (aiResult && priority === lastDetectedPriority.current) {
+        finalPriority = aiResult.priority;
+      }
+
+      await onSubmit({ text, note, dueDate, priority: finalPriority, list: canonicalList });
 
       setValue("");
       resetMeta();

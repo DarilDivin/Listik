@@ -36,8 +36,8 @@ sqlx = { version = "0.8", default-features = false, features = [
 # Génération des types TypeScript depuis les structures Rust (source de vérité)
 ts-rs = "10"
 
-# Client HTTP pour parler au sidecar Python (healthcheck, ai_ping)
-reqwest = "0.12"
+# Client HTTP pour parler au sidecar Python (healthcheck, ai_ping, ai_parse)
+reqwest = { version = "0.12", features = ["json"] }
 
 [target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
 tauri-plugin-global-shortcut = "2"

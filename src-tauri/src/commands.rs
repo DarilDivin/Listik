@@ -1,6 +1,7 @@
 use crate::db::{self, AppState};
 use crate::models::{
-    CreateNote, CreateTodo, Note, Settings, Todo, UpdateNote, UpdateSettings, UpdateTodo,
+    AiParsedTask, CreateNote, CreateTodo, Note, Settings, Todo, UpdateNote, UpdateSettings,
+    UpdateTodo,
 };
 use tauri::{AppHandle, Emitter, Manager, State, WebviewUrl, WebviewWindowBuilder};
 
@@ -234,4 +235,33 @@ pub async fn ai_ping() -> Result<String, String> {
     let url = format!("http://127.0.0.1:{}/health", crate::sidecar::SIDECAR_PORT);
     let resp = reqwest::get(&url).await.map_err(|e| e.to_string())?;
     resp.text().await.map_err(|e| e.to_string())
+}
+
+#[derive(serde::Serialize)]
+struct ParseRequest<'a> {
+    text: &'a str,
+}
+
+/// Demande au sidecar d'extraire une tâche structurée depuis du texte libre.
+/// Timeout court : en cas d'indisponibilité (pas de clé API, sidecar down...),
+/// l'appelant doit pouvoir retomber sur le parsing local sans bloquer l'UI.
+#[tauri::command]
+pub async fn ai_parse(text: String) -> Result<AiParsedTask, String> {
+    let url = format!("http://127.0.0.1:{}/parse", crate::sidecar::SIDECAR_PORT);
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(8))
+        .build()
+        .map_err(|e| e.to_string())?;
+
+    let resp = client
+        .post(&url)
+        .json(&ParseRequest { text: &text })
+        .send()
+        .await
+        .map_err(|e| e.to_string())?;
+
+    if !resp.status().is_success() {
+        return Err(format!("Sidecar /parse a répondu {}", resp.status()));
+    }
+    resp.json::<AiParsedTask>().await.map_err(|e| e.to_string())
 }
