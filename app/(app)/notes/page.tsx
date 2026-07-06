@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { Pin, Plus, Search } from "lucide-react";
 import { useNotes } from "@/hooks/useNotes";
 import { NoteEditor } from "@/components/notes/NoteEditor";
@@ -24,7 +25,23 @@ function preview(note: Note): string {
 }
 
 export default function NotesPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
+          Chargement…
+        </div>
+      }
+    >
+      <NotesPageContent />
+    </Suspense>
+  );
+}
+
+function NotesPageContent() {
   const { notes, loading, createNote, updateNote, deleteNote } = useNotes();
+  const searchParams = useSearchParams();
+  const requestedId = searchParams.get("id");
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [query, setQuery] = useState("");
 
@@ -39,10 +56,21 @@ export default function NotesPage() {
 
   const selected = notes.find((n) => n.id === selectedId) ?? null;
 
-  // Sélection par défaut : la première note visible.
+  // Sélection demandée depuis l'extérieur (recherche Ctrl+K) : prioritaire,
+  // réappliquée à chaque changement (pas seulement au premier rendu).
   useEffect(() => {
-    if (!selectedId && filtered.length > 0) setSelectedId(filtered[0].id);
-  }, [filtered, selectedId]);
+    if (requestedId && notes.some((n) => n.id === requestedId)) {
+      setSelectedId(requestedId);
+    }
+  }, [requestedId, notes]);
+
+  // Sélection par défaut : la première note visible — seulement si rien n'est
+  // demandé explicitement et rien n'est déjà sélectionné.
+  useEffect(() => {
+    if (!requestedId && !selectedId && filtered.length > 0) {
+      setSelectedId(filtered[0].id);
+    }
+  }, [requestedId, filtered, selectedId]);
 
   const handleNew = async () => {
     const note = await createNote();

@@ -99,6 +99,10 @@ pub struct Todo {
     pub remind_at: Option<String>,
     pub created_at: String,
     pub updated_at: String,
+    /// Checklist à un niveau. Absent des colonnes SQL de `todos` (`#[sqlx(default)]`
+    /// → liste vide par défaut) : peuplé séparément par `db::attach_subtasks`.
+    #[sqlx(default)]
+    pub sub_tasks: Vec<super::SubTask>,
 }
 
 // Données d'entrée pour créer une tâche (envoyées par le frontend).

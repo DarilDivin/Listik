@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { LayoutList, Settings, Sparkles, StickyNote } from "lucide-react";
+import { LayoutList, Search, Settings, Sparkles, StickyNote } from "lucide-react";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { cn } from "@/lib/utils";
 
@@ -41,8 +41,12 @@ const NAV: NavItem[] = [
   },
 ];
 
+interface AppSidebarProps {
+  onOpenSearch?: () => void;
+}
+
 /** Barre latérale de navigation de la fenêtre principale (app shell). */
-export function AppSidebar() {
+export function AppSidebar({ onOpenSearch }: AppSidebarProps) {
   const raw = usePathname() ?? "/";
   const pathname = raw.replace(/\/$/, "") || "/";
 
@@ -53,6 +57,22 @@ export function AppSidebar() {
           Listik
         </span>
       </div>
+
+      {onOpenSearch && (
+        <button
+          type="button"
+          onClick={onOpenSearch}
+          className="mb-2 flex items-center gap-2.5 rounded-lg py-1.5 pl-1.5 pr-2.5 text-sm text-muted-foreground transition-colors hover:bg-accent/50 hover:text-foreground"
+        >
+          <span className="grid size-6 shrink-0 place-items-center rounded-[7px] bg-foreground/[0.06]">
+            <Search size={14} strokeWidth={2.1} />
+          </span>
+          Rechercher
+          <kbd className="ml-auto rounded border border-border/60 px-1 font-mono text-[10px] text-muted-foreground/70">
+            Ctrl K
+          </kbd>
+        </button>
+      )}
 
       <nav className="flex flex-1 flex-col gap-0.5">
         {NAV.map(({ href, label, icon: Icon, color }) => {

@@ -1,7 +1,8 @@
 use crate::db::{self, AppState};
 use crate::models::{
-    AiAgentResponse, AiParsedTask, CreateNote, CreateTodo, Note, Settings, SidecarAgentResponse,
-    Todo, UpdateNote, UpdateSettings, UpdateTodo,
+    AiAgentResponse, AiChatMessage, AiParsedTask, AiSource, CreateNote, CreateSubTask, CreateTodo,
+    Note, Settings, SidecarAgentResponse, SubTask, Todo, UpdateNote, UpdateSettings, UpdateSubTask,
+    UpdateTodo,
 };
 use tauri::{AppHandle, Emitter, Manager, State, WebviewUrl, WebviewWindowBuilder};
 
@@ -269,17 +270,21 @@ pub async fn ai_parse(text: String) -> Result<AiParsedTask, String> {
 #[derive(serde::Serialize)]
 struct AgentRequest<'a> {
     text: &'a str,
+    history: &'a [AiChatMessage],
 }
 
 /// Un tour d'agent : le sidecar (LLM) choisit un outil ; Rust exécute les
 /// mutations (propriétaire de SQLite) en réutilisant ses commandes existantes,
 /// et renvoie le message + sources à afficher. `answer_question` est déjà
-/// résolu côté sidecar (RAG), il n'y a rien à exécuter ici.
+/// résolu côté sidecar (RAG), il n'y a rien à exécuter ici. `history` : les
+/// derniers échanges (question/réponse), pour que le LLM résolve les
+/// références au contexte ("et demain ?") — voir docs/APPRENTISSAGE.md.
 #[tauri::command]
 pub async fn ai_agent(
     app: AppHandle,
     state: State<'_, AppState>,
     text: String,
+    history: Vec<AiChatMessage>,
 ) -> Result<AiAgentResponse, String> {
     let url = format!("http://127.0.0.1:{}/agent", crate::sidecar::SIDECAR_PORT);
     let client = reqwest::Client::builder()
@@ -289,7 +294,7 @@ pub async fn ai_agent(
 
     let resp = client
         .post(&url)
-        .json(&AgentRequest { text: &text })
+        .json(&AgentRequest { text: &text, history: &history })
         .send()
         .await
         .map_err(|e| e.to_string())?;
@@ -331,12 +336,122 @@ pub async fn ai_agent(
                 notify_notes_changed(&app);
             }
         }
-        _ => {} // answer_question : déjà résolu par le sidecar.
+        // update_task / delete_task : la tâche est déjà résolue (task_id) par
+        // le sidecar, mais PAS exécutée ici — c'est le frontend qui appelle
+        // updateTodo/deleteTodo (mêmes mutations que l'UI manuelle, undo
+        // compris pour la suppression). answer_question / not_found : rien à
+        // exécuter, déjà résolu par le sidecar.
+        _ => {}
     }
 
     Ok(AiAgentResponse {
         message: agent.message,
         tool: agent.tool,
         sources: agent.sources,
+        task_id: agent.task_id,
+        task_update: agent.update,
     })
+}
+
+#[derive(serde::Serialize)]
+struct SearchRequest<'a> {
+    query: &'a str,
+    k: u32,
+}
+
+/// Recherche sémantique directe (sans passer par l'agent conversationnel) :
+/// relaie tel quel vers le `/search` du sidecar (D2).
+#[tauri::command]
+pub async fn ai_search(query: String, k: u32) -> Result<Vec<AiSource>, String> {
+    let url = format!("http://127.0.0.1:{}/search", crate::sidecar::SIDECAR_PORT);
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(8))
+        .build()
+        .map_err(|e| e.to_string())?;
+
+    let resp = client
+        .post(&url)
+        .json(&SearchRequest { query: &query, k })
+        .send()
+        .await
+        .map_err(|e| e.to_string())?;
+
+    if !resp.status().is_success() {
+        return Err(format!("Sidecar /search a répondu {}", resp.status()));
+    }
+    resp.json::<Vec<AiSource>>().await.map_err(|e| e.to_string())
+}
+
+// ---------------------------------------------------------------------------
+// Sauvegarde (export JSON complet)
+// ---------------------------------------------------------------------------
+
+#[derive(serde::Serialize)]
+struct Backup {
+    version: u32,
+    exported_at: String,
+    todos: Vec<Todo>,
+    notes: Vec<Note>,
+}
+
+/// Écrit un backup JSON (toutes les tâches + notes) à l'emplacement choisi
+/// par l'utilisateur (dialogue "Enregistrer sous" géré côté frontend).
+#[tauri::command]
+pub async fn export_backup(state: State<'_, AppState>, path: String) -> Result<(), String> {
+    let todos = db::list_all(&state.pool).await.map_err(|e| e.to_string())?;
+    let notes = db::list_notes(&state.pool).await.map_err(|e| e.to_string())?;
+
+    let backup = Backup {
+        version: 1,
+        exported_at: chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, true),
+        todos,
+        notes,
+    };
+
+    let json = serde_json::to_string_pretty(&backup).map_err(|e| e.to_string())?;
+    std::fs::write(&path, json).map_err(|e| e.to_string())
+}
+
+// ---------------------------------------------------------------------------
+// Commandes Sous-tâches (checklist à un niveau)
+// ---------------------------------------------------------------------------
+
+#[tauri::command]
+pub async fn create_subtask(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    payload: CreateSubTask,
+) -> Result<SubTask, String> {
+    let sub = db::create_subtask(&state.pool, payload)
+        .await
+        .map_err(|e| e.to_string())?;
+    notify_changed(&app);
+    Ok(sub)
+}
+
+#[tauri::command]
+pub async fn update_subtask(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    id: String,
+    payload: UpdateSubTask,
+) -> Result<SubTask, String> {
+    let sub = db::update_subtask(&state.pool, &id, payload)
+        .await
+        .map_err(|e| e.to_string())?;
+    notify_changed(&app);
+    Ok(sub)
+}
+
+#[tauri::command]
+pub async fn delete_subtask(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    id: String,
+) -> Result<(), String> {
+    db::delete_subtask(&state.pool, &id)
+        .await
+        .map_err(|e| e.to_string())?;
+    notify_changed(&app);
+    Ok(())
 }

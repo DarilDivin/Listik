@@ -8,6 +8,13 @@ import { todayLocalISODate } from "@/lib/date";
 
 type TodoUpdater = (todos: Todo[]) => Todo[];
 
+const UNDO_DELAY_MS = 5000;
+// Suppressions différées (id → minuteur), partagé entre tous les appels du
+// hook : la suppression réelle n'est déclenchée qu'après le délai, sauf
+// annulation via le toast. Si l'app se ferme entre-temps, rien n'est perdu
+// côté base — seul le minuteur est perdu, la tâche réapparaîtra au rechargement.
+const pendingDeletes = new Map<string, ReturnType<typeof setTimeout>>();
+
 /**
  * Mutations partagées (create / toggle / delete) avec mise à jour optimiste.
  * Le backend émet `todos:changed` après écriture : `useTodosSync` se charge
@@ -98,16 +105,36 @@ export function useTodoMutations() {
   };
 
   const deleteTodo = async (id: string): Promise<void> => {
+    const all = (cache.get(SWR_KEYS.ALL_TODOS)?.data as Todo[] | undefined) ?? [];
+    const removed = all.find((t) => t.id === id) ?? null;
+
     patchCaches((todos) => todos.filter((todo) => todo.id !== id));
 
-    try {
-      await todosApi.remove(id);
-      toast.success("Tâche supprimée");
-    } catch (error) {
-      toast.error("Erreur lors de la suppression");
-      await revalidate();
-      throw error;
-    }
+    const commit = async () => {
+      pendingDeletes.delete(id);
+      try {
+        await todosApi.remove(id);
+      } catch {
+        toast.error("Erreur lors de la suppression");
+        await revalidate();
+      }
+    };
+
+    pendingDeletes.set(id, setTimeout(commit, UNDO_DELAY_MS));
+
+    toast("Tâche supprimée", {
+      duration: UNDO_DELAY_MS,
+      action: {
+        label: "Annuler",
+        onClick: () => {
+          const timer = pendingDeletes.get(id);
+          if (!timer) return; // déjà commitée, trop tard pour annuler
+          clearTimeout(timer);
+          pendingDeletes.delete(id);
+          if (removed) patchCaches((todos) => [removed, ...todos]);
+        },
+      },
+    });
   };
 
   const updateTodo = async (

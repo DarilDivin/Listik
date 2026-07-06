@@ -1,6 +1,6 @@
 use crate::models::{
-    CreateNote, CreateTodo, Note, Recurrence, Settings, Todo, TodoStatus, UpdateNote,
-    UpdateSettings, UpdateTodo,
+    CreateNote, CreateSubTask, CreateTodo, Note, Recurrence, Settings, SubTask, Todo, TodoStatus,
+    UpdateNote, UpdateSettings, UpdateSubTask, UpdateTodo,
 };
 use sqlx::sqlite::{SqliteConnectOptions, SqlitePoolOptions};
 use sqlx::{QueryBuilder, Sqlite, SqlitePool};
@@ -46,26 +46,44 @@ pub async fn init_pool(app: &AppHandle) -> Result<SqlitePool, String> {
     Ok(pool)
 }
 
+/// Peuple `sub_tasks` pour chaque tâche (une requête par tâche — volumes
+/// personnels, coût négligeable ; pas de colonne dédiée dans `todos`).
+async fn attach_subtasks(pool: &SqlitePool, mut todos: Vec<Todo>) -> Result<Vec<Todo>, sqlx::Error> {
+    for todo in &mut todos {
+        todo.sub_tasks = list_subtasks(pool, &todo.id).await?;
+    }
+    Ok(todos)
+}
+
 pub async fn list_all(pool: &SqlitePool) -> Result<Vec<Todo>, sqlx::Error> {
     let query = format!("SELECT {SELECT_COLUMNS} FROM todos ORDER BY created_at DESC");
-    sqlx::query_as::<_, Todo>(&query).fetch_all(pool).await
+    let todos = sqlx::query_as::<_, Todo>(&query).fetch_all(pool).await?;
+    attach_subtasks(pool, todos).await
 }
 
 pub async fn list_by_date(pool: &SqlitePool, date: &str) -> Result<Vec<Todo>, sqlx::Error> {
     let query =
         format!("SELECT {SELECT_COLUMNS} FROM todos WHERE scheduled_for = ? ORDER BY created_at DESC");
-    sqlx::query_as::<_, Todo>(&query)
+    let todos = sqlx::query_as::<_, Todo>(&query)
         .bind(date)
         .fetch_all(pool)
-        .await
+        .await?;
+    attach_subtasks(pool, todos).await
 }
 
 pub async fn get(pool: &SqlitePool, id: &str) -> Result<Option<Todo>, sqlx::Error> {
     let query = format!("SELECT {SELECT_COLUMNS} FROM todos WHERE id = ?");
-    sqlx::query_as::<_, Todo>(&query)
+    let todo = sqlx::query_as::<_, Todo>(&query)
         .bind(id)
         .fetch_optional(pool)
-        .await
+        .await?;
+    match todo {
+        Some(mut t) => {
+            t.sub_tasks = list_subtasks(pool, &t.id).await?;
+            Ok(Some(t))
+        }
+        None => Ok(None),
+    }
 }
 
 pub async fn create(pool: &SqlitePool, input: CreateTodo) -> Result<Todo, sqlx::Error> {
@@ -83,6 +101,7 @@ pub async fn create(pool: &SqlitePool, input: CreateTodo) -> Result<Todo, sqlx::
         remind_at: input.remind_at,
         created_at: now.clone(),
         updated_at: now,
+        sub_tasks: Vec::new(),
     };
 
     sqlx::query(
@@ -199,6 +218,10 @@ pub async fn toggle(pool: &SqlitePool, id: &str) -> Result<Todo, sqlx::Error> {
 }
 
 pub async fn delete(pool: &SqlitePool, id: &str) -> Result<(), sqlx::Error> {
+    sqlx::query("DELETE FROM sub_tasks WHERE todo_id = ?")
+        .bind(id)
+        .execute(pool)
+        .await?;
     sqlx::query("DELETE FROM todos WHERE id = ?")
         .bind(id)
         .execute(pool)
@@ -227,6 +250,105 @@ pub async fn mark_reminded(pool: &SqlitePool, id: &str) -> Result<(), sqlx::Erro
         .bind(id)
         .execute(pool)
         .await?;
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// Sous-tâches (checklist à un niveau)
+// ---------------------------------------------------------------------------
+
+const SUBTASK_COLUMNS: &str = "id, todo_id, text, done, position, created_at";
+
+pub async fn list_subtasks(pool: &SqlitePool, todo_id: &str) -> Result<Vec<SubTask>, sqlx::Error> {
+    let query = format!("SELECT {SUBTASK_COLUMNS} FROM sub_tasks WHERE todo_id = ? ORDER BY position ASC");
+    sqlx::query_as::<_, SubTask>(&query)
+        .bind(todo_id)
+        .fetch_all(pool)
+        .await
+}
+
+/// Contenu modifié → à ré-indexer côté sidecar (le texte de la tâche indexé
+/// inclut ses sous-tâches, voir `todos_needing_embedding`).
+async fn flag_parent_needs_embedding(pool: &SqlitePool, todo_id: &str) -> Result<(), sqlx::Error> {
+    sqlx::query("UPDATE todos SET needs_embedding = 1 WHERE id = ?")
+        .bind(todo_id)
+        .execute(pool)
+        .await?;
+    Ok(())
+}
+
+pub async fn create_subtask(pool: &SqlitePool, input: CreateSubTask) -> Result<SubTask, sqlx::Error> {
+    let (max_position,): (Option<i64>,) =
+        sqlx::query_as("SELECT MAX(position) FROM sub_tasks WHERE todo_id = ?")
+            .bind(&input.todo_id)
+            .fetch_one(pool)
+            .await?;
+
+    let sub = SubTask {
+        id: Uuid::new_v4().to_string(),
+        todo_id: input.todo_id,
+        text: input.text,
+        done: false,
+        position: max_position.map(|p| p + 1).unwrap_or(0),
+        created_at: now_iso(),
+    };
+
+    sqlx::query(
+        "INSERT INTO sub_tasks (id, todo_id, text, done, position, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+    )
+    .bind(&sub.id)
+    .bind(&sub.todo_id)
+    .bind(&sub.text)
+    .bind(sub.done)
+    .bind(sub.position)
+    .bind(&sub.created_at)
+    .execute(pool)
+    .await?;
+
+    flag_parent_needs_embedding(pool, &sub.todo_id).await?;
+    Ok(sub)
+}
+
+pub async fn update_subtask(
+    pool: &SqlitePool,
+    id: &str,
+    input: UpdateSubTask,
+) -> Result<SubTask, sqlx::Error> {
+    let mut qb: QueryBuilder<Sqlite> = QueryBuilder::new("UPDATE sub_tasks SET ");
+    let mut sep = qb.separated(", ");
+    if let Some(text) = input.text {
+        sep.push("text = ").push_bind_unseparated(text);
+    }
+    if let Some(done) = input.done {
+        sep.push("done = ").push_bind_unseparated(done);
+    }
+    qb.push(" WHERE id = ").push_bind(id);
+    qb.build().execute(pool).await?;
+
+    let query = format!("SELECT {SUBTASK_COLUMNS} FROM sub_tasks WHERE id = ?");
+    let sub = sqlx::query_as::<_, SubTask>(&query)
+        .bind(id)
+        .fetch_one(pool)
+        .await?;
+
+    flag_parent_needs_embedding(pool, &sub.todo_id).await?;
+    Ok(sub)
+}
+
+pub async fn delete_subtask(pool: &SqlitePool, id: &str) -> Result<(), sqlx::Error> {
+    let todo_id: Option<(String,)> = sqlx::query_as("SELECT todo_id FROM sub_tasks WHERE id = ?")
+        .bind(id)
+        .fetch_optional(pool)
+        .await?;
+
+    sqlx::query("DELETE FROM sub_tasks WHERE id = ?")
+        .bind(id)
+        .execute(pool)
+        .await?;
+
+    if let Some((todo_id,)) = todo_id {
+        flag_parent_needs_embedding(pool, &todo_id).await?;
+    }
     Ok(())
 }
 
@@ -275,8 +397,9 @@ pub async fn clear_pending_deindex(pool: &SqlitePool, id: &str) -> Result<(), sq
     Ok(())
 }
 
-/// Tâches à (ré)indexer. Texte envoyé = titre + note éventuelle (une seule
-/// chaîne, comme cherché sémantiquement d'un bloc).
+/// Tâches à (ré)indexer. Texte envoyé = titre + note + sous-tâches éventuelles
+/// (une seule chaîne, comme cherché sémantiquement d'un bloc — une liste de
+/// courses doit être trouvable par ses éléments).
 pub async fn todos_needing_embedding(
     pool: &SqlitePool,
     limit: i64,
@@ -287,16 +410,20 @@ pub async fn todos_needing_embedding(
             .fetch_all(pool)
             .await?;
 
-    Ok(rows
-        .into_iter()
-        .map(|(id, text, note)| {
-            let text = match note {
-                Some(n) if !n.is_empty() => format!("{text}\n{n}"),
-                _ => text,
-            };
-            EmbeddingItem { id, kind: "task", text }
-        })
-        .collect())
+    let mut items = Vec::with_capacity(rows.len());
+    for (id, text, note) in rows {
+        let mut combined = match note {
+            Some(n) if !n.is_empty() => format!("{text}\n{n}"),
+            _ => text,
+        };
+        let subtasks = list_subtasks(pool, &id).await?;
+        if !subtasks.is_empty() {
+            let checklist: Vec<String> = subtasks.iter().map(|s| format!("- {}", s.text)).collect();
+            combined = format!("{combined}\n{}", checklist.join("\n"));
+        }
+        items.push(EmbeddingItem { id, kind: "task", text: combined });
+    }
+    Ok(items)
 }
 
 /// Redescend le drapeau une fois l'indexation confirmée par le sidecar.

@@ -4,11 +4,11 @@ import { useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { toast } from "sonner";
-import { Sparkles, ListTodo, StickyNote } from "lucide-react";
+import { Sparkles, ListTodo, StickyNote, Trash2 } from "lucide-react";
 import Omnibar from "@/components/Omnibar";
 import { usePlannerTodos } from "@/hooks/usePlannerTodos";
 import { useNotesMutations } from "@/features/notes/useNotesMutations";
-import { aiAgent, type AiSource } from "@/features/omnibar/agent";
+import { aiAgent, type AiChatMessage, type AiSource } from "@/features/omnibar/agent";
 import type { SmartTaskData } from "@/features/todos/useTaskMode";
 
 interface Turn {
@@ -23,10 +23,27 @@ interface Turn {
 const TOOL_LABEL: Record<string, { icon: typeof ListTodo; text: string }> = {
   create_task: { icon: ListTodo, text: "Tâche créée" },
   create_note: { icon: StickyNote, text: "Note enregistrée" },
+  update_task: { icon: ListTodo, text: "Tâche modifiée" },
+  delete_task: { icon: Trash2, text: "Tâche supprimée" },
 };
 
+// Un LLM est sans état : on lui renvoie les derniers échanges à chaque appel
+// pour qu'il résolve les références au contexte ("et demain ?"). Plafonné
+// pour ne pas faire grandir indéfiniment le coût/latence de chaque appel.
+const MAX_HISTORY_TURNS = 6;
+
+function buildHistory(turns: Turn[]): AiChatMessage[] {
+  return turns
+    .filter((t) => t.answer !== undefined && !t.error)
+    .slice(-MAX_HISTORY_TURNS)
+    .flatMap((t): AiChatMessage[] => [
+      { role: "user", content: t.question },
+      { role: "assistant", content: t.answer! },
+    ]);
+}
+
 export default function AssistantPage() {
-  const { createTodoFromSmart, lists } = usePlannerTodos();
+  const { createTodoFromSmart, updateTodo, deleteTodo, lists } = usePlannerTodos();
   const { createNote } = useNotesMutations();
 
   const [turns, setTurns] = useState<Turn[]>([]);
@@ -41,11 +58,29 @@ export default function AssistantPage() {
 
   const handleAsk = async (text: string) => {
     const id = crypto.randomUUID();
+    const history = buildHistory(turns); // avant d'ajouter le tour en cours
     setTurns((prev) => [...prev, { id, question: text }]);
     setPending(true);
     scrollToBottom();
     try {
-      const res = await aiAgent(text);
+      const res = await aiAgent(text, history);
+
+      // L'agent ne fait que RÉSOUDRE (quelle tâche + quels changements) ;
+      // l'exécution passe par les mêmes mutations que l'UI manuelle — annuler
+      // une suppression fonctionne donc aussi pour une suppression par l'agent.
+      if (res.tool === "update_task" && res.task_id && res.task_update) {
+        const u = res.task_update;
+        await updateTodo(res.task_id, {
+          text: u.text ?? undefined,
+          status: u.status ?? undefined,
+          priority: u.priority ?? undefined,
+          due_date: u.due_date ?? undefined,
+          scheduled_for: u.due_date ?? undefined,
+        });
+      } else if (res.tool === "delete_task" && res.task_id) {
+        await deleteTodo(res.task_id);
+      }
+
       setTurns((prev) =>
         prev.map((t) =>
           t.id === id ? { ...t, answer: res.message, tool: res.tool, sources: res.sources } : t,

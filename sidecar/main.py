@@ -174,8 +174,19 @@ def ask(req: AskRequest) -> AskResponse:
 # ---------------------------------------------------------------------------
 
 
+class ChatMessage(BaseModel):
+    role: Literal["user", "assistant"]
+    content: str
+
+
+# Nombre d'échanges passés renvoyés au LLM : au-delà, coût en tokens/latence
+# pour un bénéfice marginal sur la résolution de contexte ("et demain ?").
+MAX_HISTORY_MESSAGES = 12
+
+
 class AgentRequest(BaseModel):
     text: str
+    history: list[ChatMessage] = []
 
 
 class NoteDraft(BaseModel):
@@ -183,14 +194,29 @@ class NoteDraft(BaseModel):
     content: str = ""
 
 
+class TaskUpdate(BaseModel):
+    text: str | None = None
+    status: Literal["pending", "completed"] | None = None
+    priority: Literal["low", "normal", "high"] | None = None
+    due_date: str | None = None
+
+
 class AgentResponse(BaseModel):
     # Outil choisi par le LLM. `create_task`/`create_note` = à exécuter par Rust
-    # (propriétaire de SQLite) ; `answer_question` déjà exécuté ici (RAG).
-    tool: Literal["create_task", "create_note", "answer_question"]
+    # (propriétaire de SQLite) ; `answer_question` déjà résolu ici (RAG).
+    # `update_task`/`delete_task` : la tâche est déjà *retrouvée* ici (task_id),
+    # mais l'exécution réelle se fait côté frontend, pour réutiliser le même
+    # circuit que la suppression manuelle (annulation possible, D3 inclus).
+    tool: Literal[
+        "create_task", "create_note", "answer_question",
+        "update_task", "delete_task", "not_found",
+    ]
     message: str
     task: SmartTaskData | None = None
     note: NoteDraft | None = None
     sources: list[SearchResult] = []
+    task_id: str | None = None
+    update: TaskUpdate | None = None
 
 
 # Description des outils exposés au LLM (schéma JSON des paramètres). Le modèle
@@ -243,7 +269,58 @@ AGENT_TOOLS = [
             },
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "update_task",
+            "description": "Modifier une tâche existante : la marquer faite/à faire, changer sa priorité, sa date, ou son texte.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string", "description": "Description de la tâche à modifier, pour la retrouver (ex. « la tâche du dentiste »)."},
+                    "status": {"type": "string", "enum": ["pending", "completed"], "description": "Nouveau statut, si demandé (ex. « marque comme faite »)."},
+                    "priority": {"type": "string", "enum": ["low", "normal", "high"]},
+                    "due_date": {"type": "string", "description": "Nouvelle date ISO YYYY-MM-DD si mentionnée."},
+                    "text": {"type": "string", "description": "Nouveau texte, si l'utilisateur veut la reformuler."},
+                },
+                "required": ["query"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "delete_task",
+            "description": "Supprimer définitivement une tâche existante.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string", "description": "Description de la tâche à supprimer, pour la retrouver."},
+                },
+                "required": ["query"],
+            },
+        },
+    },
 ]
+
+
+# Distance cosinus (sqlite-vec) : 0 = identique, plus c'est haut, moins c'est
+# proche. Seuil calibré empiriquement : une vraie correspondance tombe sous
+# ~0.65-0.7 ; une requête sans rapport (ex. "vacances au Japon" sans tâche de
+# ce genre) fait quand même remonter un "meilleur" résultat, mais au-delà de
+# 0.8. Mieux vaut ne rien trouver que modifier/supprimer la mauvaise tâche.
+MAX_TASK_MATCH_DISTANCE = 0.7
+
+
+def _find_task(query: str) -> dict | None:
+    """Résout une description en langage naturel vers la tâche la plus proche
+    en sens (recherche sémantique, D2) — rejette si aucune n'est assez proche."""
+    if not query.strip():
+        return None
+    matches = [r for r in vecstore.search(query, k=5) if r["type"] == "task"]
+    if not matches or matches[0]["score"] > MAX_TASK_MATCH_DISTANCE:
+        return None
+    return matches[0]
 
 
 def _run_rag(query: str) -> tuple[str, list[SearchResult]]:
@@ -271,6 +348,11 @@ def _run_rag(query: str) -> tuple[str, list[SearchResult]]:
 @app.post("/agent")
 def agent(req: AgentRequest) -> AgentResponse:
     today = date.today().isoformat()
+    # Historique tronqué : les LLM sont sans état, on doit leur rappeler la
+    # conversation à chaque appel pour qu'ils résolvent "et demain ?", etc.
+    history = [
+        {"role": h.role, "content": h.content} for h in req.history[-MAX_HISTORY_MESSAGES:]
+    ]
     try:
         completion = llm.chat.completions.create(
             model=LLM_MODEL,
@@ -280,9 +362,11 @@ def agent(req: AgentRequest) -> AgentResponse:
                     "content": (
                         f"Tu es l'assistant de Listik (aujourd'hui = {today}). À partir du "
                         "message de l'utilisateur, choisis exactement UN outil : créer une "
-                        "tâche, créer une note, ou répondre à une question sur ses données."
+                        "tâche, créer une note, modifier ou supprimer une tâche existante, "
+                        "ou répondre à une question sur ses données."
                     ),
                 },
+                *history,
                 {"role": "user", "content": req.text},
             ],
             tools=AGENT_TOOLS,
@@ -309,6 +393,29 @@ def agent(req: AgentRequest) -> AgentResponse:
             note = NoteDraft(**args)
             label = note.title or note.content[:40]
             return AgentResponse(tool="create_note", message=f"Note enregistrée : « {label} »", note=note)
+
+        if name in ("update_task", "delete_task"):
+            match = _find_task(args.get("query", ""))
+            if match is None:
+                return AgentResponse(
+                    tool="not_found",
+                    message=f"Je n'ai pas trouvé de tâche correspondant à « {args.get('query', '')} ».",
+                )
+            label = match["text"].splitlines()[0]
+            if name == "delete_task":
+                return AgentResponse(
+                    tool="delete_task", message=f"Tâche supprimée : « {label} »", task_id=match["id"],
+                )
+            update = TaskUpdate(
+                text=args.get("text"),
+                status=args.get("status"),
+                priority=args.get("priority"),
+                due_date=args.get("due_date"),
+            )
+            return AgentResponse(
+                tool="update_task", message=f"Tâche mise à jour : « {label} »",
+                task_id=match["id"], update=update,
+            )
 
         # answer_question
         answer, sources = _run_rag(args.get("query", req.text))

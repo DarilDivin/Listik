@@ -1,12 +1,16 @@
 "use client";
 
+import { useState } from "react";
+import { toast } from "sonner";
 import { Bell, Download, Info, Keyboard, List, Palette, Zap } from "lucide-react";
 import { useSettings } from "@/hooks/useSettings";
 import { ThemeSetting } from "@/components/ThemeSetting";
 import { ToggleSwitch } from "@/components/ToggleSwitch";
 import { TimePicker } from "@/components/ui/time-picker";
+import { Button } from "@/components/ui/button";
 import { SettingsGroup } from "@/components/settings/SettingsGroup";
 import { SettingsRow } from "@/components/settings/SettingsRow";
+import { exportBackup } from "@/features/backup/export";
 
 const APP_VERSION = "0.1.0";
 
@@ -21,6 +25,20 @@ function SoonBadge() {
 
 export default function SettingsPage() {
   const { settings, update } = useSettings();
+  const [exporting, setExporting] = useState(false);
+
+  const handleExport = async () => {
+    setExporting(true);
+    try {
+      const path = await exportBackup();
+      if (path) toast.success("Sauvegarde enregistrée");
+    } catch (e) {
+      console.error("export_backup:", e);
+      toast.error("Échec de la sauvegarde");
+    } finally {
+      setExporting(false);
+    }
+  };
 
   return (
     <div className="relative h-full overflow-y-auto bg-secondary dark:bg-background">
@@ -89,21 +107,25 @@ export default function SettingsPage() {
             </SettingsRow>
           </SettingsGroup>
 
-          <SettingsGroup title="Prévu" index={3}>
+          <SettingsGroup title="Données" index={3}>
+            <SettingsRow
+              label="Sauvegarder mes données"
+              description="Exporte toutes tes tâches et notes dans un fichier JSON."
+              icon={Download}
+              iconClassName="bg-emerald-500/8 text-emerald-600 dark:text-emerald-400"
+            >
+              <Button size="sm" variant="outline" onClick={handleExport} disabled={exporting}>
+                {exporting ? "Export…" : "Exporter"}
+              </Button>
+            </SettingsRow>
+          </SettingsGroup>
+
+          <SettingsGroup title="Prévu" index={4}>
             <SettingsRow
               label="Listes & projets"
               description="Renommer, réordonner et colorer tes listes."
               icon={List}
               iconClassName="bg-sky-500/8 text-sky-600 dark:text-sky-400"
-              dimmed
-            >
-              <SoonBadge />
-            </SettingsRow>
-            <SettingsRow
-              label="Export des données"
-              description="Sauvegarder et restaurer tes tâches."
-              icon={Download}
-              iconClassName="bg-emerald-500/8 text-emerald-600 dark:text-emerald-400"
               dimmed
             >
               <SoonBadge />
@@ -119,7 +141,7 @@ export default function SettingsPage() {
             </SettingsRow>
           </SettingsGroup>
 
-          <SettingsGroup title="À propos" index={4}>
+          <SettingsGroup title="À propos" index={5}>
             <SettingsRow
               label="Listik"
               description="Gestionnaire de tâches, épuré."

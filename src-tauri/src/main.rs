@@ -19,6 +19,7 @@ fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_notification::init())
+        .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
             // --- Base de données (accès SQL côté Rust) ---
             let handle = app.handle().clone();
@@ -163,6 +164,11 @@ fn main() {
             commands::ai_ping,
             commands::ai_parse,
             commands::ai_agent,
+            commands::ai_search,
+            commands::export_backup,
+            commands::create_subtask,
+            commands::update_subtask,
+            commands::delete_subtask,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

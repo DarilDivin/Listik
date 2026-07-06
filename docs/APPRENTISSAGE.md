@@ -666,3 +666,34 @@ dans la foulée : la chaîne complète agent → Rust → SQLite → vectorizer 
 
 Reste : **D5** (bonus) — rendre `LLM_BASE_URL`/`LLM_MODEL` pointables vers Ollama local pour une app
 entièrement offline (déjà configurables via `.env`, à valider avec une instance Ollama).
+
+---
+
+## Après D4 — leçon : le seuil de confiance dans une action déclenchée par la recherche
+
+En ajoutant `update_task`/`delete_task` à l'agent (l'IA retrouve la tâche via recherche sémantique
+avant d'agir dessus), un incident réel a montré une faille de conception importante.
+
+**Ce qui s'est passé** : `_find_task()` prenait toujours le "meilleur" résultat renvoyé par
+`/search`, même quand aucun n'avait vraiment de rapport avec la demande. Demander
+*"supprime la tâche des vacances au Japon"* (aucune tâche de ce genre n'existait) a quand même fait
+remonter *une* tâche — la moins mauvaise des mauvaises correspondances — et elle a été supprimée
+pour de vrai (la fenêtre d'annulation de 5s était déjà passée quand l'erreur a été remarquée).
+
+**Pourquoi ça arrive** : une recherche par similarité **renvoie toujours un classement**, même
+quand rien n'est réellement pertinent — elle ne dit jamais "je ne sais pas". La distance entre "le
+meilleur des mauvais résultats" et "un vrai résultat" n'est pas nulle : il faut la mesurer et fixer
+une limite explicite en dessous de laquelle on refuse d'agir.
+
+**Le correctif** : un seuil sur la distance cosinus (`MAX_TASK_MATCH_DISTANCE = 0.7`), calibré en
+comparant des vrais cas (score ~0.55-0.65) à des cas sans rapport (score ~0.8-1.0) sur les données
+réelles du projet — pas une valeur théorique. Au-dessus du seuil, `_find_task` renvoie `None` et
+l'agent répond `tool="not_found"` sans rien exécuter.
+
+**Le principe général (au-delà de ce projet)** : dès qu'une IA peut déclencher une action
+**destructive ou irréversible** à partir d'une résolution approximative (recherche sémantique,
+correspondance floue...), il faut un mécanisme de rejet explicite ("je ne suis pas assez sûr, je ne
+fais rien") — jamais supposer que "le meilleur résultat disponible" est forcément "un résultat
+valable". C'est le même réflexe que la validation Pydantic de D1 (rejeter plutôt que laisser passer
+une donnée qui a l'air correcte mais ne l'est pas), appliqué cette fois à la décision d'agir, pas
+seulement à la donnée reçue.
