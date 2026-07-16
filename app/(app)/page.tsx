@@ -6,6 +6,8 @@ import { toast } from "sonner";
 import { spring } from "@/lib/motion";
 import { usePlannerTodos } from "@/hooks/usePlannerTodos";
 import { useProjects } from "@/hooks/useProjects";
+import { useTags } from "@/hooks/useTags";
+import { TagFilterProvider } from "@/features/tags/tag-filter";
 import { useNotesMutations } from "@/features/notes/useNotesMutations";
 import Omnibar from "@/components/Omnibar";
 import { EmptyState } from "@/components/todo/EmptyState";
@@ -140,21 +142,23 @@ export default function PlannerPage() {
     deleteProject,
     completeProject,
   } = useProjects();
+  const { tags } = useTags();
   const { sectionStyles } = useUIPrefs();
-
-  // Projets actifs proposés au filtre (chips).
-  const projectFilterItems = useMemo(
-    () =>
-      projects
-        .filter((p) => p.status === "active")
-        .map((p) => ({ id: p.id, label: p.name })),
-    [projects],
-  );
 
   // Noms des projets actifs — autocomplétion `#` de l'omnibar.
   const projectNames = useMemo(
-    () => projectFilterItems.map((p) => p.label),
-    [projectFilterItems],
+    () =>
+      projects
+        .filter((p) => p.status === "active")
+        .map((p) => p.name)
+        .sort((a, b) => a.localeCompare(b, "fr")),
+    [projects],
+  );
+
+  // Tags proposés au filtre (chips). Le rattachement, lui, se navigue au rail.
+  const tagFilterItems = useMemo(
+    () => tags.map((t) => ({ id: t.id, label: t.name })),
+    [tags],
   );
 
   // Progression d'un projet (anneaux du rail et de la vue domaine).
@@ -168,7 +172,7 @@ export default function PlannerPage() {
     kind: "view",
     view: "today",
   });
-  const [listFilter, setListFilter] = useState<string | null>(null);
+  const [tagFilter, setTagFilter] = useState<string | null>(null);
   const [portalKey, setPortalKey] = useState<SectionKey | null>(null);
   // Le clip (overflow-hidden) ne vit que pendant le repli/dépli du chrome :
   // au repos déplié, il est retiré pour que la barre de filtres reste sticky.
@@ -195,10 +199,10 @@ export default function PlannerPage() {
     return toLocalISODate(t);
   }, []);
 
-  // Filtre par projet, routage avec pause, puis regroupement GTD.
+  // Filtre par tag, routage avec pause, puis regroupement GTD.
   const groups: TodoGroups = useMemo(() => {
-    const visible = listFilter
-      ? todos.filter((t) => t.project_id === listFilter)
+    const visible = tagFilter
+      ? todos.filter((t) => t.tags.some((tag) => tag.id === tagFilter))
       : todos;
     const routed = linger.size
       ? visible.map((t) => {
@@ -216,7 +220,7 @@ export default function PlannerPage() {
       }
     }
     return result;
-  }, [todos, listFilter, todayISO, tomorrowISO, linger]);
+  }, [todos, tagFilter, todayISO, tomorrowISO, linger]);
 
   // Compteurs du rail : calculés sur les mêmes données que le contenu — ce qui
   // est compté est exactement ce qui est affiché (filtre de liste compris).
@@ -419,6 +423,7 @@ export default function PlannerPage() {
   const showHero = currentView === "today";
 
   return (
+    <TagFilterProvider onFilterTag={setTagFilter}>
     <div className="relative flex h-full">
       <PlannerRail
         selection={selection}
@@ -514,7 +519,7 @@ export default function PlannerPage() {
                       de la colonne (un sticky ne colle que dans les limites de son
                       parent — il lui faut donc un parent qui contient aussi les
                       sections). Il porte lui-même son repli en portail. */}
-                  {projectFilterItems.length > 0 && (
+                  {tagFilterItems.length > 0 && (
                     <motion.div
                       initial={false}
                       animate={portalSection ? "collapsed" : "open"}
@@ -523,9 +528,9 @@ export default function PlannerPage() {
                     >
                       <div className="px-8 pt-5 pb-3">
                         <ListFilter
-                          items={projectFilterItems}
-                          value={listFilter}
-                          onChange={setListFilter}
+                          items={tagFilterItems}
+                          value={tagFilter}
+                          onChange={setTagFilter}
                         />
                       </div>
                     </motion.div>
@@ -604,5 +609,6 @@ export default function PlannerPage() {
         </div>
       </div>
     </div>
+    </TagFilterProvider>
   );
 }

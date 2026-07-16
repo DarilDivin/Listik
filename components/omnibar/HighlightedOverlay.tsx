@@ -6,17 +6,23 @@ interface HighlightedOverlayProps {
   text: string;
   dateMatch: DateMatch | null;
   listMatch?: DateMatch | null;
+  tagMatches?: DateMatch[];
 }
 
-/** Surligne les fragments détectés (date en bleu, liste `#tag` en violet). */
+/**
+ * Surligne les fragments détectés : date en bleu, projet `#nom` en violet,
+ * tags `@nom` en émeraude. Trois couleurs distinctes = trois natures d'attribut.
+ */
 function HighlightedFragment({
   text,
   dateMatch,
   listMatch,
+  tagMatches,
 }: {
   text: string;
   dateMatch: DateMatch | null;
   listMatch?: DateMatch | null;
+  tagMatches?: DateMatch[];
 }) {
   const ranges: { start: number; end: number; className: string }[] = [];
 
@@ -27,6 +33,12 @@ function HighlightedFragment({
   if (listMatch && text.includes(listMatch.text)) {
     const i = text.indexOf(listMatch.text);
     ranges.push({ start: i, end: i + listMatch.text.length, className: "text-violet-500" });
+  }
+  for (const tag of tagMatches ?? []) {
+    const i = text.indexOf(tag.text);
+    if (i !== -1) {
+      ranges.push({ start: i, end: i + tag.text.length, className: "text-emerald-500" });
+    }
   }
 
   if (ranges.length === 0) return <>{text}</>;
@@ -58,11 +70,19 @@ export function HighlightedOverlay({
   text,
   dateMatch,
   listMatch,
+  tagMatches,
 }: HighlightedOverlayProps) {
   const parts = text.split("//");
 
   if (parts.length <= 1) {
-    return <HighlightedFragment text={text} dateMatch={dateMatch} listMatch={listMatch} />;
+    return (
+      <HighlightedFragment
+        text={text}
+        dateMatch={dateMatch}
+        listMatch={listMatch}
+        tagMatches={tagMatches}
+      />
+    );
   }
 
   const beforeSlash = parts[0];
@@ -71,7 +91,12 @@ export function HighlightedOverlay({
   return (
     <>
       <span className="text-foreground">
-        <HighlightedFragment text={beforeSlash} dateMatch={dateMatch} listMatch={listMatch} />
+        <HighlightedFragment
+          text={beforeSlash}
+          dateMatch={dateMatch}
+          listMatch={listMatch}
+          tagMatches={tagMatches}
+        />
       </span>
       <span className="relative">
         <span className="relative z-10 text-yellow-600 dark:text-yellow-400 font-normal">

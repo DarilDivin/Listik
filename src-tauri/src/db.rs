@@ -48,11 +48,16 @@ pub async fn init_pool(app: &AppHandle) -> Result<SqlitePool, String> {
     Ok(pool)
 }
 
-/// Peuple `sub_tasks` pour chaque tâche (une requête par tâche — volumes
-/// personnels, coût négligeable ; pas de colonne dédiée dans `todos`).
-async fn attach_subtasks(pool: &SqlitePool, mut todos: Vec<Todo>) -> Result<Vec<Todo>, sqlx::Error> {
+/// Peuple les relations hors-colonnes (`sub_tasks`, `tags`) de chaque tâche —
+/// une requête par tâche et par relation (volumes personnels, coût négligeable).
+///
+/// Point de passage UNIQUE : toute lecture de `Todo` doit passer par ici, sinon
+/// on renvoie des relations vides selon le chemin emprunté. C'est pourquoi `get`
+/// l'appelle aussi, sur un vecteur d'un seul élément.
+async fn attach_relations(pool: &SqlitePool, mut todos: Vec<Todo>) -> Result<Vec<Todo>, sqlx::Error> {
     for todo in &mut todos {
         todo.sub_tasks = list_subtasks(pool, &todo.id).await?;
+        todo.tags = list_todo_tags(pool, &todo.id).await?;
     }
     Ok(todos)
 }
@@ -60,7 +65,7 @@ async fn attach_subtasks(pool: &SqlitePool, mut todos: Vec<Todo>) -> Result<Vec<
 pub async fn list_all(pool: &SqlitePool) -> Result<Vec<Todo>, sqlx::Error> {
     let query = format!("SELECT {SELECT_COLUMNS} FROM todos ORDER BY created_at DESC");
     let todos = sqlx::query_as::<_, Todo>(&query).fetch_all(pool).await?;
-    attach_subtasks(pool, todos).await
+    attach_relations(pool, todos).await
 }
 
 pub async fn list_by_date(pool: &SqlitePool, date: &str) -> Result<Vec<Todo>, sqlx::Error> {
@@ -70,7 +75,7 @@ pub async fn list_by_date(pool: &SqlitePool, date: &str) -> Result<Vec<Todo>, sq
         .bind(date)
         .fetch_all(pool)
         .await?;
-    attach_subtasks(pool, todos).await
+    attach_relations(pool, todos).await
 }
 
 pub async fn get(pool: &SqlitePool, id: &str) -> Result<Option<Todo>, sqlx::Error> {
@@ -80,10 +85,9 @@ pub async fn get(pool: &SqlitePool, id: &str) -> Result<Option<Todo>, sqlx::Erro
         .fetch_optional(pool)
         .await?;
     match todo {
-        Some(mut t) => {
-            t.sub_tasks = list_subtasks(pool, &t.id).await?;
-            Ok(Some(t))
-        }
+        // Passe par le helper commun plutôt que de ré-attacher à la main :
+        // sinon ce chemin oublierait chaque nouvelle relation.
+        Some(t) => Ok(attach_relations(pool, vec![t]).await?.into_iter().next()),
         None => Ok(None),
     }
 }
@@ -109,6 +113,9 @@ pub async fn create(pool: &SqlitePool, input: CreateTodo) -> Result<Todo, sqlx::
         created_at: now.clone(),
         updated_at: now,
         sub_tasks: Vec::new(),
+        // Rien ne peut être lié à la création : les tags passent par
+        // `set_todo_tags`, seul écrivain de `task_tags`.
+        tags: Vec::new(),
     };
 
     sqlx::query(
@@ -435,9 +442,9 @@ pub async fn clear_pending_deindex(pool: &SqlitePool, id: &str) -> Result<(), sq
     Ok(())
 }
 
-/// Tâches à (ré)indexer. Texte envoyé = titre + note + sous-tâches éventuelles
+/// Tâches à (ré)indexer. Texte envoyé = titre + note + sous-tâches + tags
 /// (une seule chaîne, comme cherché sémantiquement d'un bloc — une liste de
-/// courses doit être trouvable par ses éléments).
+/// courses doit être trouvable par ses éléments, une tâche par son contexte).
 pub async fn todos_needing_embedding(
     pool: &SqlitePool,
     limit: i64,
@@ -458,6 +465,11 @@ pub async fn todos_needing_embedding(
         if !subtasks.is_empty() {
             let checklist: Vec<String> = subtasks.iter().map(|s| format!("- {}", s.text)).collect();
             combined = format!("{combined}\n{}", checklist.join("\n"));
+        }
+        let tags = list_todo_tags(pool, &id).await?;
+        if !tags.is_empty() {
+            let names: Vec<&str> = tags.iter().map(|t| t.name.as_str()).collect();
+            combined = format!("{combined}\n{}", names.join(", "));
         }
         items.push(EmbeddingItem { id, kind: "task", text: combined });
     }
@@ -981,6 +993,27 @@ pub async fn create_tag(pool: &SqlitePool, input: CreateTag) -> Result<Tag, sqlx
     Ok(tag)
 }
 
+/// Marque toutes les tâches portant ce tag comme à ré-indexer.
+///
+/// Un tag est **dénormalisé** dans le payload `Todo` ET dans son texte
+/// d'embedding : renommer ou supprimer un tag change donc l'indexation de
+/// CHAQUE tâche qui le porte. Sans ça, la recherche sémantique répondrait
+/// encore sur l'ancien nom — une panne silencieuse, découverte des semaines
+/// plus tard. (Contrairement aux sous-tâches, qui n'affectent qu'un parent.)
+async fn flag_tagged_todos_need_embedding(
+    pool: &SqlitePool,
+    tag_id: &str,
+) -> Result<(), sqlx::Error> {
+    sqlx::query(
+        "UPDATE todos SET needs_embedding = 1 \
+         WHERE id IN (SELECT todo_id FROM task_tags WHERE tag_id = ?)",
+    )
+    .bind(tag_id)
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
 pub async fn update_tag(pool: &SqlitePool, id: &str, input: UpdateTag) -> Result<Tag, sqlx::Error> {
     if let Some(name) = input.name {
         sqlx::query("UPDATE tags SET name = ? WHERE id = ?")
@@ -988,6 +1021,8 @@ pub async fn update_tag(pool: &SqlitePool, id: &str, input: UpdateTag) -> Result
             .bind(id)
             .execute(pool)
             .await?;
+        // Le nom est indexé avec chaque tâche portant ce tag.
+        flag_tagged_todos_need_embedding(pool, id).await?;
     }
     sqlx::query_as::<_, Tag>(&format!("SELECT {TAG_COLUMNS} FROM tags WHERE id = ?"))
         .bind(id)
@@ -997,6 +1032,9 @@ pub async fn update_tag(pool: &SqlitePool, id: &str, input: UpdateTag) -> Result
 
 /// Supprime un tag et ses liaisons (pas de cascade dans ce schéma).
 pub async fn delete_tag(pool: &SqlitePool, id: &str) -> Result<(), sqlx::Error> {
+    // AVANT de purger les liaisons : après, la liste des tâches concernées
+    // n'existe plus et on ne saurait plus lesquelles ré-indexer.
+    flag_tagged_todos_need_embedding(pool, id).await?;
     sqlx::query("DELETE FROM task_tags WHERE tag_id = ?")
         .bind(id)
         .execute(pool)
@@ -1008,14 +1046,67 @@ pub async fn delete_tag(pool: &SqlitePool, id: &str) -> Result<(), sqlx::Error> 
     Ok(())
 }
 
+// ---------------------------------------------------------------------------
+// Liaison tâche ↔ tags
+// ---------------------------------------------------------------------------
+
+/// Tags d'une tâche, triés par nom (ordre d'affichage stable).
+pub async fn list_todo_tags(pool: &SqlitePool, todo_id: &str) -> Result<Vec<Tag>, sqlx::Error> {
+    sqlx::query_as::<_, Tag>(
+        "SELECT t.id, t.name, t.parent_id, t.created_at FROM tags t \
+         JOIN task_tags tt ON tt.tag_id = t.id \
+         WHERE tt.todo_id = ? ORDER BY t.name COLLATE NOCASE ASC",
+    )
+    .bind(todo_id)
+    .fetch_all(pool)
+    .await
+}
+
+/// Remplace l'intégralité des tags d'une tâche (sémantique « replace-all »,
+/// alignée sur une multi-sélection). En transaction : une lecture concurrente
+/// ne doit jamais voir l'état intermédiaire vide.
+pub async fn set_todo_tags(
+    pool: &SqlitePool,
+    todo_id: &str,
+    tag_ids: &[String],
+) -> Result<Todo, sqlx::Error> {
+    let mut tx = pool.begin().await?;
+
+    sqlx::query("DELETE FROM task_tags WHERE todo_id = ?")
+        .bind(todo_id)
+        .execute(&mut *tx)
+        .await?;
+
+    for tag_id in tag_ids {
+        // OR IGNORE : un id dupliqué dans la charge utile violerait la clé
+        // primaire composite et ferait échouer tout l'appel.
+        sqlx::query("INSERT OR IGNORE INTO task_tags (todo_id, tag_id) VALUES (?, ?)")
+            .bind(todo_id)
+            .bind(tag_id)
+            .execute(&mut *tx)
+            .await?;
+    }
+
+    // Les tags font partie du texte indexé → à ré-indexer.
+    sqlx::query("UPDATE todos SET needs_embedding = 1, updated_at = ? WHERE id = ?")
+        .bind(now_iso())
+        .bind(todo_id)
+        .execute(&mut *tx)
+        .await?;
+
+    tx.commit().await?;
+    get(pool, todo_id).await?.ok_or(sqlx::Error::RowNotFound)
+}
+
 #[cfg(test)]
 mod tests {
     use super::{
         create, create_area, create_note, create_project, create_tag, delete, delete_area,
-        delete_note, delete_project, delete_tag, due_reminders, get_settings, list_all, list_areas,
-        list_by_date, list_notes, list_projects, list_tags, mark_reminded,
-        reconcile_lists_into_projects, search_notes, take_due_digest, toggle, update, update_area,
-        update_note, update_project, update_settings, update_tag,
+        delete_note, delete_project, delete_tag, due_reminders, get, get_settings, list_all,
+        list_areas, list_by_date, list_notes, list_projects, list_tags, mark_reminded,
+        reconcile_lists_into_projects, search_notes, set_todo_tags, take_due_digest,
+        todos_needing_embedding, toggle, update, update_area, update_note, update_project,
+        update_settings, update_tag,
     };
     use crate::models::{
         CreateArea, CreateNote, CreateProject, CreateTag, CreateTodo, TodoStatus, UpdateArea,
@@ -1557,6 +1648,151 @@ mod tests {
         let all = list_all(&pool).await.unwrap();
         assert_eq!(all.len(), 1, "la tâche ne doit pas être supprimée");
         assert_eq!(all[0].area_id, None);
+    }
+
+    /// Lit le drapeau interne d'indexation (hors `SELECT_COLUMNS`).
+    async fn needs_embedding(pool: &SqlitePool, id: &str) -> bool {
+        let (flag,): (i64,) = sqlx::query_as("SELECT needs_embedding FROM todos WHERE id = ?")
+            .bind(id)
+            .fetch_one(pool)
+            .await
+            .unwrap();
+        flag == 1
+    }
+
+    async fn clear_embedding_flags(pool: &SqlitePool) {
+        sqlx::query("UPDATE todos SET needs_embedding = 0")
+            .execute(pool)
+            .await
+            .unwrap();
+    }
+
+    #[tokio::test]
+    async fn set_todo_tags_replaces_the_whole_set_and_tolerates_duplicates() {
+        let pool = memory_pool().await;
+        let todo = create(&pool, new_todo("Appeler le plombier")).await.unwrap();
+        let urgent = create_tag(&pool, CreateTag { name: "urgent".into(), parent_id: None })
+            .await
+            .unwrap();
+        let maison = create_tag(&pool, CreateTag { name: "maison".into(), parent_id: None })
+            .await
+            .unwrap();
+
+        // Doublon dans la charge utile : ne doit PAS violer la clé composite.
+        let updated = set_todo_tags(
+            &pool,
+            &todo.id,
+            &[urgent.id.clone(), maison.id.clone(), urgent.id.clone()],
+        )
+        .await
+        .unwrap();
+        // Triés par nom.
+        assert_eq!(
+            updated.tags.iter().map(|t| t.name.as_str()).collect::<Vec<_>>(),
+            ["maison", "urgent"]
+        );
+
+        // Replace-all : ne conserve que ce qui est fourni.
+        let updated = set_todo_tags(&pool, &todo.id, &[maison.id.clone()]).await.unwrap();
+        assert_eq!(
+            updated.tags.iter().map(|t| t.name.as_str()).collect::<Vec<_>>(),
+            ["maison"]
+        );
+
+        // Ensemble vide : retire tout.
+        let updated = set_todo_tags(&pool, &todo.id, &[]).await.unwrap();
+        assert!(updated.tags.is_empty());
+    }
+
+    #[tokio::test]
+    async fn tags_are_attached_on_every_read_path() {
+        let pool = memory_pool().await;
+        let todo = create(&pool, new_todo("X")).await.unwrap();
+        let tag = create_tag(&pool, CreateTag { name: "ctx".into(), parent_id: None })
+            .await
+            .unwrap();
+        set_todo_tags(&pool, &todo.id, &[tag.id.clone()]).await.unwrap();
+
+        // `get` inlinait autrefois l'attache : il doit passer par le helper commun.
+        assert_eq!(get(&pool, &todo.id).await.unwrap().unwrap().tags.len(), 1);
+        assert_eq!(list_all(&pool).await.unwrap()[0].tags.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn renaming_a_tag_reindexes_every_task_that_carries_it() {
+        let pool = memory_pool().await;
+        let a = create(&pool, new_todo("A")).await.unwrap();
+        let b = create(&pool, new_todo("B")).await.unwrap();
+        let c = create(&pool, new_todo("C")).await.unwrap();
+        let tag = create_tag(&pool, CreateTag { name: "boulot".into(), parent_id: None })
+            .await
+            .unwrap();
+        set_todo_tags(&pool, &a.id, &[tag.id.clone()]).await.unwrap();
+        set_todo_tags(&pool, &b.id, &[tag.id.clone()]).await.unwrap();
+        clear_embedding_flags(&pool).await;
+
+        update_tag(&pool, &tag.id, UpdateTag { name: Some("travail".into()) })
+            .await
+            .unwrap();
+
+        // Le nom du tag fait partie du texte indexé de chaque tâche porteuse.
+        assert!(needs_embedding(&pool, &a.id).await);
+        assert!(needs_embedding(&pool, &b.id).await);
+        // Celle qui ne porte pas le tag n'est pas touchée.
+        assert!(!needs_embedding(&pool, &c.id).await);
+    }
+
+    #[tokio::test]
+    async fn deleting_a_tag_reindexes_its_tasks_before_dropping_the_links() {
+        let pool = memory_pool().await;
+        let a = create(&pool, new_todo("A")).await.unwrap();
+        let tag = create_tag(&pool, CreateTag { name: "obsolete".into(), parent_id: None })
+            .await
+            .unwrap();
+        set_todo_tags(&pool, &a.id, &[tag.id.clone()]).await.unwrap();
+        clear_embedding_flags(&pool).await;
+
+        delete_tag(&pool, &tag.id).await.unwrap();
+
+        // Si on purgeait `task_tags` d'abord, on ne saurait plus qui ré-indexer.
+        assert!(needs_embedding(&pool, &a.id).await);
+        assert!(get(&pool, &a.id).await.unwrap().unwrap().tags.is_empty());
+        assert!(list_tags(&pool).await.unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn embedding_text_includes_tag_names() {
+        let pool = memory_pool().await;
+        let todo = create(&pool, new_todo("Appeler Jean")).await.unwrap();
+        let tag = create_tag(&pool, CreateTag { name: "téléphone".into(), parent_id: None })
+            .await
+            .unwrap();
+        set_todo_tags(&pool, &todo.id, &[tag.id]).await.unwrap();
+
+        let items = todos_needing_embedding(&pool, 10).await.unwrap();
+        let item = items.iter().find(|i| i.id == todo.id).unwrap();
+        assert!(item.text.contains("Appeler Jean"));
+        assert!(item.text.contains("téléphone"), "texte indexé: {}", item.text);
+    }
+
+    #[tokio::test]
+    async fn deleting_a_todo_drops_its_tag_links() {
+        let pool = memory_pool().await;
+        let todo = create(&pool, new_todo("X")).await.unwrap();
+        let tag = create_tag(&pool, CreateTag { name: "t".into(), parent_id: None })
+            .await
+            .unwrap();
+        set_todo_tags(&pool, &todo.id, &[tag.id.clone()]).await.unwrap();
+
+        delete(&pool, &todo.id).await.unwrap();
+
+        // Le tag survit, la liaison non.
+        assert_eq!(list_tags(&pool).await.unwrap().len(), 1);
+        let (links,): (i64,) = sqlx::query_as("SELECT COUNT(*) FROM task_tags")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(links, 0);
     }
 
     #[tokio::test]

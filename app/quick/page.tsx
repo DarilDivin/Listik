@@ -8,6 +8,7 @@ import { useTodosSync } from "@/features/todos/useTodosSync";
 import { useTodoMutations } from "@/features/todos/useTodoMutations";
 import { useNotesMutations } from "@/features/notes/useNotesMutations";
 import { useProjects } from "@/hooks/useProjects";
+import { useTags } from "@/hooks/useTags";
 import { todayLocalISODate, toLocalISODate } from "@/lib/date";
 import type { SmartTaskData } from "@/features/todos/useTaskMode";
 
@@ -38,6 +39,7 @@ export default function QuickPage() {
   const { createTodo } = useTodoMutations();
   const { createNote } = useNotesMutations();
   const { projects, createProject } = useProjects();
+  const { resolveTagNames, setTodoTags } = useTags();
   // Noms des projets actifs pour l'autocomplétion `#` — vient de la table
   // `projects`, plus d'un scan des chaînes `todos.list` (colonne héritée).
   const lists = useMemo(
@@ -178,7 +180,7 @@ export default function QuickPage() {
         projectId = existing ? existing.id : (await createProject({ name })).id;
       }
 
-      await createTodo({
+      const todo = await createTodo({
         text: data.text,
         note: data.note ?? null,
         priority: data.priority ?? "normal",
@@ -186,9 +188,17 @@ export default function QuickPage() {
         due_date: due,
         project_id: projectId,
       });
+
+      // Les `@tag` se posent après la création (set_todo_tags reste le seul
+      // écrivain de task_tags) — sinon ils seraient perdus depuis Alt+Q.
+      if (data.tags?.length) {
+        const ids = await resolveTagNames(data.tags);
+        if (ids.length) await setTodoTags(todo.id, ids);
+      }
+
       hide();
     },
-    [createTodo, createProject, projects, hide],
+    [createTodo, createProject, projects, resolveTagNames, setTodoTags, hide],
   );
 
   const handleSubmitNote = useCallback(

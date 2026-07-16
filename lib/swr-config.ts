@@ -9,5 +9,6 @@ export const SWR_KEYS = {
   ALL_NOTES: "notes/all",
   ALL_PROJECTS: "projects/all",
   ALL_AREAS: "projects/areas",
+  ALL_TAGS: "tags/all",
   SETTINGS: "settings",
 } as const;

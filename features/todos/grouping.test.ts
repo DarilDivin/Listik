@@ -31,6 +31,7 @@ function todo(partial: Partial<Todo> & { id: string }): Todo {
     created_at: partial.created_at ?? "2026-06-01T00:00:00.000Z",
     updated_at: partial.updated_at ?? "2026-06-01T00:00:00.000Z",
     sub_tasks: partial.sub_tasks ?? [],
+    tags: partial.tags ?? [],
   };
 }
 

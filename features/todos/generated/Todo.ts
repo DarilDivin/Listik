@@ -2,6 +2,7 @@
 import type { Priority } from "./Priority";
 import type { Recurrence } from "./Recurrence";
 import type { SubTask } from "./SubTask";
+import type { Tag } from "../../tags/generated/Tag";
 import type { TodoStatus } from "./TodoStatus";
 
 export type Todo = { id: string, text: string, note: string | null, list: string | null, status: TodoStatus, priority: Priority, recurrence: Recurrence, scheduled_for: string | null, due_date: string | null, 
@@ -34,6 +35,11 @@ someday: boolean, created_at: string, updated_at: string,
 /**
  * Checklist à un niveau. Absent des colonnes SQL de `todos` (`#[sqlx(skip)]`
  * → jamais lu depuis la row, `Default::default()`) : peuplé séparément par
- * `db::attach_subtasks`.
+ * `db::attach_relations`.
  */
-sub_tasks: Array<SubTask>, };
+sub_tasks: Array<SubTask>, 
+/**
+ * Tags de la tâche (liaison M-N `task_tags`). Même mécanique que
+ * `sub_tasks` : hors colonnes SQL, peuplé par `db::attach_relations`.
+ */
+tags: Array<Tag>, };

@@ -6,6 +6,7 @@ import { useTodoMutations } from "@/features/todos/useTodoMutations";
 import { useTodosSync } from "@/features/todos/useTodosSync";
 import { sortTodos } from "@/features/todos/sort";
 import { useProjects } from "@/hooks/useProjects";
+import { useTags } from "@/hooks/useTags";
 import type { CreateTodoInput, Priority, TodoStatus } from "@/features/todos/types";
 import type { SmartTaskData } from "@/features/todos/useTaskMode";
 import { SWR_KEYS } from "@/lib/swr-config";
@@ -14,6 +15,7 @@ import { todayLocalISODate, toLocalISODate } from "@/lib/date";
 export const usePlannerTodos = () => {
   useTodosSync();
   const { projects, createProject } = useProjects();
+  const { resolveTagNames, setTodoTags } = useTags();
 
   const {
     data: rawTodos = [],
@@ -75,6 +77,14 @@ export const usePlannerTodos = () => {
       ...(projectId ? { project_id: projectId, area_id: null } : {}),
     };
     const result = await createTodo(payload);
+
+    // Les tags se posent APRÈS la création : `set_todo_tags` reste le seul
+    // écrivain de `task_tags` (une seule sémantique, un seul endroit à tester).
+    if (taskData.tags?.length) {
+      const ids = await resolveTagNames(taskData.tags);
+      if (ids.length) await setTodoTags(result.id, ids);
+    }
+
     // Une tâche sans date n'est pas « planifiée » : elle est capturée, à trier.
     toast.success(
       payload.scheduled_for ? "Tâche planifiée" : "Tâche capturée",

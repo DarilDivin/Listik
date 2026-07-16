@@ -26,6 +26,51 @@ export function stripListFromText(task: string): string {
   return task.replace(LIST_REGEX, "").replace(/\s{2,}/g, " ").trim();
 }
 
+// Tags : `@nom`, plusieurs par saisie.
+//
+// Le `(?:^|\s)` en tête n'est PAS cosmétique : sans lui, « envoyer un mail à
+// jean@example.com » créerait un tag « example ». Contrairement à `#`, le `@`
+// apparaît couramment au milieu d'un mot. Drapeau `g` : `#` désigne un projet
+// (un seul), les tags sont multiples par nature.
+const TAG_REGEX = /(?:^|\s)@([\p{L}\p{N}_-]+)/gu;
+
+/**
+ * Détecte les tags `@nom` (avant la note `//`) avec leur position — pour le
+ * surlignage. Dédoublonnés à la casse près : la 1re graphie l'emporte.
+ */
+export function detectTagMatchesFromText(
+  task: string,
+): { name: string; match: DateMatch }[] {
+  const beforeNote = task.split("//")[0];
+  const seen = new Map<string, { name: string; match: DateMatch }>();
+  for (const m of beforeNote.matchAll(TAG_REGEX)) {
+    const name = m[1];
+    const key = name.toLowerCase();
+    if (seen.has(key)) continue;
+    // `m[0]` peut inclure l'espace de tête (`(?:^|\s)`) : on recale l'index sur
+    // le `@` lui-même, sinon le surlignage déborderait sur le mot précédent.
+    const text = `@${name}`;
+    seen.set(key, {
+      name,
+      match: { index: m.index + (m[0].length - text.length), text },
+    });
+  }
+  return [...seen.values()];
+}
+
+/** Détecte les tags écrits `@nom` (avant la note `//`), dédoublonnés (NOCASE). */
+export function detectTagsFromText(task: string): string[] {
+  return detectTagMatchesFromText(task).map((t) => t.name);
+}
+
+/** Retire les tags `@nom` du texte (et normalise les espaces). */
+export function stripTagsFromText(task: string): string {
+  return task
+    .replace(TAG_REGEX, " ")
+    .replace(/\s{2,}/g, " ")
+    .trim();
+}
+
 /** Détecte une date dans le texte (français, dates futures privilégiées). */
 export function parseTaskDate(task: string): { date: Date; match: DateMatch } | null {
   const results = chrono.fr.parse(task, new Date(), { forwardDate: true });

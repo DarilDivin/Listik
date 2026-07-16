@@ -53,6 +53,8 @@ export function useTodoMutations() {
       created_at: now,
       updated_at: now,
       sub_tasks: [],
+      // Rien n'est lié à la création : les tags passent par `set_todo_tags`.
+      tags: [],
     };
 
     mutate<Todo[]>(SWR_KEYS.ALL_TODOS, (current = []) => [optimistic, ...current], false);

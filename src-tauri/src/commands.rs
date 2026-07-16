@@ -567,7 +567,26 @@ pub async fn update_tag(
         .await
         .map_err(|e| e.to_string())?;
     notify_tags_changed(&app);
+    // Les tags sont dénormalisés dans chaque `Todo` : un renommage périme les
+    // pastilles de toutes les tâches porteuses. Sans cet événement, elles
+    // afficheraient l'ancien nom jusqu'à une mutation sans rapport.
+    notify_changed(&app);
     Ok(tag)
+}
+
+/// Remplace l'intégralité des tags d'une tâche (sémantique « replace-all »).
+#[tauri::command]
+pub async fn set_todo_tags(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    id: String,
+    tag_ids: Vec<String>,
+) -> Result<Todo, String> {
+    let todo = db::set_todo_tags(&state.pool, &id, &tag_ids)
+        .await
+        .map_err(|e| e.to_string())?;
+    notify_changed(&app);
+    Ok(todo)
 }
 
 #[tauri::command]
@@ -580,7 +599,7 @@ pub async fn delete_tag(
         .await
         .map_err(|e| e.to_string())?;
     notify_tags_changed(&app);
-    // Des liaisons de tâches ont pu disparaître → revalider aussi les tâches.
+    // Les liaisons ont disparu → les pastilles des tâches porteuses aussi.
     notify_changed(&app);
     Ok(())
 }

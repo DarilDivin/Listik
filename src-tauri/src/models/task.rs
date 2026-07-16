@@ -113,9 +113,13 @@ pub struct Todo {
     pub updated_at: String,
     /// Checklist à un niveau. Absent des colonnes SQL de `todos` (`#[sqlx(skip)]`
     /// → jamais lu depuis la row, `Default::default()`) : peuplé séparément par
-    /// `db::attach_subtasks`.
+    /// `db::attach_relations`.
     #[sqlx(skip)]
     pub sub_tasks: Vec<super::SubTask>,
+    /// Tags de la tâche (liaison M-N `task_tags`). Même mécanique que
+    /// `sub_tasks` : hors colonnes SQL, peuplé par `db::attach_relations`.
+    #[sqlx(skip)]
+    pub tags: Vec<super::Tag>,
 }
 
 // Données d'entrée pour créer une tâche (envoyées par le frontend).

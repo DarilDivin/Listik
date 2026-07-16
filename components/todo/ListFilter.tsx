@@ -5,15 +5,19 @@ import { spring } from "@/lib/motion";
 import { cn } from "@/lib/utils";
 
 interface ListFilterProps {
-  /** Entrées filtrables (projets) : `id` sert de clé, `label` est affiché. */
+  /** Entrées filtrables (tags) : `id` sert de clé, `label` est affiché. */
   items: { id: string; label: string }[];
   value: string | null;
   onChange: (id: string | null) => void;
 }
 
 /**
- * Chips de filtrage par projet (« Tous » + chaque projet). La pastille active
- * glisse entre les chips (layoutId partagé). Masqué si aucun projet.
+ * Chips de filtrage par tag (« Tous » + chaque tag), actif dans toutes les
+ * vues. La pastille active glisse entre les chips (layoutId partagé).
+ *
+ * Il n'y a volontairement qu'UNE dimension de filtre : le rattachement
+ * (domaine/projet) se navigue dans le rail, pas ici. Empiler deux rangées de
+ * chips poserait une question de ET/OU que l'interface ne sait pas exprimer.
  */
 export function ListFilter({ items, value, onChange }: ListFilterProps) {
   if (items.length === 0) return null;
@@ -43,7 +47,7 @@ export function ListFilter({ items, value, onChange }: ListFilterProps) {
           >
             {active && (
               <motion.span
-                layoutId="list-filter-pill"
+                layoutId="tag-filter-pill"
                 aria-hidden
                 className="absolute inset-0 rounded-full bg-brand"
                 transition={spring.snappy}

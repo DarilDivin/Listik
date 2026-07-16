@@ -5,6 +5,7 @@ import { cn } from "@/lib/utils";
 import { recurrenceLabel } from "@/features/todos/recurrence";
 import { TodoDate } from "@/components/todo/TodoDate";
 import { useProjects } from "@/hooks/useProjects";
+import { useTagFilter } from "@/features/tags/tag-filter";
 import type { Todo } from "@/features/todos/types";
 
 /** Étiquette compacte d'un rappel : heure seule si même jour que la tâche. */
@@ -40,6 +41,8 @@ export function TodoMetaLine({
   overdue = false,
   dimmed = false,
 }: TodoMetaLineProps) {
+  // Fourni par le planner ; absent ailleurs (fenêtre quick…) → simples étiquettes.
+  const onFilterTag = useTagFilter();
   // Le nom vient de la table `projects` (SWR partagé : une seule requête pour
   // toutes les lignes). `todo.list` reste un repli d'affichage pour une tâche
   // héritée que la réconciliation n'aurait pas encore convertie.
@@ -49,7 +52,11 @@ export function TodoMetaLine({
 
   const hasDate = showDate && Boolean(todo.scheduled_for);
   const hasAny =
-    hasDate || projectName || todo.recurrence !== "none" || todo.remind_at;
+    hasDate ||
+    projectName ||
+    todo.tags.length > 0 ||
+    todo.recurrence !== "none" ||
+    todo.remind_at;
 
   if (!hasAny) return null;
 
@@ -69,6 +76,34 @@ export function TodoMetaLine({
           {projectName}
         </span>
       )}
+
+      {todo.tags.map((tag) => {
+        const chip =
+          "inline-flex items-center rounded-full bg-foreground/[0.06] px-2 py-0.5 text-[11px] font-medium text-muted-foreground";
+        return onFilterTag ? (
+          <button
+            key={tag.id}
+            type="button"
+            // La ligne entière ouvre le panneau de détail : sans ça, filtrer
+            // par un tag ouvrirait aussi la tâche.
+            onClick={(e) => {
+              e.stopPropagation();
+              onFilterTag(tag.id);
+            }}
+            className={cn(
+              chip,
+              "transition-colors hover:bg-foreground/[0.1] hover:text-foreground",
+              dimmed && "opacity-60",
+            )}
+          >
+            {tag.name}
+          </button>
+        ) : (
+          <span key={tag.id} className={cn(chip, dimmed && "opacity-60")}>
+            {tag.name}
+          </span>
+        );
+      })}
 
       {todo.recurrence !== "none" && (
         <span

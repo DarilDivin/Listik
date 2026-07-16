@@ -11,6 +11,7 @@ interface AutoGrowTextareaProps {
   onEnter: () => void;
   dateMatch: DateMatch | null;
   listMatch?: DateMatch | null;
+  tagMatches?: DateMatch[];
   placeholder?: string;
   autoFocus?: boolean;
   /** Notifie le parent quand la saisie passe sur plusieurs lignes (ou inversement). */
@@ -42,6 +43,7 @@ export function AutoGrowTextarea({
   onEnter,
   dateMatch,
   listMatch,
+  tagMatches,
   placeholder,
   autoFocus,
   onMultilineChange,
@@ -77,7 +79,12 @@ export function AutoGrowTextarea({
     <div className="relative w-full max-sm:min-w-[280px] min-w-[300px]">
       {/* Miroir visible : dicte la taille et l'enroulement. */}
       <div ref={mirrorRef} aria-hidden className={textClasses} style={sharedBox}>
-        <HighlightedOverlay text={value} dateMatch={dateMatch} listMatch={listMatch} />
+        <HighlightedOverlay
+          text={value}
+          dateMatch={dateMatch}
+          listMatch={listMatch}
+          tagMatches={tagMatches}
+        />
       </div>
 
       {/* Textarea transparent superposé : édition + curseur. */}

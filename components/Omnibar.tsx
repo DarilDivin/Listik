@@ -205,6 +205,7 @@ export default function Omnibar({
               onEnter={handleSubmit}
               dateMatch={isTask ? task.dateMatch : null}
               listMatch={isTask ? task.listMatch : null}
+              tagMatches={isTask ? task.tagMatches : undefined}
               placeholder={effectivePlaceholder}
               autoFocus={autoFocus}
               onMultilineChange={setMultiline}

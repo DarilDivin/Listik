@@ -1,13 +1,15 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { BellRing, Calendar, FolderOpen, Repeat, Trash2, X } from "lucide-react";
+import { BellRing, Calendar, FolderOpen, Hash, Repeat, Trash2, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { toLocalISODate, todayLocalISODate } from "@/lib/date";
 import { DatePickerCalendar } from "@/components/date-picker-calendar";
 import { TimePicker } from "@/components/ui/time-picker";
 import { ProjectControl } from "@/components/todo/ProjectControl";
+import { TagControl } from "@/components/todo/TagControl";
 import { useProjects } from "@/hooks/useProjects";
+import { useTags } from "@/hooks/useTags";
 import { Button } from "@/components/ui/button";
 import {
   Popover,
@@ -98,6 +100,7 @@ export function TodoDetailSheet({
   onDelete,
 }: TodoDetailSheetProps) {
   const { projects, areas, createProject } = useProjects();
+  const { tags, createTag, setTodoTags } = useTags();
   const [title, setTitle] = useState(todo.text);
   const [note, setNote] = useState(todo.note ?? "");
   const [dateOpen, setDateOpen] = useState(false);
@@ -257,6 +260,16 @@ export function TodoDetailSheet({
                 // se vide ainsi progressivement, sans migration brutale).
                 onChange={(project_id) => onUpdate({ project_id, list: null })}
                 onCreate={async (name) => (await createProject({ name })).id}
+              />
+            </DetailRow>
+
+            <DetailRow icon={<Hash size={15} />} label="Tags">
+              <TagControl
+                value={todo.tags}
+                tags={tags}
+                modal
+                onChange={(tagIds) => void setTodoTags(todo.id, tagIds)}
+                onCreate={async (name) => (await createTag({ name })).id}
               />
             </DetailRow>
 

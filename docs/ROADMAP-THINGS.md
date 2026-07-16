@@ -258,24 +258,35 @@ progression ; terminer un projet ; renommer/supprimer avec confirmation.
 
 ---
 
-## Phase H — Tags & filtrage
+## Phase H — Tags & filtrage ✅ FAITE
 
 **But** : contexte transverse. Tags **plats** (lean : `parent_id` en base mais pas d'UI d'arbre).
 
-1. **UI tag** : chips mates (`bg-foreground/[0.06] rounded-full`, motif `TodoMetaLine`) dans la
-   ligne et le `Sheet` ; saisie multi-tags avec autocomplétion (réutiliser
-   `features/todos/useListAutocomplete.ts`).
-2. **Filtres dynamiques** : barre de chips filtrables dans n'importe quelle vue (clic sur un tag
-   = filtrer), calquée sur `components/todo/ListFilter.tsx`.
-3. **Capture** : préfixe `#tag` dans l'Omnibar → plusieurs tags (aujourd'hui `#` alimente la
-   liste unique ; le faire pointer vers les tags M-N).
-4. **Quick-find par tag** : les tags deviennent une facette de la recherche (voir L).
+1. **Liaison backend** : `Todo.tags` (`#[sqlx(skip)]`) peuplé par `attach_relations` — helper
+   UNIQUE qui attache sous-tâches ET tags (`db::get` inlinait son attache : piège à oubli).
+   `set_todo_tags` = replace-all en transaction, `INSERT OR IGNORE` (un id dupliqué violerait la
+   clé composite), seul écrivain de `task_tags`.
+2. **Fan-out (le vrai bug du plan initial)** : un tag est dénormalisé dans le payload `Todo` ET
+   dans son texte d'embedding. Renommer/supprimer un tag doit donc marquer `needs_embedding = 1`
+   sur **toutes** les tâches porteuses **et** émettre `todos:changed` (pas seulement
+   `tags:changed`) — sinon embeddings périmés (panne silencieuse) et pastilles périmées (visible).
+   `delete_tag` flague **avant** de purger `task_tags`, sinon la liste des tâches est déjà perdue.
+3. **UI** : `TagControl` (multi-sélection + création inline, `modal`) à côté de `ProjectControl` ;
+   chips dans `TodoMetaLine`, cliquables pour filtrer (`stopPropagation` — la ligne ouvre le
+   panneau) via un **contexte** `TagFilterProvider` (éviter de traverser 6 composants).
+4. **Filtrage** : `ListFilter` devient un filtre par **tag** et remplace le filtre projet — une
+   seule dimension. Le rattachement se navigue au rail ; deux rangées de chips poseraient une
+   question de ET/OU que l'UI ne sait pas exprimer.
+5. **Capture `#projet @tag`** (convention Todoist) : `#` reste le projet — le repointer vers les
+   tags casserait l'habitude construite en G1. Regex tags **globale** et exigeant début/espace
+   avant `@` : sans ça, `jean@example.com` créerait un tag « example ». Tags posés APRÈS création
+   (`set_todo_tags` reste seul écrivain), dans le planner **et** la capture Alt+Q. Surlignage
+   émeraude dans l'overlay (date=bleu, projet=violet, tag=émeraude).
 
-**Tester** : poser plusieurs tags sur une tâche ; filtrer une vue par tag ; `#urgent #maison` à
-la capture crée les deux tags.
+**Reporté** : quick-find par tag → phase L (facette de recherche).
 
-**Fichiers clés** : `components/todo/{TodoMetaLine,ListFilter}.tsx`, `components/Omnibar.tsx`,
-`features/todos/useListAutocomplete.ts`, `features/omnibar/`.
+**Fichiers clés** : `src-tauri/src/db.rs`, `components/todo/{TagControl,TodoMetaLine,ListFilter}.tsx`,
+`features/tags/`, `features/todos/smartParse.ts`, `hooks/useTags.ts`.
 
 ---
 

@@ -193,6 +193,7 @@ fn main() {
             commands::create_tag,
             commands::update_tag,
             commands::delete_tag,
+            commands::set_todo_tags,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

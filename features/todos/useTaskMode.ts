@@ -4,12 +4,15 @@ import { aiParseTask } from "./aiParse";
 import {
   type DateMatch,
   detectListFromText,
+  detectTagMatchesFromText,
+  detectTagsFromText,
   detectPriorityFromText,
   formatDateToNaturalText,
   parseTaskDate,
   replaceDateInText,
   splitNote,
   stripListFromText,
+  stripTagsFromText,
 } from "./smartParse";
 
 export interface SmartTaskData {
@@ -17,7 +20,10 @@ export interface SmartTaskData {
   note?: string;
   dueDate?: Date | null;
   priority?: Priority;
+  /** Projet écrit `#nom` (résolu en id par l'appelant). */
   list?: string | null;
+  /** Tags écrits `@nom` (résolus en ids par l'appelant). */
+  tags?: string[];
 }
 
 /**
@@ -40,6 +46,7 @@ export function useTaskMode(
   const [list, setList] = useState<string | null>(null);
   const [dateMatch, setDateMatch] = useState<DateMatch | null>(null);
   const [listMatch, setListMatch] = useState<DateMatch | null>(null);
+  const [tagMatches, setTagMatches] = useState<DateMatch[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const isManualDateUpdate = useRef(false);
@@ -64,6 +71,8 @@ export function useTaskMode(
       setPriority(detected);
       lastDetectedPriority.current = detected;
     }
+
+    setTagMatches(detectTagMatchesFromText(value).map((t) => t.match));
 
     const detectedList = detectListFromText(value);
     setListMatch(detectedList?.match ?? null);
@@ -97,6 +106,7 @@ export function useTaskMode(
     lastDetectedPriority.current = "normal";
     setList(null);
     setListMatch(null);
+    setTagMatches([]);
     lastDetectedList.current = null;
   };
 
@@ -106,7 +116,10 @@ export function useTaskMode(
     setIsSubmitting(true);
     try {
       const { mainText, note } = splitNote(value);
-      const text = stripListFromText(mainText); // retire le tag #liste du texte
+      // Retire du titre les marqueurs `#projet` et `@tag` : ce sont des
+      // attributs, pas des mots de la tâche.
+      const text = stripTagsFromText(stripListFromText(mainText));
+      const tags = detectTagsFromText(mainText);
       // Canonise vers une liste existante (à la casse près) pour éviter les doublons.
       const canonicalList = list
         ? lists.find((l) => l.toLowerCase() === list.toLowerCase()) ?? list
@@ -120,7 +133,14 @@ export function useTaskMode(
         finalPriority = aiResult.priority;
       }
 
-      await onSubmit({ text, note, dueDate, priority: finalPriority, list: canonicalList });
+      await onSubmit({
+        text,
+        note,
+        dueDate,
+        priority: finalPriority,
+        list: canonicalList,
+        tags,
+      });
 
       setValue("");
       resetMeta();
@@ -131,7 +151,11 @@ export function useTaskMode(
     }
   };
 
-  const hasGlow = value.includes("//") || dateMatch !== null || listMatch !== null;
+  const hasGlow =
+    value.includes("//") ||
+    dateMatch !== null ||
+    listMatch !== null ||
+    tagMatches.length > 0;
 
   return {
     dueDate,
@@ -141,6 +165,7 @@ export function useTaskMode(
     setList,
     dateMatch,
     listMatch,
+    tagMatches,
     isSubmitting,
     hasGlow,
     handleDateChange,
