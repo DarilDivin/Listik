@@ -5,12 +5,15 @@ import { AnimatePresence, LayoutGroup, motion } from "motion/react";
 import { toast } from "sonner";
 import { spring } from "@/lib/motion";
 import { usePlannerTodos } from "@/hooks/usePlannerTodos";
+import { useProjects } from "@/hooks/useProjects";
 import { useNotesMutations } from "@/features/notes/useNotesMutations";
 import Omnibar from "@/components/Omnibar";
 import { EmptyState } from "@/components/todo/EmptyState";
 import { ListFilter } from "@/components/todo/ListFilter";
+import { AreaView } from "@/components/planner/AreaView";
 import { HeroDay } from "@/components/planner/HeroDay";
 import { PlannerRail } from "@/components/planner/PlannerRail";
+import { ProjectView } from "@/components/planner/ProjectView";
 import { SectionBody } from "@/components/planner/SectionBody";
 import {
   SectionCard,
@@ -22,13 +25,17 @@ import {
   countForView,
   groupTodosByDate,
   PLANNER_VIEWS,
+  projectProgress,
+  tasksOfArea,
+  tasksOfProject,
   VIEW_SECTIONS,
   type DateGroupKey,
+  type PlannerSelection,
   type PlannerView,
   type TodoGroups,
 } from "@/features/todos/grouping";
 import { todayLocalISODate, toLocalISODate } from "@/lib/date";
-import type { CreateTodoInput, Priority, Todo, TodoStatus } from "@/features/todos/types";
+import type { Priority, Todo, TodoStatus } from "@/features/todos/types";
 
 /** Présentation de chaque groupe : libellé, tonalité, date implicite. */
 const SECTION_META: Record<
@@ -119,13 +126,48 @@ export default function PlannerPage() {
     toggleTodo,
     deleteTodo,
     updateTodo,
-    lists,
   } = usePlannerTodos();
   const { createNote } = useNotesMutations();
+  const {
+    areas,
+    projects,
+    loading: projectsLoading,
+    createArea,
+    createProject,
+    updateArea,
+    updateProject,
+    deleteArea,
+    deleteProject,
+    completeProject,
+  } = useProjects();
   const { sectionStyles } = useUIPrefs();
 
-  // Aujourd'hui est la vue d'accueil, comme dans Things.
-  const [view, setView] = useState<PlannerView>("today");
+  // Projets actifs proposés au filtre (chips).
+  const projectFilterItems = useMemo(
+    () =>
+      projects
+        .filter((p) => p.status === "active")
+        .map((p) => ({ id: p.id, label: p.name })),
+    [projects],
+  );
+
+  // Noms des projets actifs — autocomplétion `#` de l'omnibar.
+  const projectNames = useMemo(
+    () => projectFilterItems.map((p) => p.label),
+    [projectFilterItems],
+  );
+
+  // Progression d'un projet (anneaux du rail et de la vue domaine).
+  const progressOf = useMemo(
+    () => (projectId: string) => projectProgress(todos, projectId),
+    [todos],
+  );
+
+  // Aujourd'hui est l'accueil, comme dans Things.
+  const [selection, setSelection] = useState<PlannerSelection>({
+    kind: "view",
+    view: "today",
+  });
   const [listFilter, setListFilter] = useState<string | null>(null);
   const [portalKey, setPortalKey] = useState<SectionKey | null>(null);
   // Le clip (overflow-hidden) ne vit que pendant le repli/dépli du chrome :
@@ -153,10 +195,10 @@ export default function PlannerPage() {
     return toLocalISODate(t);
   }, []);
 
-  // Filtre par liste, routage avec pause, puis regroupement GTD.
+  // Filtre par projet, routage avec pause, puis regroupement GTD.
   const groups: TodoGroups = useMemo(() => {
     const visible = listFilter
-      ? todos.filter((t) => t.list === listFilter)
+      ? todos.filter((t) => t.project_id === listFilter)
       : todos;
     const routed = linger.size
       ? visible.map((t) => {
@@ -196,12 +238,41 @@ export default function PlannerPage() {
     };
   }, [todos, todayISO]);
 
-  // Sections de la vue courante, dans l'ordre, non vides seulement.
-  const viewSections: PlannerSection[] = VIEW_SECTIONS[view].map((key) => ({
-    key,
-    items: groups[key],
-    ...SECTION_META[key],
-  }));
+  // Projet/domaine sélectionné. `undefined` = supprimé entre-temps (autre
+  // fenêtre, menu contextuel) → on retombe sur Aujourd'hui plutôt que
+  // d'afficher une vue fantôme.
+  const activeProject =
+    selection.kind === "project"
+      ? projects.find((p) => p.id === selection.id)
+      : undefined;
+  const activeArea =
+    selection.kind === "area"
+      ? areas.find((a) => a.id === selection.id)
+      : undefined;
+
+  useEffect(() => {
+    // `projectsLoading` : ne pas confondre « pas encore chargé » avec
+    // « supprimé » — sinon un simple rafraîchissement éjecterait la sélection.
+    if (projectsLoading) return;
+    if (
+      (selection.kind === "project" && !activeProject) ||
+      (selection.kind === "area" && !activeArea)
+    ) {
+      setSelection({ kind: "view", view: "today" });
+    }
+  }, [selection, activeProject, activeArea, projectsLoading]);
+
+  const currentView: PlannerView | null =
+    selection.kind === "view" ? selection.view : null;
+
+  // Sections de la vue GTD courante, dans l'ordre.
+  const viewSections: PlannerSection[] = currentView
+    ? VIEW_SECTIONS[currentView].map((key) => ({
+        key,
+        items: groups[key],
+        ...SECTION_META[key],
+      }))
+    : [];
 
   const portalSection = portalKey
     ? viewSections.find((s) => s.key === portalKey) ?? null
@@ -221,10 +292,10 @@ export default function PlannerPage() {
   };
   const closePortal = () => setPortalKey(null);
 
-  // Changer de vue ferme le portail et remonte en haut.
-  const changeView = (next: PlannerView) => {
+  // Changer de sélection ferme le portail et remonte en haut.
+  const changeSelection = (next: PlannerSelection) => {
     setPortalKey(null);
-    setView(next);
+    setSelection(next);
     scrollRef.current?.scrollTo({ top: 0 });
   };
 
@@ -271,16 +342,22 @@ export default function PlannerPage() {
   };
 
   /**
-   * Défauts de capture selon la vue : ce qu'on saisit doit apparaître là où on
-   * l'a saisi. Appliqués seulement si aucune date n'a été reconnue dans le
-   * texte (la saisie explicite prime toujours).
+   * Défauts de capture selon la sélection : ce qu'on saisit doit apparaître là
+   * où on l'a saisi. Appliqués seulement si aucune date n'a été reconnue dans
+   * le texte (la saisie explicite prime toujours).
    * Boîte de réception / Quand je peux / Journal : aucun défaut → la tâche
    * tombe en boîte de réception, à trier plus tard (méthode GTD).
    */
-  const captureDefaults = (): Partial<CreateTodoInput> => {
-    if (view === "today") return { scheduled_for: todayISO };
-    if (view === "upcoming") return { scheduled_for: tomorrowISO };
-    if (view === "someday") return { someday: true };
+  const captureOptions = () => {
+    // Dans un projet/domaine, la capture s'y range d'office — même datée.
+    if (selection.kind === "project")
+      return { container: { project_id: selection.id } };
+    if (selection.kind === "area") return { container: { area_id: selection.id } };
+    if (selection.view === "today")
+      return { whenUndated: { scheduled_for: todayISO } };
+    if (selection.view === "upcoming")
+      return { whenUndated: { scheduled_for: tomorrowISO } };
+    if (selection.view === "someday") return { whenUndated: { someday: true } };
     return {};
   };
 
@@ -291,7 +368,7 @@ export default function PlannerPage() {
     priority?: Priority;
     list?: string | null;
   }) => {
-    await createTodoFromSmart(taskData, captureDefaults());
+    await createTodoFromSmart(taskData, captureOptions());
   };
 
   const handleCreateNote = async (text: string) => {
@@ -339,11 +416,26 @@ export default function PlannerPage() {
 
   const today = new Date();
   // Le hero (date + progression du jour) n'a de sens que sur la vue Aujourd'hui.
-  const showHero = view === "today";
+  const showHero = currentView === "today";
 
   return (
     <div className="relative flex h-full">
-      <PlannerRail value={view} onChange={changeView} counts={counts} />
+      <PlannerRail
+        selection={selection}
+        onSelect={changeSelection}
+        counts={counts}
+        areas={areas}
+        projects={projects}
+        progressOf={progressOf}
+        onCreateArea={(name) => void createArea({ name })}
+        onCreateProject={(name, areaId) =>
+          void createProject({ name, area_id: areaId })
+        }
+        onRenameArea={(id, name) => void updateArea(id, { name })}
+        onRenameProject={(id, name) => void updateProject(id, { name })}
+        onDeleteArea={(id) => void deleteArea(id)}
+        onDeleteProject={(id) => void deleteProject(id)}
+      />
 
       <div className="relative flex h-full min-w-0 flex-1 flex-col overflow-hidden">
         {/* Voile d'accent très doux en haut du canvas */}
@@ -356,102 +448,140 @@ export default function PlannerPage() {
           }}
         />
 
-        {/* ───────── Zone défilante : hero + sections ───────── */}
+        {/* ───────── Zone défilante ───────── */}
         <div ref={scrollRef} className="relative z-10 flex-1 overflow-y-auto">
           <div className="mx-auto max-w-[46rem] px-8">
-            <LayoutGroup>
-              <motion.div
-                initial={false}
-                animate={portalSection || !showHero ? "collapsed" : "open"}
-                variants={chromeVariants}
-                onAnimationComplete={(definition) => {
-                  if (definition === "open") setChromeClipped(false);
-                }}
-                className={chromeClipped ? "overflow-hidden" : undefined}
-              >
-                <div className="pt-8">
-                  <HeroDay date={today} done={doneToday} total={totalToday} />
-                </div>
-              </motion.div>
+            {error && (
+              <div className="mt-4 flex items-center gap-2 text-sm text-destructive">
+                <span className="h-1 w-1 rounded-full bg-destructive" />
+                {error}
+              </div>
+            )}
 
-              {error && (
-                <div className="mt-4 flex items-center gap-2 text-sm text-destructive">
-                  <span className="h-1 w-1 rounded-full bg-destructive" />
-                  {error}
-                </div>
-              )}
+            {/* Un projet/domaine n'est pas un horizon temporel : sa vue est
+                bâtie sur un filtre direct de rattachement, pas sur les groupes
+                GTD (une tâche datée vit dans Aujourd'hui ET dans son projet). */}
+            {activeProject ? (
+              <ProjectView
+                project={activeProject}
+                todos={tasksOfProject(todos, activeProject.id)}
+                onToggle={handleToggle}
+                onDelete={deleteTodo}
+                onUpdate={updateTodo}
+                onRename={(name) => void updateProject(activeProject.id, { name })}
+                onChangeNote={(note) =>
+                  void updateProject(activeProject.id, { note })
+                }
+                onComplete={(completeTasks) =>
+                  void completeProject(activeProject.id, completeTasks)
+                }
+                onReopen={() =>
+                  void updateProject(activeProject.id, { status: "active" })
+                }
+              />
+            ) : activeArea ? (
+              <AreaView
+                area={activeArea}
+                projects={projects.filter(
+                  (p) => p.area_id === activeArea.id && p.status === "active",
+                )}
+                todos={tasksOfArea(todos, activeArea.id)}
+                progressOf={progressOf}
+                onOpenProject={(id) => changeSelection({ kind: "project", id })}
+                onToggle={handleToggle}
+                onDelete={deleteTodo}
+                onUpdate={updateTodo}
+                onRename={(name) => void updateArea(activeArea.id, { name })}
+              />
+            ) : (
+              currentView && (
+                <LayoutGroup>
+                  <motion.div
+                    initial={false}
+                    animate={portalSection || !showHero ? "collapsed" : "open"}
+                    variants={chromeVariants}
+                    onAnimationComplete={(definition) => {
+                      if (definition === "open") setChromeClipped(false);
+                    }}
+                    className={chromeClipped ? "overflow-hidden" : undefined}
+                  >
+                    <div className="pt-8">
+                      <HeroDay date={today} done={doneToday} total={totalToday} />
+                    </div>
+                  </motion.div>
 
-              {/* Filtre de liste collant : élément sticky À PART, enfant direct de
-                  la colonne (un sticky ne colle que dans les limites de son parent —
-                  il lui faut donc un parent qui contient aussi les sections).
-                  Il porte lui-même son repli en portail. */}
-              {lists.length > 0 && (
-                <motion.div
-                  initial={false}
-                  animate={portalSection ? "collapsed" : "open"}
-                  variants={chromeVariants}
-                  className="sticky top-0 z-10 -mx-8 overflow-hidden bg-background/85 backdrop-blur-md"
-                >
-                  <div className="px-8 pt-5 pb-3">
-                    <ListFilter
-                      lists={lists}
-                      value={listFilter}
-                      onChange={setListFilter}
-                    />
-                  </div>
-                </motion.div>
-              )}
-
-              <motion.div
-                initial={false}
-                animate={{ paddingTop: portalSection ? 32 : showHero ? 4 : 24 }}
-                transition={spring.smooth}
-                className="pb-10"
-              >
-                <AnimatePresence mode="popLayout">
-                  {renderedSections.map((section, i) => (
-                    <SectionCard
-                      key={section.key}
-                      title={section.label}
-                      count={section.items.length}
-                      tone={section.tone}
-                      delay={i * 0.05}
-                      sectionKey={section.key}
-                      portalActive={section.key === portalKey}
-                      onEnterPortal={() => openPortal(section.key)}
-                      onExitPortal={closePortal}
+                  {/* Filtre de projet collant : élément sticky À PART, enfant direct
+                      de la colonne (un sticky ne colle que dans les limites de son
+                      parent — il lui faut donc un parent qui contient aussi les
+                      sections). Il porte lui-même son repli en portail. */}
+                  {projectFilterItems.length > 0 && (
+                    <motion.div
+                      initial={false}
+                      animate={portalSection ? "collapsed" : "open"}
+                      variants={chromeVariants}
+                      className="sticky top-0 z-10 -mx-8 overflow-hidden bg-background/85 backdrop-blur-md"
                     >
-                      {section.items.length > 0 ? (
-                        <SectionBody
-                          style={sectionStyles[section.key]}
-                          todos={section.items}
-                          onToggle={handleToggle}
-                          onDelete={deleteTodo}
-                          onUpdate={updateTodo}
-                          lists={lists}
-                          overdue={section.overdue}
-                          showDate={!section.dateImplied}
+                      <div className="px-8 pt-5 pb-3">
+                        <ListFilter
+                          items={projectFilterItems}
+                          value={listFilter}
+                          onChange={setListFilter}
                         />
-                      ) : (
-                        // La dernière tâche vient d'être cochée en mode portail.
+                      </div>
+                    </motion.div>
+                  )}
+
+                  <motion.div
+                    initial={false}
+                    animate={{ paddingTop: portalSection ? 32 : showHero ? 4 : 24 }}
+                    transition={spring.smooth}
+                    className="pb-10"
+                  >
+                    <AnimatePresence mode="popLayout">
+                      {renderedSections.map((section, i) => (
+                        <SectionCard
+                          key={section.key}
+                          title={section.label}
+                          count={section.items.length}
+                          tone={section.tone}
+                          delay={i * 0.05}
+                          sectionKey={section.key}
+                          portalActive={section.key === portalKey}
+                          onEnterPortal={() => openPortal(section.key)}
+                          onExitPortal={closePortal}
+                        >
+                          {section.items.length > 0 ? (
+                            <SectionBody
+                              style={sectionStyles[section.key]}
+                              todos={section.items}
+                              onToggle={handleToggle}
+                              onDelete={deleteTodo}
+                              onUpdate={updateTodo}
+                              overdue={section.overdue}
+                              showDate={!section.dateImplied}
+                            />
+                          ) : (
+                            // La dernière tâche vient d'être cochée en portail.
+                            <EmptyState
+                              title="Section vide"
+                              subtitle="Plus rien ici pour le moment."
+                            />
+                          )}
+                        </SectionCard>
+                      ))}
+
+                      {!portalSection && isEmpty && (
                         <EmptyState
-                          title="Section vide"
-                          subtitle="Plus rien ici pour le moment."
+                          key={`empty-${currentView}`}
+                          title={EMPTY_COPY[currentView].title}
+                          subtitle={EMPTY_COPY[currentView].subtitle}
                         />
                       )}
-                    </SectionCard>
-                  ))}
-
-                  {!portalSection && isEmpty && (
-                    <EmptyState
-                      key={`empty-${view}`}
-                      title={EMPTY_COPY[view].title}
-                      subtitle={EMPTY_COPY[view].subtitle}
-                    />
-                  )}
-                </AnimatePresence>
-              </motion.div>
-            </LayoutGroup>
+                    </AnimatePresence>
+                  </motion.div>
+                </LayoutGroup>
+              )
+            )}
           </div>
         </div>
 
@@ -468,7 +598,7 @@ export default function PlannerPage() {
               onSubmit={handleCreateTodo}
               onSubmitNote={handleCreateNote}
               placeholder="Capturer une tâche…"
-              lists={lists}
+              lists={projectNames}
             />
           </div>
         </div>

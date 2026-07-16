@@ -7,5 +7,7 @@ export const SWR_KEYS = {
   TODOS_BY_DATE: (date: string) => `todos/date/${date}`,
   TODOS_BY_STATUS: (status: string) => `todos/status/${status}`,
   ALL_NOTES: "notes/all",
+  ALL_PROJECTS: "projects/all",
+  ALL_AREAS: "projects/areas",
   SETTINGS: "settings",
 } as const;

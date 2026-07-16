@@ -194,7 +194,37 @@ fois planifiée ; Ce soir se remplit ; le Journal liste les terminées par date.
 
 ---
 
-## Phase G — Projets & Domaines (UI) + arbre dans le rail
+## Phase G — Projets & Domaines
+
+> **Scindée en G1 (données) / G2 (UI)** : la version initiale empaquetait une migration, une
+> couche de données, un arbre, deux types de vues et une bascule d'écriture — trois phases de
+> surface, où la justesse de la migration se relisait au milieu du style des menus.
+
+### G1 — Bascule des données ✅ FAITE
+
+1. **Correctif de schéma** (migration `0011_todo_area.sql`) : `todos.area_id`. Sans lui, une
+   tâche ne pouvait pas être rangée directement dans un Domaine (comportement Things de base)
+   et la vue domaine de G2 aurait été impossible sans retrofit d'`isTriaged`, du détail et de
+   l'omnibar. `delete_area` détache désormais aussi les tâches directes.
+2. **Réconciliation** `db::reconcile_lists_into_projects` : un projet par `list` distincte,
+   rapprochement **insensible à la casse** (« Travail »/« travail »/espaces → un seul projet ;
+   piège : `DISTINCT`/`=` sont en BINARY par défaut), réutilise un projet existant de même nom,
+   en transaction. **Idempotente** et rejouée à **chaque démarrage** (`main.rs` setup) : rattrape
+   les tâches créées entre-temps par une version antérieure du binaire. Un échec n'empêche pas
+   le démarrage.
+3. **Couche données** : `features/projects/{types,api,useProjectsSync,useProjectsMutations}.ts`,
+   `hooks/useProjects.ts`, clés `ALL_PROJECTS`/`ALL_AREAS` (préfixe `projects` → une seule règle
+   de revalidation sur `projects:changed`).
+4. **Fin de l'écriture de `list`** : `ProjectControl` remplace `ListControl` dans le détail (et
+   purge la `list` héritée), le `#nom` de l'omnibar **et de la capture Alt+Q** résout vers un
+   projet (get-or-create NOCASE), `ListFilter` filtre par `project_id`, `TodoMetaLine` affiche le
+   nom du projet, l'autocomplétion vient de `list_projects`.
+5. **Le pont `isTriaged` RESTE** (`project_id || area_id || list`) : inerte quand la
+   réconciliation réussit, il est la différence entre « un bug = une tâche en Quand je peux » et
+   « un bug = tout le backlog vidé dans la Boîte de réception le jour de la mise à jour ». Il ne
+   sera retiré qu'avec la suppression de la colonne `list`.
+
+### G2 — UI projets & domaines ✅ FAITE
 
 **But** : donner corps aux projets/domaines. Vient après F (le rail existe) car l'arbre est
 inutile tant qu'on ne peut pas cliquer dans un projet.
@@ -202,16 +232,23 @@ inutile tant qu'on ne peut pas cliquer dans un projet.
 1. **Vue projet** : en-tête projet posé sur le canvas (titre éditable, note de projet façon
    `TodoDetailSheet`), **anneau de progression** (`ProgressRing` existant) = terminées/total,
    bouton « Terminer le projet ». Liste des tâches du projet (mêmes lignes `TodoItem`).
-2. **Vue domaine** : liste des projets d'un domaine + tâches directes ; pas de deadline.
+   ⚠️ Construire la vue en filtrant **directement par `project_id`**, jamais depuis les buckets
+   de `groupTodosByDate` : une tâche datée doit apparaître à la fois dans Aujourd'hui ET dans
+   son projet — ce ne sont pas des groupes GTD.
+   « Terminer le projet » avec des tâches ouvertes : `AlertDialog` « Terminer aussi les N tâches
+   restantes ? » (façon Things) — jamais de cascade silencieuse, jamais de tâches vivantes
+   cachées dans un projet achevé.
+2. **Vue domaine** : projets du domaine + tâches directes (`area_id`) ; pas de deadline.
+3. **Sélection** : union discriminée en page — `{kind:'view'|'project'|'area', id?}` — et non des
+   routes Next (`output: export` + le routage piloté par la donnée qui porte les animations).
+   Gérer le cas « projet sélectionné supprimé ailleurs » → repli sur une vue par défaut.
 3. **Arbre Domaines/Projets** dans le rail (`PlannerRail`) : Domaines dépliables → Projets,
    pastille active glissante. CRUD (créer/renommer/supprimer/déplacer-projet-vers-domaine) via
    menus contextuels (shadcn `ContextMenu`) et `AlertDialog` pour le destructif.
 4. **Affecter une tâche** : contrôle « Projet » dans `TodoDetailSheet` (remplace/complète
    l'actuel `ListControl`), + option de menu contextuel sur la ligne.
-5. **Réconciliation `list → projets`** (déplacée depuis E) : au 1er lancement de G, code Rust
-   idempotent qui crée un projet par `list` distincte encore non mappée et remplit `project_id`
-   (dédoublonnage par nom géré en Rust, pas en SQL figé). Ensuite, cesser d'écrire `list`, retirer
-   la dérivation `lists` de `usePlannerTodos` au profit de `list_projects`.
+5. **Arbre Domaines/Projets** dans le rail + affectation par menu contextuel (le contrôle Projet
+   du détail, la réconciliation et la fin d'écriture de `list` sont déjà faits en G1).
 
 **Tester** : créer un domaine et un projet dedans ; y déplacer des tâches ; l'anneau reflète la
 progression ; terminer un projet ; renommer/supprimer avec confirmation.

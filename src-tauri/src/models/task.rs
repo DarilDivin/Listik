@@ -97,9 +97,12 @@ pub struct Todo {
     pub due_date: Option<String>,
     /// Rappel ponctuel : date-heure locale « YYYY-MM-DDTHH:MM » (None = aucun).
     pub remind_at: Option<String>,
-    /// Projet de rattachement (Phase E+). NULL tant que non affecté / avant la
-    /// réconciliation `list → projets` faite en Phase G.
+    /// Projet de rattachement (Phase E+). NULL tant que non affecté.
     pub project_id: Option<String>,
+    /// Domaine de rattachement direct, sans projet intermédiaire (façon Things).
+    /// Une tâche dans un projet hérite du domaine de celui-ci : les deux champs
+    /// ne sont pas renseignés en même temps.
+    pub area_id: Option<String>,
     /// En-tête interne de projet (colonne/étape). NULL en lean (pas d'UI).
     pub heading_id: Option<String>,
     /// « Ce soir » : sous-section de la vue Aujourd'hui.
@@ -135,6 +138,8 @@ pub struct CreateTodo {
     pub remind_at: Option<String>,
     #[serde(default)]
     pub project_id: Option<String>,
+    #[serde(default)]
+    pub area_id: Option<String>,
     #[serde(default)]
     pub heading_id: Option<String>,
     #[serde(default)]
@@ -179,6 +184,8 @@ pub struct UpdateTodo {
     pub remind_at: Option<Option<String>>,
     #[serde(default, deserialize_with = "double_option")]
     pub project_id: Option<Option<String>>,
+    #[serde(default, deserialize_with = "double_option")]
+    pub area_id: Option<Option<String>>,
     #[serde(default, deserialize_with = "double_option")]
     pub heading_id: Option<Option<String>>,
     #[serde(default)]

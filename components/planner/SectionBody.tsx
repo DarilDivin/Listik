@@ -38,7 +38,6 @@ export function SectionBody({ style, ...props }: SectionBodyProps) {
           onDelete={props.onDelete}
           showDate={props.showDate ?? true}
           overdue={props.overdue}
-          lists={props.lists}
           onUpdate={props.onUpdate}
         />
       );

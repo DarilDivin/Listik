@@ -10,10 +10,15 @@ export type Todo = { id: string, text: string, note: string | null, list: string
  */
 remind_at: string | null, 
 /**
- * Projet de rattachement (Phase E+). NULL tant que non affecté / avant la
- * réconciliation `list → projets` faite en Phase G.
+ * Projet de rattachement (Phase E+). NULL tant que non affecté.
  */
 project_id: string | null, 
+/**
+ * Domaine de rattachement direct, sans projet intermédiaire (façon Things).
+ * Une tâche dans un projet hérite du domaine de celui-ci : les deux champs
+ * ne sont pas renseignés en même temps.
+ */
+area_id: string | null, 
 /**
  * En-tête interne de projet (colonne/étape). NULL en lean (pas d'UI).
  */

@@ -43,8 +43,6 @@ interface TodoItemProps {
   onDelete: () => void;
   showDate?: boolean;
   overdue?: boolean;
-  /** Listes existantes proposées (pour le champ liste du formulaire de détail). */
-  lists?: string[];
   /** Si fourni, la tâche devient éditable — un clic ouvre son formulaire de détail. */
   onUpdate?: (payload: UpdateTodoInput) => void;
 }
@@ -68,7 +66,6 @@ export function TodoItem({
   onDelete,
   showDate = false,
   overdue = false,
-  lists = [],
   onUpdate,
 }: TodoItemProps) {
   const isCompleted = todo.status === "completed";
@@ -229,7 +226,6 @@ export function TodoItem({
           open={detailOpen}
           onOpenChange={setDetailOpen}
           todo={todo}
-          lists={lists}
           onUpdate={onUpdate}
           onDelete={onDelete}
         />

@@ -4,6 +4,7 @@ import { BellRing, Repeat } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { recurrenceLabel } from "@/features/todos/recurrence";
 import { TodoDate } from "@/components/todo/TodoDate";
+import { useProjects } from "@/hooks/useProjects";
 import type { Todo } from "@/features/todos/types";
 
 /** Étiquette compacte d'un rappel : heure seule si même jour que la tâche. */
@@ -28,7 +29,7 @@ interface TodoMetaLineProps {
 
 /**
  * Ligne de métadonnées d'une tâche : purement d'affichage, façon Things 3 —
- * liste en pastille mate, date/récurrence/rappel en texte discret. Toujours
+ * projet en pastille mate, date/récurrence/rappel en texte discret. Toujours
  * montée dès qu'une donnée existe (jamais révélée au survol) : la structure
  * de la ligne ne dépend donc jamais de l'interaction, seulement des données.
  * L'édition de ces champs vit dans `TodoDetailSheet`, pas ici.
@@ -39,9 +40,16 @@ export function TodoMetaLine({
   overdue = false,
   dimmed = false,
 }: TodoMetaLineProps) {
+  // Le nom vient de la table `projects` (SWR partagé : une seule requête pour
+  // toutes les lignes). `todo.list` reste un repli d'affichage pour une tâche
+  // héritée que la réconciliation n'aurait pas encore convertie.
+  const { projects } = useProjects();
+  const projectName =
+    projects.find((p) => p.id === todo.project_id)?.name ?? todo.list;
+
   const hasDate = showDate && Boolean(todo.scheduled_for);
   const hasAny =
-    hasDate || todo.list || todo.recurrence !== "none" || todo.remind_at;
+    hasDate || projectName || todo.recurrence !== "none" || todo.remind_at;
 
   if (!hasAny) return null;
 
@@ -51,14 +59,14 @@ export function TodoMetaLine({
         <TodoDate date={todo.scheduled_for} dimmed={dimmed} overdue={overdue} />
       )}
 
-      {todo.list && (
+      {projectName && (
         <span
           className={cn(
             "inline-flex items-center rounded-full bg-foreground/[0.06] px-2 py-0.5 text-[11px] font-medium text-muted-foreground",
             dimmed && "opacity-60",
           )}
         >
-          {todo.list}
+          {projectName}
         </span>
       )}
 

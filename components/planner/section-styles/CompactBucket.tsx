@@ -19,7 +19,6 @@ interface CompactBucketProps {
   onToggle: (id: string) => void;
   onDelete: (id: string) => void;
   onUpdate: (id: string, payload: UpdateTodoInput) => void;
-  lists: string[];
 }
 
 /**
@@ -37,7 +36,6 @@ export function CompactBucket({
   onToggle,
   onDelete,
   onUpdate,
-  lists,
 }: CompactBucketProps) {
   const [open, setOpen] = useState(defaultOpen);
 
@@ -88,7 +86,6 @@ export function CompactBucket({
                       onToggle={() => onToggle(todo.id)}
                       onDelete={() => onDelete(todo.id)}
                       showDate={showDate}
-                      lists={lists}
                       onUpdate={(payload) => onUpdate(todo.id, payload)}
                     />
                   </motion.div>

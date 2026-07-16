@@ -5,6 +5,7 @@ import { todosApi } from "@/features/todos/api";
 import { useTodoMutations } from "@/features/todos/useTodoMutations";
 import { useTodosSync } from "@/features/todos/useTodosSync";
 import { sortTodos } from "@/features/todos/sort";
+import { useProjects } from "@/hooks/useProjects";
 import type { CreateTodoInput, Priority, TodoStatus } from "@/features/todos/types";
 import type { SmartTaskData } from "@/features/todos/useTaskMode";
 import { SWR_KEYS } from "@/lib/swr-config";
@@ -12,6 +13,7 @@ import { todayLocalISODate, toLocalISODate } from "@/lib/date";
 
 export const usePlannerTodos = () => {
   useTodosSync();
+  const { projects, createProject } = useProjects();
 
   const {
     data: rawTodos = [],
@@ -33,20 +35,44 @@ export const usePlannerTodos = () => {
    * de la vue courante (capturer dans Aujourd'hui planifie aujourd'hui, dans
    * Un jour range à « Un jour »…) : ils ne s'appliquent QUE si aucune date n'a
    * été reconnue dans le texte — ce que l'utilisateur écrit prime toujours.
+   *
+   * Le `#nom` de l'omnibar désigne désormais un PROJET, plus une liste en texte
+   * libre : on résout vers un projet existant (insensible à la casse, même
+   * politique que la réconciliation Rust) ou on en crée un. La colonne `list`
+   * n'est plus jamais écrite.
    */
   const createTodoFromSmart = async (
     taskData: SmartTaskData,
-    defaults?: Partial<CreateTodoInput>,
+    options?: {
+      /** Défauts de DATE — écartés dès qu'une date est reconnue dans le texte. */
+      whenUndated?: Partial<CreateTodoInput>;
+      /** Rattachement du conteneur ouvert — appliqué même si une date est saisie
+       *  (« appeler Jean demain » dans un projet va dans le projet ET demain). */
+      container?: Partial<CreateTodoInput>;
+    },
   ) => {
     const dueDate = taskData.dueDate ? toLocalISODate(taskData.dueDate) : null;
+
+    let projectId: string | null = null;
+    if (taskData.list) {
+      const name = taskData.list.trim();
+      const existing = projects.find(
+        (p) => p.name.toLowerCase() === name.toLowerCase(),
+      );
+      projectId = existing ? existing.id : (await createProject({ name })).id;
+    }
+
     const payload: CreateTodoInput = {
       text: taskData.text,
       note: taskData.note ?? null,
-      list: taskData.list ?? null,
       priority: taskData.priority ?? "normal",
       scheduled_for: dueDate,
       due_date: dueDate,
-      ...(dueDate ? {} : defaults),
+      ...(dueDate ? {} : options?.whenUndated),
+      ...options?.container,
+      // Un `#projet` explicitement tapé prime sur le conteneur ouvert (et exclut
+      // le rattachement direct à un domaine : les deux ne coexistent pas).
+      ...(projectId ? { project_id: projectId, area_id: null } : {}),
     };
     const result = await createTodo(payload);
     // Une tâche sans date n'est pas « planifiée » : elle est capturée, à trier.
@@ -84,12 +110,17 @@ export const usePlannerTodos = () => {
     );
   }, [todos]);
 
-  // Listes/projets distincts actuellement utilisés (triés).
-  const lists = useMemo(() => {
-    const set = new Set<string>();
-    for (const t of todos) if (t.list) set.add(t.list);
-    return Array.from(set).sort((a, b) => a.localeCompare(b, "fr"));
-  }, [todos]);
+  // Noms des projets actifs (triés) — alimente l'autocomplétion `#` de
+  // l'omnibar. Vient désormais de la table `projects`, plus d'un scan des
+  // chaînes `todos.list` : la réconciliation au démarrage a fait la bascule.
+  const lists = useMemo(
+    () =>
+      projects
+        .filter((p) => p.status === "active")
+        .map((p) => p.name)
+        .sort((a, b) => a.localeCompare(b, "fr")),
+    [projects],
+  );
 
   return {
     todos,

@@ -11,7 +11,6 @@ interface AnimatedTodoListProps {
   onDelete: (id: string) => void;
   showDate?: boolean;
   overdue?: boolean;
-  lists?: string[];
   onUpdate?: (id: string, payload: UpdateTodoInput) => void;
 }
 
@@ -28,7 +27,6 @@ export function AnimatedTodoList({
   onDelete,
   showDate = false,
   overdue = false,
-  lists = [],
   onUpdate,
 }: AnimatedTodoListProps) {
   return (
@@ -42,7 +40,6 @@ export function AnimatedTodoList({
               onDelete={() => onDelete(todo.id)}
               showDate={showDate}
               overdue={overdue}
-              lists={lists}
               onUpdate={onUpdate ? (payload) => onUpdate(todo.id, payload) : undefined}
             />
           </motion.div>

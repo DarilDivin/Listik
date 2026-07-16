@@ -319,6 +319,7 @@ pub async fn ai_agent(
                     due_date: task.due_date,
                     remind_at: None,
                     project_id: None,
+                    area_id: None,
                     heading_id: None,
                     this_evening: false,
                     someday: false,

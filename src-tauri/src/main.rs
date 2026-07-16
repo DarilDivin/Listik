@@ -25,6 +25,18 @@ fn main() {
             let handle = app.handle().clone();
             let pool = tauri::async_runtime::block_on(db::init_pool(&handle))
                 .map_err(std::io::Error::other)?;
+
+            // Migre les anciennes « listes » (texte libre) vers de vrais projets.
+            // Idempotent → rejoué à chaque démarrage : rattrape les tâches créées
+            // entre-temps par une version antérieure du binaire. Deux requêtes sur
+            // un SQLite local, avant l'affichage : coût négligeable. Un échec ici
+            // ne doit pas empêcher l'app de démarrer (les listes restent lisibles).
+            match tauri::async_runtime::block_on(db::reconcile_lists_into_projects(&pool)) {
+                Ok(0) => {}
+                Ok(n) => println!("📁 {n} projet(s) créé(s) depuis les anciennes listes"),
+                Err(e) => eprintln!("⚠️ Réconciliation listes → projets échouée: {e}"),
+            }
+
             app.manage(AppState { pool });
 
             // --- Planificateur de rappels (notifications en arrière-plan) ---

@@ -91,7 +91,7 @@ function buildBuckets(todos: Todo[]): ZoomBucket[] {
  * détail — les prochains jours sont détaillés, la semaine suivante se
  * compacte en une ligne par jour, au-delà en semaines puis en mois.
  */
-export function ZoomList({ todos, onToggle, onDelete, onUpdate, lists }: SectionStyleProps) {
+export function ZoomList({ todos, onToggle, onDelete, onUpdate }: SectionStyleProps) {
   const buckets = buildBuckets(todos);
 
   return (
@@ -128,7 +128,6 @@ export function ZoomList({ todos, onToggle, onDelete, onUpdate, lists }: Section
                           todo={todo}
                           onToggle={() => onToggle(todo.id)}
                           onDelete={() => onDelete(todo.id)}
-                          lists={lists}
                           onUpdate={(payload) => onUpdate(todo.id, payload)}
                         />
                       </motion.div>
@@ -161,7 +160,6 @@ export function ZoomList({ todos, onToggle, onDelete, onUpdate, lists }: Section
                 onToggle={onToggle}
                 onDelete={onDelete}
                 onUpdate={onUpdate}
-                lists={lists}
               />
             </motion.div>
           );

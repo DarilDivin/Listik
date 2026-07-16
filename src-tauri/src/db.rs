@@ -15,7 +15,7 @@ pub struct AppState {
 
 const SELECT_COLUMNS: &str =
     "id, text, note, list, status, priority, recurrence, scheduled_for, due_date, remind_at, \
-     project_id, heading_id, this_evening, someday, created_at, updated_at";
+     project_id, area_id, heading_id, this_evening, someday, created_at, updated_at";
 
 const NOTE_COLUMNS: &str = "id, title, content, pinned, created_at, updated_at";
 
@@ -102,6 +102,7 @@ pub async fn create(pool: &SqlitePool, input: CreateTodo) -> Result<Todo, sqlx::
         due_date: input.due_date,
         remind_at: input.remind_at,
         project_id: input.project_id,
+        area_id: input.area_id,
         heading_id: input.heading_id,
         this_evening: input.this_evening,
         someday: input.someday,
@@ -112,8 +113,8 @@ pub async fn create(pool: &SqlitePool, input: CreateTodo) -> Result<Todo, sqlx::
 
     sqlx::query(
         "INSERT INTO todos (id, text, note, list, status, priority, recurrence, scheduled_for, due_date, remind_at, \
-         project_id, heading_id, this_evening, someday, created_at, updated_at) \
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+         project_id, area_id, heading_id, this_evening, someday, created_at, updated_at) \
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
     )
     .bind(&todo.id)
     .bind(&todo.text)
@@ -126,6 +127,7 @@ pub async fn create(pool: &SqlitePool, input: CreateTodo) -> Result<Todo, sqlx::
     .bind(&todo.due_date)
     .bind(&todo.remind_at)
     .bind(&todo.project_id)
+    .bind(&todo.area_id)
     .bind(&todo.heading_id)
     .bind(todo.this_evening)
     .bind(todo.someday)
@@ -174,6 +176,9 @@ pub async fn update(pool: &SqlitePool, id: &str, input: UpdateTodo) -> Result<To
     }
     if let Some(project_id) = input.project_id {
         sep.push("project_id = ").push_bind_unseparated(project_id);
+    }
+    if let Some(area_id) = input.area_id {
+        sep.push("area_id = ").push_bind_unseparated(area_id);
     }
     if let Some(heading_id) = input.heading_id {
         sep.push("heading_id = ").push_bind_unseparated(heading_id);
@@ -740,9 +745,14 @@ pub async fn update_area(pool: &SqlitePool, id: &str, input: UpdateArea) -> Resu
         .await
 }
 
-/// Supprime un domaine et détache ses projets (pas de cascade dans ce schéma).
+/// Supprime un domaine et détache ses projets ET ses tâches directes (pas de
+/// cascade dans ce schéma) : rien n'est supprimé, seulement désaffecté.
 pub async fn delete_area(pool: &SqlitePool, id: &str) -> Result<(), sqlx::Error> {
     sqlx::query("UPDATE projects SET area_id = NULL WHERE area_id = ?")
+        .bind(id)
+        .execute(pool)
+        .await?;
+    sqlx::query("UPDATE todos SET area_id = NULL WHERE area_id = ?")
         .bind(id)
         .execute(pool)
         .await?;
@@ -857,6 +867,80 @@ pub async fn delete_project(pool: &SqlitePool, id: &str) -> Result<(), sqlx::Err
     Ok(())
 }
 
+/// Migre les anciennes « listes » (texte libre sur `todos.list`) vers de vrais
+/// projets. Volontairement en Rust plutôt qu'en SQL de migration : un
+/// `project_id` figé par migration serait périmé dès la première édition, et le
+/// SQL diffusé est verrouillé par checksum sqlx (impossible à corriger ensuite).
+///
+/// **Idempotente** : rejouée à chaque démarrage sans effet (le `WHERE
+/// project_id IS NULL` rend les re-passages inertes). C'est ce qui rattrape le
+/// cas d'une tâche créée par une ancienne version du binaire.
+///
+/// Rapprochement **insensible à la casse** : « Travail » et « travail » sont une
+/// faute de frappe, pas deux projets — même politique que `create_tag`. Attention,
+/// `DISTINCT` et `=` sont en collation BINARY par défaut : sans `COLLATE NOCASE`
+/// explicite, on créerait deux projets puis on n'en rattacherait qu'un.
+///
+/// Renvoie le nombre de projets créés.
+pub async fn reconcile_lists_into_projects(pool: &SqlitePool) -> Result<usize, sqlx::Error> {
+    let mut tx = pool.begin().await?;
+
+    // Listes distinctes (à la casse près), en ignorant les vides/espaces.
+    let names: Vec<(String,)> = sqlx::query_as(
+        "SELECT DISTINCT TRIM(list) COLLATE NOCASE FROM todos \
+         WHERE list IS NOT NULL AND TRIM(list) <> ''",
+    )
+    .fetch_all(&mut *tx)
+    .await?;
+
+    let mut created = 0usize;
+    for (name,) in names {
+        // Projet déjà existant pour ce nom ? (rejeu, ou projet créé à la main)
+        let existing: Option<(String,)> =
+            sqlx::query_as("SELECT id FROM projects WHERE name = ? COLLATE NOCASE")
+                .bind(&name)
+                .fetch_optional(&mut *tx)
+                .await?;
+
+        let project_id = match existing {
+            Some((id,)) => id,
+            None => {
+                let now = now_iso();
+                let (max,): (Option<i64>,) = sqlx::query_as("SELECT MAX(position) FROM projects")
+                    .fetch_one(&mut *tx)
+                    .await?;
+                let id = Uuid::new_v4().to_string();
+                sqlx::query(
+                    "INSERT INTO projects (id, name, note, area_id, status, deadline, position, created_at, updated_at) \
+                     VALUES (?, ?, NULL, NULL, 'active', NULL, ?, ?, ?)",
+                )
+                .bind(&id)
+                .bind(&name)
+                .bind(max.map(|p| p + 1).unwrap_or(0))
+                .bind(&now)
+                .bind(&now)
+                .execute(&mut *tx)
+                .await?;
+                created += 1;
+                id
+            }
+        };
+
+        // Ne touche que les tâches pas encore rattachées → rejeu sans effet.
+        sqlx::query(
+            "UPDATE todos SET project_id = ? \
+             WHERE TRIM(list) = ? COLLATE NOCASE AND project_id IS NULL",
+        )
+        .bind(&project_id)
+        .bind(&name)
+        .execute(&mut *tx)
+        .await?;
+    }
+
+    tx.commit().await?;
+    Ok(created)
+}
+
 // ---------------------------------------------------------------------------
 // Tags — contexte transverse (nom unique insensible à la casse)
 // ---------------------------------------------------------------------------
@@ -929,9 +1013,9 @@ mod tests {
     use super::{
         create, create_area, create_note, create_project, create_tag, delete, delete_area,
         delete_note, delete_project, delete_tag, due_reminders, get_settings, list_all, list_areas,
-        list_by_date, list_notes, list_projects, list_tags, mark_reminded, search_notes,
-        take_due_digest, toggle, update, update_area, update_note, update_project, update_settings,
-        update_tag,
+        list_by_date, list_notes, list_projects, list_tags, mark_reminded,
+        reconcile_lists_into_projects, search_notes, take_due_digest, toggle, update, update_area,
+        update_note, update_project, update_settings, update_tag,
     };
     use crate::models::{
         CreateArea, CreateNote, CreateProject, CreateTag, CreateTodo, TodoStatus, UpdateArea,
@@ -962,6 +1046,7 @@ mod tests {
             due_date: None,
             remind_at: None,
             project_id: None,
+            area_id: None,
             heading_id: None,
             this_evening: false,
             someday: false,
@@ -1347,6 +1432,131 @@ mod tests {
         let all = list_all(&pool).await.unwrap();
         assert_eq!(all.len(), 1);
         assert_eq!(all[0].project_id, None);
+    }
+
+    #[tokio::test]
+    async fn reconcile_creates_one_project_per_list_and_is_idempotent() {
+        let pool = memory_pool().await;
+
+        let mut a = new_todo("Lait");
+        a.list = Some("Courses".into());
+        let a = create(&pool, a).await.unwrap();
+        let mut b = new_todo("Pain");
+        b.list = Some("Courses".into());
+        create(&pool, b).await.unwrap();
+        let mut c = new_todo("Rapport");
+        c.list = Some("Travail".into());
+        create(&pool, c).await.unwrap();
+        // Sans liste → ne doit produire aucun projet.
+        create(&pool, new_todo("Vague")).await.unwrap();
+
+        assert_eq!(reconcile_lists_into_projects(&pool).await.unwrap(), 2);
+        let projects = list_projects(&pool).await.unwrap();
+        let mut names: Vec<&str> = projects.iter().map(|p| p.name.as_str()).collect();
+        names.sort();
+        assert_eq!(names, ["Courses", "Travail"]);
+
+        // Les tâches sont rattachées ; celle sans liste reste libre.
+        let all = list_all(&pool).await.unwrap();
+        let by_text = |t: &str| all.iter().find(|x| x.text == t).unwrap().clone();
+        let courses = projects.iter().find(|p| p.name == "Courses").unwrap();
+        assert_eq!(by_text("Lait").project_id.as_deref(), Some(courses.id.as_str()));
+        assert_eq!(by_text("Pain").project_id.as_deref(), Some(courses.id.as_str()));
+        assert_eq!(by_text("Vague").project_id, None);
+        // La liste d'origine est conservée (pont de repli tant qu'elle existe).
+        assert_eq!(by_text("Lait").list.as_deref(), Some("Courses"));
+
+        // Rejeu : aucun nouveau projet, aucun changement.
+        assert_eq!(reconcile_lists_into_projects(&pool).await.unwrap(), 0);
+        assert_eq!(list_projects(&pool).await.unwrap().len(), 2);
+        assert_eq!(
+            list_all(&pool)
+                .await
+                .unwrap()
+                .iter()
+                .find(|x| x.id == a.id)
+                .unwrap()
+                .project_id
+                .as_deref(),
+            Some(courses.id.as_str())
+        );
+    }
+
+    #[tokio::test]
+    async fn reconcile_merges_lists_differing_only_by_case() {
+        let pool = memory_pool().await;
+        let mut a = new_todo("A");
+        a.list = Some("Travail".into());
+        create(&pool, a).await.unwrap();
+        let mut b = new_todo("B");
+        b.list = Some("travail".into());
+        create(&pool, b).await.unwrap();
+        // Espaces parasites : même liste, pas un troisième projet.
+        let mut c = new_todo("C");
+        c.list = Some("  Travail  ".into());
+        create(&pool, c).await.unwrap();
+
+        assert_eq!(reconcile_lists_into_projects(&pool).await.unwrap(), 1);
+        let projects = list_projects(&pool).await.unwrap();
+        assert_eq!(projects.len(), 1);
+
+        // Les trois tâches pointent le même projet (piège : DISTINCT/= sont
+        // BINARY par défaut → sans COLLATE NOCASE, « travail » resterait NULL).
+        let pid = projects[0].id.as_str();
+        for t in list_all(&pool).await.unwrap() {
+            assert_eq!(t.project_id.as_deref(), Some(pid), "tâche {}", t.text);
+        }
+    }
+
+    #[tokio::test]
+    async fn reconcile_reuses_an_existing_project_of_the_same_name() {
+        let pool = memory_pool().await;
+        let existing = create_project(
+            &pool,
+            CreateProject { name: "Courses".into(), area_id: None, note: None, deadline: None },
+        )
+        .await
+        .unwrap();
+
+        let mut t = new_todo("Lait");
+        t.list = Some("courses".into());
+        create(&pool, t).await.unwrap();
+
+        // Aucun projet créé : celui existant est réutilisé.
+        assert_eq!(reconcile_lists_into_projects(&pool).await.unwrap(), 0);
+        assert_eq!(list_projects(&pool).await.unwrap().len(), 1);
+        assert_eq!(
+            list_all(&pool).await.unwrap()[0].project_id.as_deref(),
+            Some(existing.id.as_str())
+        );
+    }
+
+    #[tokio::test]
+    async fn deleting_an_area_detaches_projects_and_direct_tasks() {
+        let pool = memory_pool().await;
+        let area = create_area(&pool, CreateArea { name: "Perso".into() }).await.unwrap();
+        create_project(
+            &pool,
+            CreateProject {
+                name: "Sport".into(),
+                area_id: Some(area.id.clone()),
+                note: None,
+                deadline: None,
+            },
+        )
+        .await
+        .unwrap();
+        // Tâche rangée DIRECTEMENT dans le domaine (sans projet).
+        let mut t = new_todo("Ranger le garage");
+        t.area_id = Some(area.id.clone());
+        create(&pool, t).await.unwrap();
+
+        delete_area(&pool, &area.id).await.unwrap();
+
+        assert_eq!(list_projects(&pool).await.unwrap()[0].area_id, None);
+        let all = list_all(&pool).await.unwrap();
+        assert_eq!(all.len(), 1, "la tâche ne doit pas être supprimée");
+        assert_eq!(all[0].area_id, None);
     }
 
     #[tokio::test]

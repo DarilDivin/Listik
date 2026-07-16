@@ -56,6 +56,17 @@ export const PLANNER_VIEWS: { id: PlannerView; label: string }[] = [
   { id: "journal", label: "Journal" },
 ];
 
+/**
+ * Ce que le rail a sélectionné : une vue GTD, un projet, ou un domaine.
+ * Union discriminée tenue en page (état React) plutôt que des routes Next :
+ * le routage est piloté par la donnée — c'est ce qui permet aux sections de
+ * morpher au lieu d'être démontées — et l'app est exportée en statique.
+ */
+export type PlannerSelection =
+  | { kind: "view"; view: PlannerView }
+  | { kind: "project"; id: string }
+  | { kind: "area"; id: string };
+
 /** Groupes composant chaque vue, dans l'ordre d'affichage. */
 export const VIEW_SECTIONS: Record<PlannerView, DateGroupKey[]> = {
   inbox: ["inbox"],
@@ -67,14 +78,20 @@ export const VIEW_SECTIONS: Record<PlannerView, DateGroupKey[]> = {
 };
 
 /**
- * Une tâche est « triée » dès qu'elle a un rattachement — elle a donc quitté la
- * boîte de réception. Pont transitoire : tant que la réconciliation
- * `list → projets` n'a pas eu lieu (Phase G), la liste plate fait foi au même
- * titre qu'un projet, sinon toutes les tâches existantes retomberaient en
- * boîte de réception.
+ * Une tâche est « triée » dès qu'elle a un rattachement (projet, ou domaine
+ * directement) — elle a donc quitté la boîte de réception.
+ *
+ * `todo.list` est un **filet de sécurité**, pas un chemin normal : la colonne
+ * héritée n'est plus jamais écrite depuis la Phase G, et la réconciliation au
+ * démarrage la convertit en projet. On la garde tant que la colonne existe,
+ * car si la réconciliation échouait, la retirer viderait TOUT le backlog trié
+ * de l'utilisateur dans la boîte de réception. Avec elle, une tâche oubliée
+ * dégrade simplement vers « Quand je peux ».
  */
 function isTriaged(todo: Todo): boolean {
-  return todo.project_id !== null || todo.list !== null;
+  return (
+    todo.project_id !== null || todo.area_id !== null || todo.list !== null
+  );
 }
 
 /**
@@ -134,4 +151,36 @@ export function groupTodosByDate(
 /** Nombre de tâches affichées par une vue (somme de ses groupes). */
 export function countForView(groups: TodoGroups, view: PlannerView): number {
   return VIEW_SECTIONS[view].reduce((n, key) => n + groups[key].length, 0);
+}
+
+// ---------------------------------------------------------------------------
+// Projets & domaines — filtres directs, PAS des groupes GTD
+// ---------------------------------------------------------------------------
+//
+// Un projet n'est pas un horizon temporel : une tâche datée doit apparaître à
+// la fois dans « Aujourd'hui » ET dans son projet. On filtre donc directement
+// sur le rattachement, sans jamais passer par les buckets de `groupTodosByDate`.
+
+/** Tâches d'un projet (annulées exclues), terminées comprises. */
+export function tasksOfProject(todos: Todo[], projectId: string): Todo[] {
+  return todos.filter(
+    (t) => t.project_id === projectId && t.status !== "cancelled",
+  );
+}
+
+/** Tâches rangées directement dans un domaine (sans projet intermédiaire). */
+export function tasksOfArea(todos: Todo[], areaId: string): Todo[] {
+  return todos.filter((t) => t.area_id === areaId && t.status !== "cancelled");
+}
+
+/** Progression d'un projet : terminées / total (alimente l'anneau). */
+export function projectProgress(
+  todos: Todo[],
+  projectId: string,
+): { done: number; total: number } {
+  const items = tasksOfProject(todos, projectId);
+  return {
+    done: items.filter((t) => t.status === "completed").length,
+    total: items.length,
+  };
 }

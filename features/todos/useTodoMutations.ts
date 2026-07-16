@@ -46,6 +46,7 @@ export function useTodoMutations() {
       due_date: payload.due_date ?? null,
       remind_at: payload.remind_at ?? null,
       project_id: payload.project_id ?? null,
+      area_id: payload.area_id ?? null,
       heading_id: payload.heading_id ?? null,
       this_evening: payload.this_evening ?? false,
       someday: payload.someday ?? false,

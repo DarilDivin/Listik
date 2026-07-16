@@ -1,5 +1,11 @@
 import { describe, it, expect } from "vitest";
-import { countForView, groupTodosByDate } from "./grouping";
+import {
+  countForView,
+  groupTodosByDate,
+  projectProgress,
+  tasksOfArea,
+  tasksOfProject,
+} from "./grouping";
 import type { Todo } from "./types";
 
 const TODAY = "2026-06-14";
@@ -18,6 +24,7 @@ function todo(partial: Partial<Todo> & { id: string }): Todo {
     due_date: partial.due_date ?? null,
     remind_at: partial.remind_at ?? null,
     project_id: partial.project_id ?? null,
+    area_id: partial.area_id ?? null,
     heading_id: partial.heading_id ?? null,
     this_evening: partial.this_evening ?? false,
     someday: partial.someday ?? false,
@@ -68,12 +75,19 @@ describe("groupTodosByDate", () => {
     const groups = group([
       todo({ id: "brut" }),
       todo({ id: "projet", project_id: "p1" }),
-      // Pont transitoire : la liste plate vaut rattachement jusqu'à la Phase G.
+      // Rangée directement dans un domaine, sans projet : triée aussi.
+      todo({ id: "domaine", area_id: "a1" }),
+      // Filet de sécurité : une `list` héritée non réconciliée dégrade vers
+      // « Quand je peux » plutôt que de retomber en boîte de réception.
       todo({ id: "liste", list: "Courses" }),
     ]);
 
     expect(groups.inbox.map((t) => t.id)).toEqual(["brut"]);
-    expect(groups.anytime.map((t) => t.id)).toEqual(["projet", "liste"]);
+    expect(groups.anytime.map((t) => t.id)).toEqual([
+      "projet",
+      "domaine",
+      "liste",
+    ]);
   });
 
   it("« Un jour » prime sur tout horizon daté", () => {
@@ -107,6 +121,48 @@ describe("groupTodosByDate", () => {
     const scheduled = { ...captured, scheduled_for: TODAY };
     expect(group([scheduled]).inbox).toHaveLength(0);
     expect(group([scheduled]).today.map((t) => t.id)).toEqual(["a"]);
+  });
+});
+
+describe("projets & domaines (filtres directs, pas des groupes GTD)", () => {
+  it("une tâche datée d'un projet vit dans SA vue projet ET dans Aujourd'hui", () => {
+    const items = [todo({ id: "a", project_id: "p1", scheduled_for: TODAY })];
+
+    // Le piège : bâtir la vue projet depuis les buckets GTD la ferait
+    // disparaître du projet dès qu'elle est datée.
+    expect(tasksOfProject(items, "p1").map((t) => t.id)).toEqual(["a"]);
+    expect(group(items).today.map((t) => t.id)).toEqual(["a"]);
+  });
+
+  it("tasksOfProject ignore les annulées et garde les terminées", () => {
+    const items = [
+      todo({ id: "ok", project_id: "p1" }),
+      todo({ id: "fini", project_id: "p1", status: "completed" }),
+      todo({ id: "annule", project_id: "p1", status: "cancelled" }),
+      todo({ id: "ailleurs", project_id: "p2" }),
+    ];
+    expect(tasksOfProject(items, "p1").map((t) => t.id)).toEqual(["ok", "fini"]);
+  });
+
+  it("tasksOfArea ne renvoie que les tâches rangées DIRECTEMENT dans le domaine", () => {
+    const items = [
+      todo({ id: "directe", area_id: "a1" }),
+      // Dans un projet du domaine : elle appartient au projet, pas à la racine.
+      todo({ id: "via-projet", project_id: "p1" }),
+    ];
+    expect(tasksOfArea(items, "a1").map((t) => t.id)).toEqual(["directe"]);
+  });
+
+  it("projectProgress compte terminées / total", () => {
+    const items = [
+      todo({ id: "1", project_id: "p1", status: "completed" }),
+      todo({ id: "2", project_id: "p1" }),
+      todo({ id: "3", project_id: "p1" }),
+      todo({ id: "x", project_id: "p1", status: "cancelled" }),
+    ];
+    expect(projectProgress(items, "p1")).toEqual({ done: 1, total: 3 });
+    // Projet vide : pas de division par zéro chez l'appelant.
+    expect(projectProgress(items, "vide")).toEqual({ done: 0, total: 0 });
   });
 });
 

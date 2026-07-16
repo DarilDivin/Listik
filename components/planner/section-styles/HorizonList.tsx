@@ -32,7 +32,6 @@ export function HorizonList({
   onToggle,
   onDelete,
   onUpdate,
-  lists,
   overdue,
   showDate = true,
 }: SectionStyleProps) {
@@ -52,7 +51,6 @@ export function HorizonList({
                 onDelete={() => onDelete(todo.id)}
                 showDate={showDate}
                 overdue={overdue}
-                lists={lists}
                 onUpdate={(payload) => onUpdate(todo.id, payload)}
               />
             </motion.div>
@@ -95,7 +93,6 @@ export function HorizonList({
                 onDelete={() => onDelete(todo.id)}
                 showDate={showDate}
                 overdue={overdue}
-                lists={lists}
                 onUpdate={(payload) => onUpdate(todo.id, payload)}
               />
             </motion.div>
@@ -122,7 +119,6 @@ export function HorizonList({
                 onToggle={() => onToggle(todo.id)}
                 onDelete={() => onDelete(todo.id)}
                 onUpdate={(payload) => onUpdate(todo.id, payload)}
-                lists={lists}
                 overdue={overdue}
                 showDate={showDate}
               />
@@ -163,7 +159,6 @@ interface HorizonRowProps {
   onToggle: () => void;
   onDelete: () => void;
   onUpdate: (payload: UpdateTodoInput) => void;
-  lists: string[];
   overdue?: boolean;
   showDate?: boolean;
 }
@@ -174,7 +169,7 @@ interface HorizonRowProps {
  * `AnimatePresence` du parent) pour ne pas faire concurrence aux mêmes
  * propriétés lors d'une suppression.
  */
-function HorizonRow({ todo, depth, reveal, onToggle, onDelete, onUpdate, lists, overdue, showDate = true }: HorizonRowProps) {
+function HorizonRow({ todo, depth, reveal, onToggle, onDelete, onUpdate, overdue, showDate = true }: HorizonRowProps) {
   const ref = useRef<HTMLDivElement>(null);
   const [naturalHeight, setNaturalHeight] = useState<number | null>(null);
 
@@ -199,7 +194,6 @@ function HorizonRow({ todo, depth, reveal, onToggle, onDelete, onUpdate, lists, 
           onDelete={onDelete}
           showDate={showDate}
           overdue={overdue}
-          lists={lists}
           onUpdate={onUpdate}
         />
       </motion.div>

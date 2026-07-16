@@ -5,21 +5,22 @@ import { spring } from "@/lib/motion";
 import { cn } from "@/lib/utils";
 
 interface ListFilterProps {
-  lists: string[];
+  /** Entrées filtrables (projets) : `id` sert de clé, `label` est affiché. */
+  items: { id: string; label: string }[];
   value: string | null;
-  onChange: (list: string | null) => void;
+  onChange: (id: string | null) => void;
 }
 
 /**
- * Chips de filtrage par liste (« Toutes » + chaque liste). La pastille active
- * glisse entre les chips (layoutId partagé). Masqué si aucune liste.
+ * Chips de filtrage par projet (« Tous » + chaque projet). La pastille active
+ * glisse entre les chips (layoutId partagé). Masqué si aucun projet.
  */
-export function ListFilter({ lists, value, onChange }: ListFilterProps) {
-  if (lists.length === 0) return null;
+export function ListFilter({ items, value, onChange }: ListFilterProps) {
+  if (items.length === 0) return null;
 
   const options: { key: string | null; label: string }[] = [
-    { key: null, label: "Toutes" },
-    ...lists.map((name) => ({ key: name as string | null, label: name })),
+    { key: null, label: "Tous" },
+    ...items.map((item) => ({ key: item.id as string | null, label: item.label })),
   ];
 
   return (

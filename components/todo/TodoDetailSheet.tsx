@@ -1,12 +1,13 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { BellRing, Calendar, Hash, Repeat, Trash2, X } from "lucide-react";
+import { BellRing, Calendar, FolderOpen, Repeat, Trash2, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { toLocalISODate, todayLocalISODate } from "@/lib/date";
 import { DatePickerCalendar } from "@/components/date-picker-calendar";
 import { TimePicker } from "@/components/ui/time-picker";
-import { ListControl } from "@/components/todo/ListControl";
+import { ProjectControl } from "@/components/todo/ProjectControl";
+import { useProjects } from "@/hooks/useProjects";
 import { Button } from "@/components/ui/button";
 import {
   Popover,
@@ -74,7 +75,6 @@ interface TodoDetailSheetProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   todo: Todo;
-  lists: string[];
   onUpdate: (payload: UpdateTodoInput) => void;
   onDelete: () => void;
 }
@@ -94,10 +94,10 @@ export function TodoDetailSheet({
   open,
   onOpenChange,
   todo,
-  lists,
   onUpdate,
   onDelete,
 }: TodoDetailSheetProps) {
+  const { projects, areas, createProject } = useProjects();
   const [title, setTitle] = useState(todo.text);
   const [note, setNote] = useState(todo.note ?? "");
   const [dateOpen, setDateOpen] = useState(false);
@@ -246,12 +246,17 @@ export function TodoDetailSheet({
               </Popover>
             </DetailRow>
 
-            <DetailRow icon={<Hash size={15} />} label="Liste">
-              <ListControl
-                list={todo.list}
-                lists={lists}
+            <DetailRow icon={<FolderOpen size={15} />} label="Projet">
+              <ProjectControl
+                projectId={todo.project_id}
+                projects={projects}
+                areas={areas}
                 modal
-                onChange={(list) => onUpdate({ list })}
+                // Purge la « liste » héritée en même temps : le projet devient
+                // l'unique source de vérité pour cette tâche (la colonne `list`
+                // se vide ainsi progressivement, sans migration brutale).
+                onChange={(project_id) => onUpdate({ project_id, list: null })}
+                onCreate={async (name) => (await createProject({ name })).id}
               />
             </DetailRow>
 

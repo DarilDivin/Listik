@@ -30,7 +30,6 @@ export function LoupeList({
   onToggle,
   onDelete,
   onUpdate,
-  lists,
   overdue,
   showDate = true,
 }: SectionStyleProps) {
@@ -77,7 +76,6 @@ export function LoupeList({
                   onDelete={() => onDelete(todo.id)}
                   showDate={showDate}
                   overdue={overdue}
-                  lists={lists}
                   onUpdate={(payload) => onUpdate(todo.id, payload)}
                 />
               </motion.div>

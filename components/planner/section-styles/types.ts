@@ -6,7 +6,6 @@ export interface SectionStyleProps {
   onToggle: (id: string) => void;
   onDelete: (id: string) => void;
   onUpdate: (id: string, payload: UpdateTodoInput) => void;
-  lists: string[];
   overdue?: boolean;
   /**
    * Afficher la date planifiée sur chaque ligne. Faux pour les sections dont la

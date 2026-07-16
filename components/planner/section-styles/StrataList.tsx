@@ -103,7 +103,7 @@ function buildStrata(todos: Todo[]): StrataBucket[] {
  * rouvrir. Les métadonnées sont masquées dans les lignes (le regroupement
  * porte déjà l'information de date).
  */
-export function StrataList({ todos, onToggle, onDelete, onUpdate, lists }: SectionStyleProps) {
+export function StrataList({ todos, onToggle, onDelete, onUpdate }: SectionStyleProps) {
   const buckets = buildStrata(todos);
 
   return (
@@ -131,7 +131,6 @@ export function StrataList({ todos, onToggle, onDelete, onUpdate, lists }: Secti
                   onToggle={onToggle}
                   onDelete={onDelete}
                   onUpdate={onUpdate}
-                  lists={lists}
                 />
               </motion.div>
             );
@@ -154,7 +153,6 @@ export function StrataList({ todos, onToggle, onDelete, onUpdate, lists }: Secti
                 onToggle={onToggle}
                 onDelete={onDelete}
                 onUpdate={onUpdate}
-                lists={lists}
               />
             </motion.div>
           );

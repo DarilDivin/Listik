@@ -1,15 +1,13 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import useSWR from "swr";
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow, LogicalSize } from "@tauri-apps/api/window";
 import Omnibar from "@/components/Omnibar";
-import { todosApi } from "@/features/todos/api";
 import { useTodosSync } from "@/features/todos/useTodosSync";
 import { useTodoMutations } from "@/features/todos/useTodoMutations";
 import { useNotesMutations } from "@/features/notes/useNotesMutations";
-import { SWR_KEYS } from "@/lib/swr-config";
+import { useProjects } from "@/hooks/useProjects";
 import { todayLocalISODate, toLocalISODate } from "@/lib/date";
 import type { SmartTaskData } from "@/features/todos/useTaskMode";
 
@@ -39,13 +37,16 @@ export default function QuickPage() {
   useTodosSync();
   const { createTodo } = useTodoMutations();
   const { createNote } = useNotesMutations();
-  const { data: allTodos = [] } = useSWR(SWR_KEYS.ALL_TODOS, () => todosApi.list());
+  const { projects, createProject } = useProjects();
+  // Noms des projets actifs pour l'autocomplétion `#` — vient de la table
+  // `projects`, plus d'un scan des chaînes `todos.list` (colonne héritée).
   const lists = useMemo(
     () =>
-      Array.from(
-        new Set(allTodos.flatMap((t) => (t.list ? [t.list] : []))),
-      ).sort((a, b) => a.localeCompare(b, "fr")),
-    [allTodos],
+      projects
+        .filter((p) => p.status === "active")
+        .map((p) => p.name)
+        .sort((a, b) => a.localeCompare(b, "fr")),
+    [projects],
   );
   const [mountKey, setMountKey] = useState(0);
   const contentRef = useRef<HTMLDivElement>(null);
@@ -164,17 +165,30 @@ export default function QuickPage() {
   const handleSubmit = useCallback(
     async (data: SmartTaskData) => {
       const due = data.dueDate ? toLocalISODate(data.dueDate) : null;
+
+      // Le `#nom` désigne un projet (plus une liste en texte libre) : on résout
+      // vers un projet existant, insensible à la casse — même politique que la
+      // réconciliation Rust et que la capture du planner.
+      let projectId: string | null = null;
+      if (data.list) {
+        const name = data.list.trim();
+        const existing = projects.find(
+          (p) => p.name.toLowerCase() === name.toLowerCase(),
+        );
+        projectId = existing ? existing.id : (await createProject({ name })).id;
+      }
+
       await createTodo({
         text: data.text,
         note: data.note ?? null,
-        list: data.list ?? null,
         priority: data.priority ?? "normal",
         scheduled_for: due ?? todayLocalISODate(),
         due_date: due,
+        project_id: projectId,
       });
       hide();
     },
-    [createTodo, hide],
+    [createTodo, createProject, projects, hide],
   );
 
   const handleSubmitNote = useCallback(

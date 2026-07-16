@@ -20,8 +20,10 @@ export interface CreateTodoInput {
   due_date?: string | null;
   /** Rappel : date-heure locale « YYYY-MM-DDTHH:MM » ou null. */
   remind_at?: string | null;
-  /** Projet de rattachement (Phase E+, encore sans UI). */
+  /** Projet de rattachement. */
   project_id?: string | null;
+  /** Domaine de rattachement direct (sans projet intermédiaire). */
+  area_id?: string | null;
   /** En-tête interne de projet (lean, sans UI). */
   heading_id?: string | null;
   /** « Ce soir » : sous-section d'Aujourd'hui. */
@@ -41,8 +43,10 @@ export interface UpdateTodoInput {
   due_date?: string | null;
   /** Rappel : date-heure locale « YYYY-MM-DDTHH:MM » ou null. */
   remind_at?: string | null;
-  /** Projet de rattachement (Phase E+, encore sans UI). */
+  /** Projet de rattachement. */
   project_id?: string | null;
+  /** Domaine de rattachement direct (sans projet intermédiaire). */
+  area_id?: string | null;
   /** En-tête interne de projet (lean, sans UI). */
   heading_id?: string | null;
   /** « Ce soir » : sous-section d'Aujourd'hui. */
