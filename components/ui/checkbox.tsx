@@ -1,7 +1,8 @@
 "use client"
 
 import * as React from "react"
-import * as CheckboxPrimitive from "@radix-ui/react-checkbox"
+// Paquet unifié `radix-ui` (règle du projet — voir popover.tsx).
+import { Checkbox as CheckboxPrimitive } from "radix-ui"
 import { CheckIcon } from "lucide-react"
 
 import { cn } from "@/lib/utils"

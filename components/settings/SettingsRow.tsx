@@ -30,7 +30,7 @@ export function SettingsRow({
   return (
     <div
       className={cn(
-        "flex gap-3 px-4 py-2.5",
+        "flex gap-3 px-1 py-3",
         stacked ? "items-start" : "items-center",
         dimmed && "opacity-55",
       )}

@@ -1,8 +1,9 @@
 use crate::db::{self, AppState};
 use crate::models::{
-    AiAgentResponse, AiChatMessage, AiParsedTask, AiSource, CreateNote, CreateSubTask, CreateTodo,
-    Note, Settings, SidecarAgentResponse, SubTask, Todo, UpdateNote, UpdateSettings, UpdateSubTask,
-    UpdateTodo,
+    AiAgentResponse, AiChatMessage, AiParsedTask, AiSource, Area, CreateArea, CreateNote,
+    CreateProject, CreateSubTask, CreateTag, CreateTodo, Note, Project, Settings,
+    SidecarAgentResponse, SubTask, Tag, Todo, UpdateArea, UpdateNote, UpdateProject, UpdateSettings,
+    UpdateSubTask, UpdateTag, UpdateTodo,
 };
 use tauri::{AppHandle, Emitter, Manager, State, WebviewUrl, WebviewWindowBuilder};
 
@@ -317,6 +318,10 @@ pub async fn ai_agent(
                     scheduled_for: Some(task.due_date.clone().unwrap_or(today)),
                     due_date: task.due_date,
                     remind_at: None,
+                    project_id: None,
+                    heading_id: None,
+                    this_evening: false,
+                    someday: false,
                 };
                 db::create(&state.pool, payload)
                     .await
@@ -410,6 +415,173 @@ pub async fn export_backup(state: State<'_, AppState>, path: String) -> Result<(
 
     let json = serde_json::to_string_pretty(&backup).map_err(|e| e.to_string())?;
     std::fs::write(&path, json).map_err(|e| e.to_string())
+}
+
+// ---------------------------------------------------------------------------
+// Commandes Domaines / Projets (structure Things — synchro multi-vues)
+// ---------------------------------------------------------------------------
+
+/// Diffusé après une mutation de domaine ou de projet (arbre du rail à revalider).
+pub const PROJECTS_CHANGED: &str = "projects:changed";
+
+fn notify_projects_changed(app: &AppHandle) {
+    if let Err(e) = app.emit(PROJECTS_CHANGED, ()) {
+        eprintln!("⚠️ Émission '{PROJECTS_CHANGED}' échouée: {e}");
+    }
+}
+
+#[tauri::command]
+pub async fn list_areas(state: State<'_, AppState>) -> Result<Vec<Area>, String> {
+    db::list_areas(&state.pool).await.map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn create_area(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    payload: CreateArea,
+) -> Result<Area, String> {
+    let area = db::create_area(&state.pool, payload)
+        .await
+        .map_err(|e| e.to_string())?;
+    notify_projects_changed(&app);
+    Ok(area)
+}
+
+#[tauri::command]
+pub async fn update_area(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    id: String,
+    payload: UpdateArea,
+) -> Result<Area, String> {
+    let area = db::update_area(&state.pool, &id, payload)
+        .await
+        .map_err(|e| e.to_string())?;
+    notify_projects_changed(&app);
+    Ok(area)
+}
+
+#[tauri::command]
+pub async fn delete_area(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    id: String,
+) -> Result<(), String> {
+    db::delete_area(&state.pool, &id)
+        .await
+        .map_err(|e| e.to_string())?;
+    notify_projects_changed(&app);
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn list_projects(state: State<'_, AppState>) -> Result<Vec<Project>, String> {
+    db::list_projects(&state.pool)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn create_project(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    payload: CreateProject,
+) -> Result<Project, String> {
+    let project = db::create_project(&state.pool, payload)
+        .await
+        .map_err(|e| e.to_string())?;
+    notify_projects_changed(&app);
+    Ok(project)
+}
+
+#[tauri::command]
+pub async fn update_project(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    id: String,
+    payload: UpdateProject,
+) -> Result<Project, String> {
+    let project = db::update_project(&state.pool, &id, payload)
+        .await
+        .map_err(|e| e.to_string())?;
+    notify_projects_changed(&app);
+    Ok(project)
+}
+
+#[tauri::command]
+pub async fn delete_project(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    id: String,
+) -> Result<(), String> {
+    db::delete_project(&state.pool, &id)
+        .await
+        .map_err(|e| e.to_string())?;
+    // Des tâches ont pu être détachées → les vues de tâches se revalident aussi.
+    notify_projects_changed(&app);
+    notify_changed(&app);
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// Commandes Tags (contexte transverse — synchro multi-vues)
+// ---------------------------------------------------------------------------
+
+/// Diffusé après une mutation de tag.
+pub const TAGS_CHANGED: &str = "tags:changed";
+
+fn notify_tags_changed(app: &AppHandle) {
+    if let Err(e) = app.emit(TAGS_CHANGED, ()) {
+        eprintln!("⚠️ Émission '{TAGS_CHANGED}' échouée: {e}");
+    }
+}
+
+#[tauri::command]
+pub async fn list_tags(state: State<'_, AppState>) -> Result<Vec<Tag>, String> {
+    db::list_tags(&state.pool).await.map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn create_tag(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    payload: CreateTag,
+) -> Result<Tag, String> {
+    let tag = db::create_tag(&state.pool, payload)
+        .await
+        .map_err(|e| e.to_string())?;
+    notify_tags_changed(&app);
+    Ok(tag)
+}
+
+#[tauri::command]
+pub async fn update_tag(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    id: String,
+    payload: UpdateTag,
+) -> Result<Tag, String> {
+    let tag = db::update_tag(&state.pool, &id, payload)
+        .await
+        .map_err(|e| e.to_string())?;
+    notify_tags_changed(&app);
+    Ok(tag)
+}
+
+#[tauri::command]
+pub async fn delete_tag(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    id: String,
+) -> Result<(), String> {
+    db::delete_tag(&state.pool, &id)
+        .await
+        .map_err(|e| e.to_string())?;
+    notify_tags_changed(&app);
+    // Des liaisons de tâches ont pu disparaître → revalider aussi les tâches.
+    notify_changed(&app);
+    Ok(())
 }
 
 // ---------------------------------------------------------------------------

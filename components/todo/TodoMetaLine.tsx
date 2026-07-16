@@ -1,0 +1,90 @@
+"use client";
+
+import { BellRing, Repeat } from "lucide-react";
+import { cn } from "@/lib/utils";
+import { recurrenceLabel } from "@/features/todos/recurrence";
+import { TodoDate } from "@/components/todo/TodoDate";
+import type { Todo } from "@/features/todos/types";
+
+/** Étiquette compacte d'un rappel : heure seule si même jour que la tâche. */
+function reminderLabel(remindAt: string, scheduledFor: string | null): string {
+  const time = remindAt.slice(11, 16);
+  if (scheduledFor && remindAt.slice(0, 10) === scheduledFor) return time;
+  const [y, m, d] = remindAt.slice(0, 10).split("-").map(Number);
+  const short = new Date(y, m - 1, d).toLocaleDateString("fr-FR", {
+    day: "numeric",
+    month: "short",
+  });
+  return `${short} ${time}`;
+}
+
+interface TodoMetaLineProps {
+  todo: Todo;
+  /** Affiche la date planifiée — à couper quand la section groupe déjà par jour. */
+  showDate?: boolean;
+  overdue?: boolean;
+  dimmed?: boolean;
+}
+
+/**
+ * Ligne de métadonnées d'une tâche : purement d'affichage, façon Things 3 —
+ * liste en pastille mate, date/récurrence/rappel en texte discret. Toujours
+ * montée dès qu'une donnée existe (jamais révélée au survol) : la structure
+ * de la ligne ne dépend donc jamais de l'interaction, seulement des données.
+ * L'édition de ces champs vit dans `TodoDetailSheet`, pas ici.
+ */
+export function TodoMetaLine({
+  todo,
+  showDate = true,
+  overdue = false,
+  dimmed = false,
+}: TodoMetaLineProps) {
+  const hasDate = showDate && Boolean(todo.scheduled_for);
+  const hasAny =
+    hasDate || todo.list || todo.recurrence !== "none" || todo.remind_at;
+
+  if (!hasAny) return null;
+
+  return (
+    <div className="mt-1.5 flex flex-wrap items-center gap-x-1.5 gap-y-1">
+      {hasDate && todo.scheduled_for && (
+        <TodoDate date={todo.scheduled_for} dimmed={dimmed} overdue={overdue} />
+      )}
+
+      {todo.list && (
+        <span
+          className={cn(
+            "inline-flex items-center rounded-full bg-foreground/[0.06] px-2 py-0.5 text-[11px] font-medium text-muted-foreground",
+            dimmed && "opacity-60",
+          )}
+        >
+          {todo.list}
+        </span>
+      )}
+
+      {todo.recurrence !== "none" && (
+        <span
+          className={cn(
+            "inline-flex items-center gap-1 text-xs text-muted-foreground",
+            dimmed && "opacity-60",
+          )}
+        >
+          <Repeat size={12} className="opacity-70" />
+          {recurrenceLabel(todo.recurrence)}
+        </span>
+      )}
+
+      {todo.remind_at && (
+        <span
+          className={cn(
+            "inline-flex items-center gap-1 text-xs text-muted-foreground",
+            dimmed && "opacity-60",
+          )}
+        >
+          <BellRing size={12} className="opacity-70" />
+          {reminderLabel(todo.remind_at, todo.scheduled_for)}
+        </span>
+      )}
+    </div>
+  );
+}

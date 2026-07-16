@@ -4,8 +4,11 @@ import { useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { toast } from "sonner";
+import { motion } from "motion/react";
 import { Sparkles, ListTodo, StickyNote, Trash2 } from "lucide-react";
 import Omnibar from "@/components/Omnibar";
+import { Badge } from "@/components/ui/badge";
+import { spring } from "@/lib/motion";
 import { usePlannerTodos } from "@/hooks/usePlannerTodos";
 import { useNotesMutations } from "@/features/notes/useNotesMutations";
 import { aiAgent, type AiChatMessage, type AiSource } from "@/features/omnibar/agent";
@@ -118,14 +121,14 @@ export default function AssistantPage() {
         className="pointer-events-none absolute inset-x-0 top-0 z-0 h-[460px]"
         style={{
           background:
-            "radial-gradient(46% 60% at 50% -6%, oklch(0.62 0.10 300 / 0.10), transparent 70%)",
+            "radial-gradient(46% 60% at 50% -6%, var(--brand-soft), transparent 70%)",
         }}
       />
 
       <div ref={scrollRef} className="relative z-10 flex-1 overflow-y-auto">
         <div className="mx-auto max-w-[44rem] px-8 pt-16 pb-8">
           {turns.length === 0 ? (
-            <EmptyAssistant />
+            <EmptyAssistant onAsk={handleAsk} />
           ) : (
             <div className="flex flex-col gap-8">
               {turns.map((turn) => (
@@ -157,33 +160,50 @@ export default function AssistantPage() {
   );
 }
 
-function EmptyAssistant() {
+function EmptyAssistant({ onAsk }: { onAsk: (text: string) => void }) {
   const examples = [
     "Ajoute appeler le dentiste vendredi",
     "Qu'est-ce que j'ai cette semaine ?",
     "Note : idée d'article sur le RAG",
   ];
   return (
-    <div className="flex flex-col items-center gap-4 pt-16 text-center">
-      <div className="grid size-14 place-items-center rounded-2xl bg-accent/60 text-muted-foreground">
+    <motion.div
+      initial={{ opacity: 0, y: 14 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={spring.smooth}
+      className="flex flex-col items-center gap-4 pt-16 text-center"
+    >
+      <motion.div
+        initial={{ scale: 0.7, opacity: 0 }}
+        animate={{ scale: 1, opacity: 1 }}
+        transition={{ ...spring.bouncy, delay: 0.08 }}
+        className="grid size-14 place-items-center rounded-2xl bg-brand-soft text-brand"
+      >
         <Sparkles size={26} />
-      </div>
-      <h1 className="text-3xl font-semibold tracking-[-0.02em] text-foreground">Assistant</h1>
+      </motion.div>
+      <h1 className="text-large-title text-foreground">Assistant</h1>
       <p className="max-w-sm text-sm text-muted-foreground">
         Demandez en langage naturel : créer une tâche, prendre une note, ou poser une question sur
         vos tâches et notes.
       </p>
       <div className="mt-2 flex flex-col items-stretch gap-2">
-        {examples.map((ex) => (
-          <span
+        {examples.map((ex, i) => (
+          <motion.button
             key={ex}
-            className="rounded-lg border border-border/50 px-3 py-1.5 text-[13px] text-muted-foreground"
+            type="button"
+            onClick={() => onAsk(ex)}
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ ...spring.smooth, delay: 0.12 + i * 0.05 }}
+            whileHover={{ scale: 1.015 }}
+            whileTap={{ scale: 0.985 }}
+            className="rounded-xl border border-border/60 px-3.5 py-2 text-[13px] text-muted-foreground transition-colors hover:border-border hover:bg-accent/40 hover:text-foreground"
           >
             {ex}
-          </span>
+          </motion.button>
         ))}
       </div>
-    </div>
+    </motion.div>
   );
 }
 
@@ -191,17 +211,37 @@ function ConversationTurn({ turn }: { turn: Turn }) {
   const toolMeta = turn.tool ? TOOL_LABEL[turn.tool] : undefined;
   return (
     <div className="flex flex-col gap-3">
-      <p className="self-end max-w-[85%] rounded-2xl bg-accent/60 px-4 py-2 text-[15px] leading-snug text-foreground">
+      <motion.p
+        initial={{ opacity: 0, y: 10, scale: 0.98 }}
+        animate={{ opacity: 1, y: 0, scale: 1 }}
+        transition={spring.smooth}
+        className="self-end max-w-[85%] rounded-2xl rounded-br-md bg-brand-soft px-4 py-2 text-[15px] leading-snug text-foreground"
+      >
         {turn.question}
-      </p>
+      </motion.p>
 
       {turn.answer !== undefined && (
-        <div className="flex flex-col gap-2">
+        <motion.div
+          initial={{ opacity: 0, y: 8 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={spring.smooth}
+          className="flex flex-col gap-2"
+        >
           {toolMeta && (
-            <span className="inline-flex w-max items-center gap-1.5 rounded-full bg-foreground/[0.06] px-2.5 py-0.5 text-[11px] font-medium text-muted-foreground">
-              <toolMeta.icon size={12} />
-              {toolMeta.text}
-            </span>
+            <motion.span
+              initial={{ opacity: 0, scale: 0.85 }}
+              animate={{ opacity: 1, scale: 1 }}
+              transition={spring.bouncy}
+              className="w-max"
+            >
+              <Badge
+                variant="secondary"
+                className="gap-1.5 rounded-full text-[11px] font-medium text-muted-foreground"
+              >
+                <toolMeta.icon size={12} />
+                {toolMeta.text}
+              </Badge>
+            </motion.span>
           )}
           <div
             className={`note-markdown text-[15px] leading-relaxed ${
@@ -211,7 +251,7 @@ function ConversationTurn({ turn }: { turn: Turn }) {
             <ReactMarkdown remarkPlugins={[remarkGfm]}>{turn.answer}</ReactMarkdown>
           </div>
           {turn.sources && turn.sources.length > 0 && <Sources sources={turn.sources} />}
-        </div>
+        </motion.div>
       )}
     </div>
   );
@@ -234,10 +274,25 @@ function Sources({ sources }: { sources: AiSource[] }) {
 
 function ThinkingIndicator() {
   return (
-    <div className="flex items-center gap-1.5 text-muted-foreground">
-      <span className="size-1.5 animate-pulse rounded-full bg-current" />
-      <span className="size-1.5 animate-pulse rounded-full bg-current [animation-delay:0.2s]" />
-      <span className="size-1.5 animate-pulse rounded-full bg-current [animation-delay:0.4s]" />
-    </div>
+    <motion.div
+      initial={{ opacity: 0, y: 6 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={spring.smooth}
+      className="flex items-center gap-1.5 text-muted-foreground"
+    >
+      {[0, 1, 2].map((i) => (
+        <motion.span
+          key={i}
+          className="size-1.5 rounded-full bg-current"
+          animate={{ y: [0, -4, 0], opacity: [0.4, 1, 0.4] }}
+          transition={{
+            duration: 0.9,
+            repeat: Infinity,
+            delay: i * 0.15,
+            ease: "easeInOut",
+          }}
+        />
+      ))}
+    </motion.div>
   );
 }

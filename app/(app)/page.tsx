@@ -1,30 +1,114 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { AnimatePresence, LayoutGroup, motion } from "motion/react";
 import { toast } from "sonner";
+import { spring } from "@/lib/motion";
 import { usePlannerTodos } from "@/hooks/usePlannerTodos";
 import { useNotesMutations } from "@/features/notes/useNotesMutations";
 import Omnibar from "@/components/Omnibar";
-import { AnimatedTodoList } from "@/components/todo/AnimatedTodoList";
 import { EmptyState } from "@/components/todo/EmptyState";
-import { FilterTabs, type TodoFilter } from "@/components/todo/FilterTabs";
 import { ListFilter } from "@/components/todo/ListFilter";
-import { PlannerHeader } from "@/components/planner/PlannerHeader";
+import { HeroDay } from "@/components/planner/HeroDay";
+import { PlannerRail } from "@/components/planner/PlannerRail";
+import { SectionBody } from "@/components/planner/SectionBody";
 import {
-  TimelineSection,
+  SectionCard,
   type SectionTone,
-} from "@/components/planner/TimelineSection";
-import { groupTodosByDate } from "@/features/todos/grouping";
+} from "@/components/planner/SectionCard";
+import { Skeleton } from "@/components/ui/skeleton";
+import { useUIPrefs, type SectionKey } from "@/components/ui-prefs";
+import {
+  countForView,
+  groupTodosByDate,
+  PLANNER_VIEWS,
+  VIEW_SECTIONS,
+  type DateGroupKey,
+  type PlannerView,
+  type TodoGroups,
+} from "@/features/todos/grouping";
 import { todayLocalISODate, toLocalISODate } from "@/lib/date";
-import type { Priority, Todo } from "@/features/todos/types";
+import type { CreateTodoInput, Priority, Todo, TodoStatus } from "@/features/todos/types";
 
-interface ActiveSection {
-  key: string;
+/** Présentation de chaque groupe : libellé, tonalité, date implicite. */
+const SECTION_META: Record<
+  DateGroupKey,
+  { label: string; tone: SectionTone; overdue?: boolean; dateImplied?: boolean }
+> = {
+  overdue: { label: "En retard", tone: "danger", overdue: true },
+  today: { label: "Aujourd'hui", tone: "today", dateImplied: true },
+  evening: { label: "Ce soir", tone: "today", dateImplied: true },
+  tomorrow: { label: "Demain", tone: "default", dateImplied: true },
+  upcoming: { label: "À venir", tone: "default" },
+  inbox: { label: "Boîte de réception", tone: "default" },
+  anytime: { label: "Quand je peux", tone: "default" },
+  someday: { label: "Un jour", tone: "default" },
+  completed: { label: "Terminées", tone: "default" },
+};
+
+/** État vide, propre à chaque vue — invite à agir plutôt qu'à constater. */
+const EMPTY_COPY: Record<PlannerView, { title: string; subtitle: string }> = {
+  inbox: {
+    title: "Boîte de réception vide",
+    subtitle: "Tout est trié. Capturez une idée ci-dessous.",
+  },
+  today: {
+    title: "Rien pour aujourd'hui",
+    subtitle: "Profitez-en, ou planifiez une tâche ci-dessous.",
+  },
+  upcoming: {
+    title: "Rien à venir",
+    subtitle: "Aucune tâche planifiée pour les prochains jours.",
+  },
+  anytime: {
+    title: "Rien à faire pour l'instant",
+    subtitle: "Les tâches d'un projet, sans date, apparaissent ici.",
+  },
+  someday: {
+    title: "Aucune idée en réserve",
+    subtitle: "Rangez ici ce que vous ferez un jour, sans vous engager.",
+  },
+  journal: {
+    title: "Journal vide",
+    subtitle: "Vos tâches terminées s'archiveront ici.",
+  },
+};
+
+interface PlannerSection {
+  key: SectionKey;
   label: string;
   items: Todo[];
   tone: SectionTone;
   overdue?: boolean;
+  /** La date de ces tâches est implicite (section = un jour précis) : on ne la répète pas. */
+  dateImplied?: boolean;
 }
+
+/**
+ * Une tâche (dé)cochée reste dans sa section le temps que la coche se trace
+ * et que l'œil enregistre le changement, puis glisse vers sa vraie section.
+ * Sans cette pause, la ligne disparaît avant même la fin de l'animation de
+ * la case — le geste le plus répété de l'app perdrait toute sa récompense.
+ */
+const LINGER_MS = 900;
+
+/**
+ * Repli/dépli du chrome (hero + filtres) quand une section passe en portail :
+ * la hauteur s'anime (jamais de démontage sec → aucun saut de layout), le
+ * contenu s'efface un peu plus vite qu'il ne se replie.
+ */
+const chromeVariants = {
+  open: {
+    height: "auto",
+    opacity: 1,
+    transition: { height: spring.smooth, opacity: { duration: 0.3, delay: 0.06 } },
+  },
+  collapsed: {
+    height: 0,
+    opacity: 0,
+    transition: { height: spring.smooth, opacity: { duration: 0.18 } },
+  },
+} as const;
 
 export default function PlannerPage() {
   const {
@@ -38,24 +122,72 @@ export default function PlannerPage() {
     lists,
   } = usePlannerTodos();
   const { createNote } = useNotesMutations();
+  const { sectionStyles } = useUIPrefs();
 
-  const [filter, setFilter] = useState<TodoFilter>("all");
+  // Aujourd'hui est la vue d'accueil, comme dans Things.
+  const [view, setView] = useState<PlannerView>("today");
   const [listFilter, setListFilter] = useState<string | null>(null);
+  const [portalKey, setPortalKey] = useState<SectionKey | null>(null);
+  // Le clip (overflow-hidden) ne vit que pendant le repli/dépli du chrome :
+  // au repos déplié, il est retiré pour que la barre de filtres reste sticky.
+  const [chromeClipped, setChromeClipped] = useState(false);
+
+  const scrollRef = useRef<HTMLDivElement>(null);
+
+  // Tâches fraîchement (dé)cochées : id → statut de routage (celui d'AVANT le
+  // basculement), le temps de la pause. Voir LINGER_MS.
+  const [linger, setLinger] = useState<ReadonlyMap<string, TodoStatus>>(
+    new Map(),
+  );
+  const lingerTimers = useRef(new Map<string, ReturnType<typeof setTimeout>>());
+
+  useEffect(() => {
+    const timers = lingerTimers.current;
+    return () => timers.forEach(clearTimeout);
+  }, []);
 
   const todayISO = todayLocalISODate();
+  const tomorrowISO = useMemo(() => {
+    const t = new Date();
+    t.setDate(t.getDate() + 1);
+    return toLocalISODate(t);
+  }, []);
 
-  // Filtre par liste, puis regroupement temporel.
-  const { overdue, today: todayTodos, tomorrow, upcoming, someday, completed } =
-    useMemo(() => {
-      const visible = listFilter
-        ? todos.filter((t) => t.list === listFilter)
-        : todos;
-      const t = new Date();
-      t.setDate(t.getDate() + 1);
-      return groupTodosByDate(visible, todayISO, toLocalISODate(t));
-    }, [todos, listFilter, todayISO]);
+  // Filtre par liste, routage avec pause, puis regroupement GTD.
+  const groups: TodoGroups = useMemo(() => {
+    const visible = listFilter
+      ? todos.filter((t) => t.list === listFilter)
+      : todos;
+    const routed = linger.size
+      ? visible.map((t) => {
+          const routeAs = linger.get(t.id);
+          return routeAs && routeAs !== t.status ? { ...t, status: routeAs } : t;
+        })
+      : visible;
+    const result = groupTodosByDate(routed, todayISO, tomorrowISO);
+    if (linger.size) {
+      // Le routage seul était patché : on ré-affiche les objets réels pour
+      // que la ligne montre son vrai statut (coche, barré) pendant la pause.
+      const byId = new Map(visible.map((todo) => [todo.id, todo]));
+      for (const key of Object.keys(result) as (keyof TodoGroups)[]) {
+        result[key] = result[key].map((todo) => byId.get(todo.id) ?? todo);
+      }
+    }
+    return result;
+  }, [todos, listFilter, todayISO, tomorrowISO, linger]);
 
-  // Pouls du jour (global, indépendant du filtre liste).
+  // Compteurs du rail : calculés sur les mêmes données que le contenu — ce qui
+  // est compté est exactement ce qui est affiché (filtre de liste compris).
+  const counts = useMemo(
+    () =>
+      Object.fromEntries(
+        PLANNER_VIEWS.map((v) => [v.id, countForView(groups, v.id)]),
+      ) as Record<PlannerView, number>,
+    [groups],
+  );
+
+  // Pouls du jour (global, indépendant du filtre liste) — lui réagit tout de
+  // suite : l'anneau et le compteur récompensent la coche pendant la pause.
   const { doneToday, totalToday } = useMemo(() => {
     const day = todos.filter((t) => t.scheduled_for === todayISO);
     return {
@@ -64,22 +196,93 @@ export default function PlannerPage() {
     };
   }, [todos, todayISO]);
 
-  const activeSections: ActiveSection[] = [
-    { key: "overdue", label: "En retard", items: overdue, tone: "danger", overdue: true },
-    { key: "today", label: "Aujourd'hui", items: todayTodos, tone: "today" },
-    { key: "tomorrow", label: "Demain", items: tomorrow, tone: "default" },
-    { key: "upcoming", label: "À venir", items: upcoming, tone: "default" },
-    { key: "someday", label: "Sans date", items: someday, tone: "default" },
-  ];
+  // Sections de la vue courante, dans l'ordre, non vides seulement.
+  const viewSections: PlannerSection[] = VIEW_SECTIONS[view].map((key) => ({
+    key,
+    items: groups[key],
+    ...SECTION_META[key],
+  }));
 
-  const activeCount = activeSections.reduce((n, s) => n + s.items.length, 0);
+  const portalSection = portalKey
+    ? viewSections.find((s) => s.key === portalKey) ?? null
+    : null;
 
-  const showActive = filter === "all" || filter === "pending";
-  const showCompleted = filter === "all" || filter === "completed";
-  const isEmpty =
-    (filter === "pending" && activeCount === 0) ||
-    (filter === "completed" && completed.length === 0) ||
-    (filter === "all" && activeCount === 0 && completed.length === 0);
+  // Une seule liste de sections : en mode portail elle se réduit à la section
+  // ouverte, qui GARDE sa clé React — le même nœud morphe vers le haut pendant
+  // que ses voisines s'effacent (aucun démontage/remontage, aucun trou).
+  const stackSections = viewSections.filter((s) => s.items.length > 0);
+  const renderedSections = portalSection ? [portalSection] : stackSections;
+  const isEmpty = stackSections.length === 0;
+
+  const openPortal = (key: SectionKey) => {
+    setChromeClipped(true);
+    setPortalKey(key);
+    scrollRef.current?.scrollTo({ top: 0, behavior: "smooth" });
+  };
+  const closePortal = () => setPortalKey(null);
+
+  // Changer de vue ferme le portail et remonte en haut.
+  const changeView = (next: PlannerView) => {
+    setPortalKey(null);
+    setView(next);
+    scrollRef.current?.scrollTo({ top: 0 });
+  };
+
+  // Échap referme la vue portail.
+  useEffect(() => {
+    if (!portalKey) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setPortalKey(null);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [portalKey]);
+
+  const handleToggle = (id: string) => {
+    const todo = todos.find((t) => t.id === id);
+    if (todo) {
+      const reschedules = todo.recurrence !== "none" && todo.status === "pending";
+      const existingTimer = lingerTimers.current.get(id);
+      if (existingTimer) {
+        // Re-basculée pendant la pause : elle reprend sa place naturelle.
+        clearTimeout(existingTimer);
+        lingerTimers.current.delete(id);
+        setLinger((prev) => {
+          const next = new Map(prev);
+          next.delete(id);
+          return next;
+        });
+      } else if (!reschedules) {
+        setLinger((prev) => new Map(prev).set(id, todo.status));
+        lingerTimers.current.set(
+          id,
+          setTimeout(() => {
+            lingerTimers.current.delete(id);
+            setLinger((prev) => {
+              const next = new Map(prev);
+              next.delete(id);
+              return next;
+            });
+          }, LINGER_MS),
+        );
+      }
+    }
+    void toggleTodo(id);
+  };
+
+  /**
+   * Défauts de capture selon la vue : ce qu'on saisit doit apparaître là où on
+   * l'a saisi. Appliqués seulement si aucune date n'a été reconnue dans le
+   * texte (la saisie explicite prime toujours).
+   * Boîte de réception / Quand je peux / Journal : aucun défaut → la tâche
+   * tombe en boîte de réception, à trier plus tard (méthode GTD).
+   */
+  const captureDefaults = (): Partial<CreateTodoInput> => {
+    if (view === "today") return { scheduled_for: todayISO };
+    if (view === "upcoming") return { scheduled_for: tomorrowISO };
+    if (view === "someday") return { someday: true };
+    return {};
+  };
 
   const handleCreateTodo = async (taskData: {
     text: string;
@@ -88,7 +291,7 @@ export default function PlannerPage() {
     priority?: Priority;
     list?: string | null;
   }) => {
-    await createTodoFromSmart(taskData);
+    await createTodoFromSmart(taskData, captureDefaults());
   };
 
   const handleCreateNote = async (text: string) => {
@@ -98,141 +301,176 @@ export default function PlannerPage() {
 
   if (loading) {
     return (
-      <div className="flex h-full items-center justify-center bg-background">
-        <div className="text-sm text-muted-foreground">Chargement…</div>
+      <div className="flex h-full">
+        <div className="w-52 shrink-0 border-r border-border/60 max-md:w-14" />
+        <div className="flex h-full flex-1 flex-col overflow-hidden">
+          <div className="mx-auto w-full max-w-[46rem] px-8 pt-10">
+            <div className="flex items-end justify-between gap-6 border-b border-border/60 pb-6">
+              <div className="min-w-0 flex-1">
+                <Skeleton className="h-3 w-16" />
+                <Skeleton className="mt-3 h-10 w-56" />
+                <Skeleton className="mt-3 h-3.5 w-28" />
+              </div>
+              <div className="flex shrink-0 items-center gap-4">
+                <Skeleton className="size-[92px] rounded-full" />
+                <div className="flex flex-col gap-2">
+                  <Skeleton className="h-6 w-14" />
+                  <Skeleton className="h-3 w-16" />
+                </div>
+              </div>
+            </div>
+            <div className="flex flex-col gap-4 pt-6">
+              {["w-3/4", "w-1/2", "w-2/3"].map((w, i) => (
+                <div
+                  key={w}
+                  className="flex items-center gap-3"
+                  style={{ opacity: 1 - i * 0.25 }}
+                >
+                  <Skeleton className="size-[18px] shrink-0 rounded-full" />
+                  <Skeleton className={`h-4 ${w}`} />
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
       </div>
     );
   }
 
   const today = new Date();
+  // Le hero (date + progression du jour) n'a de sens que sur la vue Aujourd'hui.
+  const showHero = view === "today";
 
   return (
-    <div className="relative flex h-full flex-col overflow-hidden bg-background">
-      {/* Halo d'ambiance (stable, remplit les écrans larges) */}
-      <div
-        aria-hidden
-        className="pointer-events-none absolute inset-x-0 top-0 z-0 h-[460px]"
-        style={{
-          background:
-            "radial-gradient(46% 60% at 50% -6%, oklch(0.62 0.10 265 / 0.11), transparent 70%)",
-        }}
-      />
+    <div className="relative flex h-full">
+      <PlannerRail value={view} onChange={changeView} counts={counts} />
 
-      {/* ───────── Zone défilante : agenda ───────── */}
-      <div className="relative z-10 flex-1 overflow-y-auto">
-        <div className="mx-auto max-w-[44rem] px-8">
-          <div className="pt-16">
-            <PlannerHeader date={today} done={doneToday} total={totalToday} />
-          </div>
-
-          {/* Filtres collants en haut de la zone défilante */}
-          <div className="sticky top-0 z-10 -mx-8 bg-background/80 px-8 pt-4 pb-3 backdrop-blur-sm">
-            <FilterTabs
-              value={filter}
-              onChange={setFilter}
-              counts={{
-                all: activeCount + completed.length,
-                pending: activeCount,
-                completed: completed.length,
-              }}
-            />
-            {lists.length > 0 && (
-              <div className="mt-3">
-                <ListFilter lists={lists} value={listFilter} onChange={setListFilter} />
-              </div>
-            )}
-          </div>
-
-          {error && (
-            <div className="mt-6 flex items-center gap-2 text-sm text-destructive">
-              <span className="h-1 w-1 rounded-full bg-destructive" />
-              {error}
-            </div>
-          )}
-
-          <div className="space-y-9 pb-10 pt-7">
-            {showActive && activeCount > 0 && (
-              <div className="relative space-y-9">
-                {/* Épine timeline partagée */}
-                <span
-                  aria-hidden
-                  className="absolute left-[7px] top-2 bottom-2 w-px bg-gradient-to-b from-border via-border to-transparent"
-                />
-                {activeSections.map(
-                  (section, i) =>
-                    section.items.length > 0 && (
-                      <TimelineSection
-                        key={section.key}
-                        title={section.label}
-                        count={section.items.length}
-                        tone={section.tone}
-                        delay={i * 0.04}
-                      >
-                        <AnimatedTodoList
-                          todos={section.items}
-                          onToggle={toggleTodo}
-                          onDelete={deleteTodo}
-                          showDate
-                          overdue={section.overdue}
-                          lists={lists}
-                          onUpdate={updateTodo}
-                        />
-                      </TimelineSection>
-                    ),
-                )}
-              </div>
-            )}
-
-            {showCompleted && completed.length > 0 && (
-              <section className="relative space-y-2 pl-7">
-                <h3 className="flex items-center gap-2 text-xs font-medium uppercase tracking-[0.1em] text-muted-foreground/60">
-                  Terminées
-                  <span className="font-mono text-[11px] tabular-nums text-muted-foreground/40">
-                    {completed.length}
-                  </span>
-                </h3>
-                <AnimatedTodoList
-                  todos={completed}
-                  onToggle={toggleTodo}
-                  onDelete={deleteTodo}
-                  showDate
-                  lists={lists}
-                  onUpdate={updateTodo}
-                />
-              </section>
-            )}
-
-            {isEmpty && (
-              <EmptyState
-                title={
-                  filter === "pending"
-                    ? "Aucune tâche en cours"
-                    : filter === "completed"
-                      ? "Aucune tâche terminée"
-                      : "Aucune tâche planifiée"
-                }
-                subtitle="Capturez votre première tâche ci-dessous."
-              />
-            )}
-          </div>
-        </div>
-      </div>
-
-      {/* ───────── Capture épinglée en bas ───────── */}
-      <div className="relative z-10 shrink-0 bg-background/90 backdrop-blur-sm">
-        {/* Fondu doux au-dessus de la capture (au lieu d'un trait) */}
+      <div className="relative flex h-full min-w-0 flex-1 flex-col overflow-hidden">
+        {/* Voile d'accent très doux en haut du canvas */}
         <div
           aria-hidden
-          className="pointer-events-none absolute inset-x-0 -top-8 h-8 bg-gradient-to-t from-background to-transparent"
+          className="pointer-events-none absolute inset-x-0 top-0 z-0 h-72"
+          style={{
+            background:
+              "radial-gradient(50% 70% at 50% -12%, var(--brand-soft), transparent 70%)",
+          }}
         />
-        <div className="mx-auto max-w-[44rem] px-8 py-4">
-          <Omnibar
-            defaultMode="task"
-            onSubmit={handleCreateTodo}
-            onSubmitNote={handleCreateNote}
-            placeholder="Capturer une tâche…"
-            lists={lists}
+
+        {/* ───────── Zone défilante : hero + sections ───────── */}
+        <div ref={scrollRef} className="relative z-10 flex-1 overflow-y-auto">
+          <div className="mx-auto max-w-[46rem] px-8">
+            <LayoutGroup>
+              <motion.div
+                initial={false}
+                animate={portalSection || !showHero ? "collapsed" : "open"}
+                variants={chromeVariants}
+                onAnimationComplete={(definition) => {
+                  if (definition === "open") setChromeClipped(false);
+                }}
+                className={chromeClipped ? "overflow-hidden" : undefined}
+              >
+                <div className="pt-8">
+                  <HeroDay date={today} done={doneToday} total={totalToday} />
+                </div>
+              </motion.div>
+
+              {error && (
+                <div className="mt-4 flex items-center gap-2 text-sm text-destructive">
+                  <span className="h-1 w-1 rounded-full bg-destructive" />
+                  {error}
+                </div>
+              )}
+
+              {/* Filtre de liste collant : élément sticky À PART, enfant direct de
+                  la colonne (un sticky ne colle que dans les limites de son parent —
+                  il lui faut donc un parent qui contient aussi les sections).
+                  Il porte lui-même son repli en portail. */}
+              {lists.length > 0 && (
+                <motion.div
+                  initial={false}
+                  animate={portalSection ? "collapsed" : "open"}
+                  variants={chromeVariants}
+                  className="sticky top-0 z-10 -mx-8 overflow-hidden bg-background/85 backdrop-blur-md"
+                >
+                  <div className="px-8 pt-5 pb-3">
+                    <ListFilter
+                      lists={lists}
+                      value={listFilter}
+                      onChange={setListFilter}
+                    />
+                  </div>
+                </motion.div>
+              )}
+
+              <motion.div
+                initial={false}
+                animate={{ paddingTop: portalSection ? 32 : showHero ? 4 : 24 }}
+                transition={spring.smooth}
+                className="pb-10"
+              >
+                <AnimatePresence mode="popLayout">
+                  {renderedSections.map((section, i) => (
+                    <SectionCard
+                      key={section.key}
+                      title={section.label}
+                      count={section.items.length}
+                      tone={section.tone}
+                      delay={i * 0.05}
+                      sectionKey={section.key}
+                      portalActive={section.key === portalKey}
+                      onEnterPortal={() => openPortal(section.key)}
+                      onExitPortal={closePortal}
+                    >
+                      {section.items.length > 0 ? (
+                        <SectionBody
+                          style={sectionStyles[section.key]}
+                          todos={section.items}
+                          onToggle={handleToggle}
+                          onDelete={deleteTodo}
+                          onUpdate={updateTodo}
+                          lists={lists}
+                          overdue={section.overdue}
+                          showDate={!section.dateImplied}
+                        />
+                      ) : (
+                        // La dernière tâche vient d'être cochée en mode portail.
+                        <EmptyState
+                          title="Section vide"
+                          subtitle="Plus rien ici pour le moment."
+                        />
+                      )}
+                    </SectionCard>
+                  ))}
+
+                  {!portalSection && isEmpty && (
+                    <EmptyState
+                      key={`empty-${view}`}
+                      title={EMPTY_COPY[view].title}
+                      subtitle={EMPTY_COPY[view].subtitle}
+                    />
+                  )}
+                </AnimatePresence>
+              </motion.div>
+            </LayoutGroup>
+          </div>
+        </div>
+
+        {/* ───────── Capture épinglée en bas ───────── */}
+        <div className="relative z-10 shrink-0 bg-background/90 backdrop-blur-sm">
+          {/* Fondu doux au-dessus de la capture (au lieu d'un trait) */}
+          <div
+            aria-hidden
+            className="pointer-events-none absolute inset-x-0 -top-8 h-8 bg-gradient-to-t from-background to-transparent"
           />
+          <div className="mx-auto max-w-[46rem] px-8 py-4">
+            <Omnibar
+              defaultMode="task"
+              onSubmit={handleCreateTodo}
+              onSubmitNote={handleCreateNote}
+              placeholder="Capturer une tâche…"
+              lists={lists}
+            />
+          </div>
         </div>
       </div>
     </div>

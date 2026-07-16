@@ -2,6 +2,7 @@
 
 import { AnimatePresence, motion } from "motion/react";
 import { TodoItem } from "@/components/TodoItem";
+import { rowVariants } from "@/lib/motion";
 import type { Todo, UpdateTodoInput } from "@/features/todos/types";
 
 interface AnimatedTodoListProps {
@@ -16,8 +17,10 @@ interface AnimatedTodoListProps {
 
 /**
  * Liste de tâches animée (entrée/sortie + réordonnancement `layout`).
- * Les `motion.div` sont enfants directs de `AnimatePresence` pour que les
- * animations de sortie fonctionnent réellement.
+ * `mode="popLayout"` retire l'élément sortant du flux dès le début de sa
+ * sortie : ses voisins se referment aussitôt en ressort (`layout`) au lieu
+ * d'attendre la fin du fondu — c'est le geste le plus répété de l'app
+ * (terminer/supprimer une tâche), il mérite ce soin.
  */
 export function AnimatedTodoList({
   todos,
@@ -30,19 +33,9 @@ export function AnimatedTodoList({
 }: AnimatedTodoListProps) {
   return (
     <div className="space-y-0.5">
-      <AnimatePresence mode="sync">
+      <AnimatePresence mode="popLayout">
         {todos.map((todo) => (
-          <motion.div
-            key={todo.id}
-            layout
-            initial={{ opacity: 0, y: 8, scale: 0.985 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, scale: 0.97, transition: { duration: 0.15 } }}
-            transition={{
-              layout: { type: "spring", bounce: 0.16, duration: 0.5 },
-              default: { type: "spring", bounce: 0.18, duration: 0.45 },
-            }}
-          >
+          <motion.div key={todo.id} layout variants={rowVariants} initial="initial" animate="animate" exit="exit">
             <TodoItem
               todo={todo}
               onToggle={() => onToggle(todo.id)}

@@ -25,8 +25,8 @@ export function TodoCheckbox({ checked, onToggle, priority = "normal" }: TodoChe
       whileHover={{ scale: 1.1 }}
       whileTap={{ scale: 0.9 }}
       animate={{
-        backgroundColor: checked ? "var(--color-primary)" : "rgba(0,0,0,0)",
-        borderColor: checked ? "var(--color-primary)" : priorityRingColor(priority),
+        backgroundColor: checked ? "var(--color-brand)" : "rgba(0,0,0,0)",
+        borderColor: checked ? "var(--color-brand)" : priorityRingColor(priority),
         scale: checked ? [1, 1.09, 1] : 1,
       }}
       transition={{
@@ -34,14 +34,14 @@ export function TodoCheckbox({ checked, onToggle, priority = "normal" }: TodoChe
         borderColor: { duration: 0.25, ease: [0.16, 1, 0.3, 1] },
         scale: { duration: 0.32, ease: [0.16, 1, 0.3, 1], times: [0, 0.4, 1] },
       }}
-      className="mt-px flex size-[18px] shrink-0 items-center justify-center rounded-full border-2 text-primary-foreground"
+      className="mt-px flex size-[18px] shrink-0 items-center justify-center rounded-full border-2 text-brand-foreground"
     >
       <motion.svg
         width="11"
         height="11"
         viewBox="0 0 24 24"
         fill="none"
-        className="text-primary-foreground"
+        className="text-brand-foreground"
       >
         <motion.path
           d="M4 12.5 9 17.5 20 6"

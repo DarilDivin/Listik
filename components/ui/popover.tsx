@@ -1,7 +1,11 @@
 "use client"
 
 import * as React from "react"
-import * as PopoverPrimitive from "@radix-ui/react-popover"
+// IMPORTANT : même paquet `radix-ui` que Dialog/Sheet — deux copies de Radix
+// (paquet unifié + @radix-ui/react-popover) créent deux piles de FocusScope
+// distinctes : un popover modal DANS un dialog ne met alors jamais en pause le
+// FocusScope du dialog, qui vole le focus des champs du popover.
+import { Popover as PopoverPrimitive } from "radix-ui"
 
 import { cn } from "@/lib/utils"
 

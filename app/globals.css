@@ -33,97 +33,164 @@
   --color-secondary: var(--secondary);
   --color-primary-foreground: var(--primary-foreground);
   --color-primary: var(--primary);
-  /* Accent « brand » indigo (dérivé du halo) : sélection / états actifs / focus. */
+  /* Accent « brand » : choisi par l'utilisateur (Réglages → Personnalisation),
+     appliqué via [data-accent] sur <html>. `brand-soft` = lavis du même accent. */
   --color-brand: var(--brand);
+  --color-brand-soft: var(--brand-soft);
   --color-brand-foreground: var(--brand-foreground);
   --color-popover-foreground: var(--popover-foreground);
   --color-popover: var(--popover);
   --color-card-foreground: var(--card-foreground);
   --color-card: var(--card);
-  --radius-sm: calc(var(--radius) - 4px);
-  --radius-md: calc(var(--radius) - 2px);
+  --radius-sm: calc(var(--radius) - 6px);
+  --radius-md: calc(var(--radius) - 4px);
   --radius-lg: var(--radius);
   --radius-xl: calc(var(--radius) + 4px);
 }
 
 /*
- * Palette « slate froid » : des neutres légèrement teintés (chroma faible,
- * teinte ~265) — jamais de blanc/gris pur, même pour les surfaces flottantes
- * (cartes, popovers), pour que tout appartienne à la même famille. L'unique
- * accent coloré est « brand » (indigo), réservé aux sélections / états actifs.
- * Les priorités (rouge/émeraude) restent gérées côté composants.
+ * Direction « Doux & sculpté × Bento » : neutres CHAUDS (teinte ~60-85, chroma
+ * très faible). Le contenu vit DIRECTEMENT sur le canvas — pas de cartes ni
+ * d'ombres pour les tâches/réglages/listes, seulement des hairlines
+ * (`border-border/60`) pour séparer les groupes. `.card-floating` reste
+ * réservé aux éléments qui doivent visuellement flotter au-dessus du
+ * contenu (dock de navigation, fenêtre de capture rapide).
+ * L'accent (--brand) n'est PAS fixé ici : il vient des blocs [data-accent]
+ * plus bas (teal par défaut). Les priorités (rouge/émeraude) restent gérées
+ * côté composants.
  */
 :root {
-  --radius: 0.75rem;
-  --background: oklch(0.992 0.003 265);
-  --foreground: oklch(0.215 0.013 265);
-  --card: oklch(0.996 0.004 265);
-  --card-foreground: oklch(0.215 0.013 265);
-  --popover: oklch(0.994 0.005 265);
-  --popover-foreground: oklch(0.215 0.013 265);
-  --primary: oklch(0.245 0.014 265);
-  --primary-foreground: oklch(0.985 0.002 265);
-  --secondary: oklch(0.966 0.006 265);
-  --secondary-foreground: oklch(0.245 0.014 265);
-  --muted: oklch(0.966 0.006 265);
-  --muted-foreground: oklch(0.495 0.018 265);
-  --accent: oklch(0.955 0.009 265);
-  --accent-foreground: oklch(0.245 0.014 265);
+  --radius: 1rem;
+  --background: oklch(0.973 0.006 80);
+  --foreground: oklch(0.245 0.012 60);
+  --card: oklch(0.996 0.003 85);
+  --card-foreground: oklch(0.245 0.012 60);
+  --popover: oklch(0.996 0.003 85);
+  --popover-foreground: oklch(0.245 0.012 60);
+  --primary: oklch(0.27 0.014 60);
+  --primary-foreground: oklch(0.985 0.004 85);
+  --secondary: oklch(0.941 0.008 80);
+  --secondary-foreground: oklch(0.27 0.014 60);
+  --muted: oklch(0.941 0.008 80);
+  --muted-foreground: oklch(0.505 0.014 70);
+  --accent: oklch(0.925 0.01 80);
+  --accent-foreground: oklch(0.27 0.014 60);
   --destructive: oklch(0.585 0.214 27);
-  --border: oklch(0.908 0.008 265);
-  --input: oklch(0.908 0.008 265);
-  --ring: oklch(0.55 0.12 265);
-  --brand: oklch(0.55 0.15 265);
-  --brand-foreground: oklch(0.985 0.003 265);
+  --border: oklch(0.895 0.009 80);
+  --input: oklch(0.895 0.009 80);
+  --ring: var(--brand);
+  --brand-soft: color-mix(in oklch, var(--brand) 11%, transparent);
   --chart-1: oklch(0.646 0.222 41.116);
   --chart-2: oklch(0.6 0.118 184.704);
   --chart-3: oklch(0.398 0.07 227.392);
   --chart-4: oklch(0.828 0.189 84.429);
   --chart-5: oklch(0.769 0.188 70.08);
-  --sidebar: oklch(0.985 0.003 265);
-  --sidebar-foreground: oklch(0.215 0.013 265);
-  --sidebar-primary: oklch(0.245 0.014 265);
-  --sidebar-primary-foreground: oklch(0.985 0.002 265);
-  --sidebar-accent: oklch(0.955 0.009 265);
-  --sidebar-accent-foreground: oklch(0.245 0.014 265);
-  --sidebar-border: oklch(0.908 0.008 265);
-  --sidebar-ring: oklch(0.55 0.12 265);
+  --sidebar: oklch(0.973 0.006 80);
+  --sidebar-foreground: oklch(0.245 0.012 60);
+  --sidebar-primary: oklch(0.27 0.014 60);
+  --sidebar-primary-foreground: oklch(0.985 0.004 85);
+  --sidebar-accent: oklch(0.925 0.01 80);
+  --sidebar-accent-foreground: oklch(0.27 0.014 60);
+  --sidebar-border: oklch(0.895 0.009 80);
+  --sidebar-ring: var(--brand);
 }
 
 .dark {
-  --background: oklch(0.17 0.009 265);
-  --foreground: oklch(0.965 0.004 265);
-  --card: oklch(0.202 0.014 265);
-  --card-foreground: oklch(0.965 0.004 265);
-  --popover: oklch(0.212 0.016 265);
-  --popover-foreground: oklch(0.965 0.004 265);
-  --primary: oklch(0.965 0.004 265);
-  --primary-foreground: oklch(0.215 0.012 265);
-  --secondary: oklch(0.265 0.015 265);
-  --secondary-foreground: oklch(0.965 0.004 265);
-  --muted: oklch(0.265 0.015 265);
-  --muted-foreground: oklch(0.715 0.018 265);
-  --accent: oklch(0.288 0.019 265);
-  --accent-foreground: oklch(0.965 0.004 265);
+  --background: oklch(0.188 0.008 60);
+  --foreground: oklch(0.956 0.005 80);
+  --card: oklch(0.238 0.01 60);
+  --card-foreground: oklch(0.956 0.005 80);
+  --popover: oklch(0.25 0.011 60);
+  --popover-foreground: oklch(0.956 0.005 80);
+  --primary: oklch(0.956 0.005 80);
+  --primary-foreground: oklch(0.22 0.01 60);
+  --secondary: oklch(0.285 0.012 60);
+  --secondary-foreground: oklch(0.956 0.005 80);
+  --muted: oklch(0.285 0.012 60);
+  --muted-foreground: oklch(0.72 0.012 70);
+  --accent: oklch(0.31 0.013 60);
+  --accent-foreground: oklch(0.956 0.005 80);
   --destructive: oklch(0.65 0.2 25);
-  --border: oklch(0.97 0.014 265 / 12%);
-  --input: oklch(0.97 0.014 265 / 16%);
-  --ring: oklch(0.62 0.12 265);
-  --brand: oklch(0.62 0.15 265);
-  --brand-foreground: oklch(0.985 0.003 265);
+  --border: oklch(0.98 0.01 80 / 11%);
+  --input: oklch(0.98 0.01 80 / 15%);
+  --ring: var(--brand);
+  --brand-soft: color-mix(in oklch, var(--brand) 16%, transparent);
   --chart-1: oklch(0.488 0.243 264.376);
   --chart-2: oklch(0.696 0.17 162.48);
   --chart-3: oklch(0.769 0.188 70.08);
   --chart-4: oklch(0.627 0.265 303.9);
   --chart-5: oklch(0.645 0.246 16.439);
-  --sidebar: oklch(0.202 0.014 265);
-  --sidebar-foreground: oklch(0.965 0.004 265);
-  --sidebar-primary: oklch(0.965 0.004 265);
-  --sidebar-primary-foreground: oklch(0.215 0.012 265);
-  --sidebar-accent: oklch(0.288 0.019 265);
-  --sidebar-accent-foreground: oklch(0.965 0.004 265);
-  --sidebar-border: oklch(0.97 0.014 265 / 12%);
-  --sidebar-ring: oklch(0.62 0.12 265);
+  --sidebar: oklch(0.188 0.008 60);
+  --sidebar-foreground: oklch(0.956 0.005 80);
+  --sidebar-primary: oklch(0.956 0.005 80);
+  --sidebar-primary-foreground: oklch(0.22 0.01 60);
+  --sidebar-accent: oklch(0.285 0.012 60);
+  --sidebar-accent-foreground: oklch(0.956 0.005 80);
+  --sidebar-border: oklch(0.98 0.01 80 / 9%);
+  --sidebar-ring: var(--brand);
+}
+
+/* ──────────────────────────────────────────────────────────────────────────
+ * Accents premium — sélectionnés dans Réglages → Personnalisation
+ * (`data-accent` sur <html>, persisté en localStorage par UIPrefsProvider).
+ * Chaque preset définit --brand / --brand-foreground en clair, et une version
+ * plus lumineuse en sombre. --brand-soft dérive automatiquement (color-mix).
+ * Défaut (sans attribut) : sarcelle.
+ * ────────────────────────────────────────────────────────────────────────── */
+:root,
+[data-accent="teal"] {
+  --brand: oklch(0.56 0.1 195);
+  --brand-foreground: oklch(0.985 0.008 195);
+}
+.dark,
+.dark[data-accent="teal"] {
+  --brand: oklch(0.72 0.11 190);
+  --brand-foreground: oklch(0.17 0.02 200);
+}
+
+[data-accent="indigo"] {
+  --brand: oklch(0.55 0.16 272);
+  --brand-foreground: oklch(0.985 0.006 272);
+}
+.dark[data-accent="indigo"] {
+  --brand: oklch(0.7 0.14 275);
+  --brand-foreground: oklch(0.18 0.03 272);
+}
+
+[data-accent="violet"] {
+  --brand: oklch(0.56 0.19 300);
+  --brand-foreground: oklch(0.985 0.006 300);
+}
+.dark[data-accent="violet"] {
+  --brand: oklch(0.72 0.16 302);
+  --brand-foreground: oklch(0.19 0.04 300);
+}
+
+[data-accent="coral"] {
+  --brand: oklch(0.63 0.15 32);
+  --brand-foreground: oklch(0.99 0.006 32);
+}
+.dark[data-accent="coral"] {
+  --brand: oklch(0.73 0.14 34);
+  --brand-foreground: oklch(0.2 0.04 32);
+}
+
+[data-accent="amber"] {
+  --brand: oklch(0.66 0.125 75);
+  --brand-foreground: oklch(0.99 0.008 85);
+}
+.dark[data-accent="amber"] {
+  --brand: oklch(0.78 0.13 80);
+  --brand-foreground: oklch(0.22 0.05 80);
+}
+
+[data-accent="rose"] {
+  --brand: oklch(0.6 0.18 356);
+  --brand-foreground: oklch(0.99 0.006 356);
+}
+.dark[data-accent="rose"] {
+  --brand: oklch(0.72 0.15 358);
+  --brand-foreground: oklch(0.2 0.05 356);
 }
 
 @layer base {
@@ -140,6 +207,37 @@
   body {
     @apply bg-background text-foreground;
   }
+
+  /* Sélection de texte teintée par l'accent choisi. */
+  ::selection {
+    background: color-mix(in oklch, var(--brand) 25%, transparent);
+  }
+}
+
+/* ──────────────────────────────────────────────────────────────────────────
+ * Élévation flottante — réservée aux éléments de chrome qui doivent survoler
+ * le contenu (dock de navigation, fenêtre de capture rapide) : jamais utilisée
+ * pour des surfaces de contenu (tâches, réglages, listes), qui vivent
+ * directement sur le canvas séparées par des hairlines.
+ * ────────────────────────────────────────────────────────────────────────── */
+.card-floating,
+.shadow-floating {
+  box-shadow:
+    0 0 0 1px oklch(0.3 0.012 60 / 0.05),
+    0 2px 4px -1px oklch(0.3 0.012 60 / 0.06),
+    0 20px 50px -16px oklch(0.3 0.012 60 / 0.16);
+}
+.card-floating {
+  background: var(--card);
+  border-radius: 1.5rem;
+}
+.dark .card-floating,
+.dark .shadow-floating {
+  box-shadow:
+    inset 0 1px 0 oklch(1 0 0 / 0.05),
+    0 0 0 1px oklch(0 0 0 / 0.32),
+    0 2px 4px -1px oklch(0 0 0 / 0.4),
+    0 20px 50px -16px oklch(0 0 0 / 0.6);
 }
 
 /*
@@ -151,13 +249,13 @@
   inset: 0;
   z-index: 100;
   pointer-events: none;
-  opacity: 0.04;
+  opacity: 0.03;
   mix-blend-mode: soft-light;
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='g'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23g)'/%3E%3C/svg%3E");
 }
 
 .dark .grain {
-  opacity: 0.06;
+  opacity: 0.05;
 }
 
 /* Rendu Markdown des notes (react-markdown + remark-gfm). */
@@ -254,15 +352,14 @@
 }
 
 /* ──────────────────────────────────────────────────────────────────────────
- * Échelle typographique — inspirée des rôles texte d'Apple (Large Title →
- * Title → Headline → …). Une seule famille sans : le caractère vient du poids,
- * de la taille et d'un tracking serré sur les grands titres.
+ * Échelle typographique — Geist uniquement : le caractère vient du poids
+ * (600-800), de la taille et d'un tracking serré sur les grands titres.
  * ────────────────────────────────────────────────────────────────────────── */
 .text-large-title {
-  font-size: 1.9375rem;
+  font-size: 2rem;
   line-height: 1.08;
   font-weight: 700;
-  letter-spacing: -0.022em;
+  letter-spacing: -0.024em;
 }
 .text-title-2 {
   font-size: 1.3125rem;

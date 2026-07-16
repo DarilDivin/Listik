@@ -16,20 +16,26 @@ interface ListControlProps {
   /** Listes existantes proposées. */
   lists: string[];
   dimmed?: boolean;
-  /** "row" : étiquette discrète au survol (ligne de tâche). "chip" : pastille pleine (barre de saisie). */
-  variant?: "row" | "chip";
+  /**
+   * OBLIGATOIRE à l'intérieur d'un Dialog/Sheet : le popover monte alors son
+   * propre FocusScope, qui met en pause celui du dialog — sans ça, le dialog
+   * rapatrie le focus et le champ « Nouvelle liste… » est insaisissable.
+   */
+  modal?: boolean;
   onChange: (list: string | null) => void;
 }
 
 /**
  * Liste/projet d'une tâche, cliquable pour (ré)assigner ou créer une liste.
- * Avec une liste : petite étiquette. Sans : « Liste » discret révélé au survol.
+ * Pastille toujours montée (barre de saisie, formulaire de détail) — pas de
+ * révélation au survol, ce composant est réservé aux contextes où le champ
+ * est déjà visible en permanence.
  */
 export function ListControl({
   list,
   lists,
   dimmed = false,
-  variant = "row",
+  modal = false,
   onChange,
 }: ListControlProps) {
   const [open, setOpen] = React.useState(false);
@@ -46,33 +52,19 @@ export function ListControl({
     if (name) pick(name);
   };
 
-  const triggerClass =
-    variant === "chip"
-      ? cn(
-          "flex h-9 items-center gap-1.5 rounded-lg bg-muted px-2.5 text-sm font-medium text-foreground transition-colors hover:bg-muted/80 outline-none",
-          !list && "text-muted-foreground",
-          dimmed && "opacity-60",
-        )
-      : cn(
-          "inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-xs transition-colors hover:bg-foreground/[0.06]",
-          list
-            ? "text-muted-foreground"
-            : "text-muted-foreground/0 group-hover:text-muted-foreground/70",
-          dimmed && "opacity-60",
-        );
-
   return (
-    <Popover open={open} onOpenChange={setOpen}>
+    <Popover open={open} onOpenChange={setOpen} modal={modal}>
       <PopoverTrigger asChild>
         <button
           type="button"
           aria-label={list ? "Changer de liste" : "Assigner une liste"}
-          className={triggerClass}
+          className={cn(
+            "flex h-9 items-center gap-1.5 rounded-lg bg-muted px-2.5 text-sm font-medium text-foreground transition-colors hover:bg-muted/80 outline-none",
+            !list && "text-muted-foreground",
+            dimmed && "opacity-60",
+          )}
         >
-          <Tag
-            size={variant === "chip" ? 14 : 12}
-            className="shrink-0 text-muted-foreground opacity-70"
-          />
+          <Tag size={14} className="shrink-0 text-muted-foreground opacity-70" />
           {list ?? "Liste"}
         </button>
       </PopoverTrigger>

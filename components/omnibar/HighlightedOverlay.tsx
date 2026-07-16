@@ -75,7 +75,7 @@ export function HighlightedOverlay({
       </span>
       <span className="relative">
         <span className="relative z-10 text-yellow-600 dark:text-yellow-400 font-normal">
-          //
+          {"//"}
         </span>
         <motion.div
           initial={{ opacity: 0, scale: 0 }}

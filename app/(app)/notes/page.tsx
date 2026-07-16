@@ -2,9 +2,27 @@
 
 import { Suspense, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
-import { Pin, Plus, Search } from "lucide-react";
+import { AnimatePresence, motion } from "motion/react";
+import { NotebookPen, Pin, Plus, Search } from "lucide-react";
 import { useNotes } from "@/hooks/useNotes";
 import { NoteEditor } from "@/components/notes/NoteEditor";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { Skeleton } from "@/components/ui/skeleton";
+import {
+  Empty,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyMedia,
+  EmptyTitle,
+} from "@/components/ui/empty";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
+import { spring } from "@/lib/motion";
 import { cn } from "@/lib/utils";
 import type { Note } from "@/features/notes/types";
 
@@ -85,67 +103,117 @@ function NotesPageContent() {
   return (
     <div className="flex h-full">
       {/* Colonne liste */}
-      <div className="flex w-72 shrink-0 flex-col border-r border-border/40">
-        <div className="flex items-center justify-between px-4 pb-2 pt-5">
-          <h1 className="text-2xl font-semibold tracking-[-0.02em] text-foreground">Notes</h1>
-          <button
-            type="button"
-            onClick={handleNew}
-            title="Nouvelle note"
-            className="grid size-8 place-items-center rounded-lg text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
-          >
-            <Plus size={18} />
-          </button>
+      <div className="flex w-72 shrink-0 flex-col border-r border-border/50">
+        <div className="flex items-center justify-between px-4 pb-2 pt-6">
+          <h1 className="text-title-2 text-foreground">Notes</h1>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                onClick={handleNew}
+                aria-label="Nouvelle note"
+                className="text-muted-foreground hover:text-foreground"
+              >
+                <Plus />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent side="bottom">Nouvelle note</TooltipContent>
+          </Tooltip>
         </div>
 
-        <div className="px-3 pb-2">
-          <div className="flex items-center gap-2 rounded-lg bg-muted px-2.5 py-1.5">
-            <Search size={14} className="shrink-0 text-muted-foreground" />
-            <input
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              placeholder="Rechercher…"
-              className="w-full bg-transparent text-sm text-foreground outline-none placeholder:text-muted-foreground"
-            />
-          </div>
+        <div className="relative px-3 pb-2">
+          <Search
+            size={14}
+            className="pointer-events-none absolute left-6 top-1/2 -translate-y-[calc(50%+4px)] text-muted-foreground"
+          />
+          <Input
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Rechercher…"
+            className="h-8 rounded-lg border-none bg-muted pl-8 text-sm shadow-none focus-visible:ring-2 focus-visible:ring-ring/30"
+          />
         </div>
 
-        <ul className="flex-1 overflow-y-auto px-2 pb-3">
-          {filtered.length === 0 ? (
-            <li className="px-3 py-8 text-center text-sm text-muted-foreground">
-              {loading
-                ? "Chargement…"
-                : query
-                  ? "Aucune note trouvée"
-                  : "Aucune note. Crée-en une avec +."}
-            </li>
-          ) : (
-            filtered.map((note) => (
-              <li key={note.id}>
-                <button
-                  type="button"
-                  onClick={() => setSelectedId(note.id)}
-                  className={cn(
-                    "flex w-full flex-col items-start gap-0.5 rounded-lg px-3 py-2.5 text-left transition-colors",
-                    note.id === selectedId ? "bg-accent" : "hover:bg-accent/50",
-                  )}
-                >
-                  <span className="flex w-full items-center gap-1.5">
-                    {note.pinned && (
-                      <Pin size={11} className="shrink-0 fill-current text-brand" />
-                    )}
-                    <span className="truncate text-sm font-medium text-foreground">
-                      {displayTitle(note)}
-                    </span>
-                  </span>
-                  <span className="line-clamp-1 text-xs text-muted-foreground">
-                    {preview(note) || "Note vide"}
-                  </span>
-                </button>
+        <ScrollArea className="min-h-0 flex-1">
+          <ul className="flex flex-col gap-px px-2 pb-3">
+            {loading ? (
+              [0.9, 0.65, 0.4].map((opacity) => (
+                <li key={opacity} className="px-3 py-2.5" style={{ opacity }}>
+                  <Skeleton className="h-4 w-2/3" />
+                  <Skeleton className="mt-1.5 h-3 w-full" />
+                </li>
+              ))
+            ) : filtered.length === 0 ? (
+              <li className="px-3 pt-6">
+                <Empty className="border-none p-4">
+                  <EmptyHeader>
+                    <EmptyMedia
+                      variant="icon"
+                      className="rounded-xl bg-brand-soft text-brand"
+                    >
+                      <NotebookPen />
+                    </EmptyMedia>
+                    <EmptyTitle className="text-sm">
+                      {query ? "Aucune note trouvée" : "Aucune note"}
+                    </EmptyTitle>
+                    <EmptyDescription className="text-xs">
+                      {query
+                        ? "Essayez d'autres mots."
+                        : "Créez votre première note avec +."}
+                    </EmptyDescription>
+                  </EmptyHeader>
+                </Empty>
               </li>
-            ))
-          )}
-        </ul>
+            ) : (
+              <AnimatePresence initial={false}>
+                {filtered.map((note) => {
+                  const isSelected = note.id === selectedId;
+                  return (
+                    <motion.li
+                      key={note.id}
+                      layout
+                      initial={{ opacity: 0, y: 6 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0, scale: 0.98, transition: { duration: 0.15 } }}
+                      transition={spring.smooth}
+                      className="relative"
+                    >
+                      {isSelected && (
+                        <motion.span
+                          layoutId="note-selected-pill"
+                          aria-hidden
+                          className="absolute inset-0 rounded-xl bg-brand-soft"
+                          transition={spring.snappy}
+                        />
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => setSelectedId(note.id)}
+                        className={cn(
+                          "relative z-10 flex w-full flex-col items-start gap-0.5 rounded-xl px-3 py-2.5 text-left transition-colors",
+                          !isSelected && "hover:bg-accent/60",
+                        )}
+                      >
+                        <span className="flex w-full items-center gap-1.5">
+                          {note.pinned && (
+                            <Pin size={11} className="shrink-0 fill-current text-brand" />
+                          )}
+                          <span className="truncate text-sm font-medium text-foreground">
+                            {displayTitle(note)}
+                          </span>
+                        </span>
+                        <span className="line-clamp-1 text-xs text-muted-foreground">
+                          {preview(note) || "Note vide"}
+                        </span>
+                      </button>
+                    </motion.li>
+                  );
+                })}
+              </AnimatePresence>
+            )}
+          </ul>
+        </ScrollArea>
       </div>
 
       {/* Éditeur */}
@@ -159,8 +227,21 @@ function NotesPageContent() {
             onDelete={() => handleDelete(selected.id)}
           />
         ) : (
-          <div className="flex h-full items-center justify-center px-8 text-center text-sm text-muted-foreground">
-            Sélectionne une note à gauche, ou crée-en une avec +.
+          <div className="flex h-full items-center justify-center px-8">
+            <Empty className="border-none">
+              <EmptyHeader>
+                <EmptyMedia
+                  variant="icon"
+                  className="rounded-2xl bg-brand-soft text-brand"
+                >
+                  <NotebookPen />
+                </EmptyMedia>
+                <EmptyTitle>Aucune note ouverte</EmptyTitle>
+                <EmptyDescription>
+                  Sélectionnez une note à gauche, ou créez-en une avec +.
+                </EmptyDescription>
+              </EmptyHeader>
+            </Empty>
           </div>
         )}
       </div>

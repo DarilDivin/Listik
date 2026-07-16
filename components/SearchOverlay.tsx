@@ -81,11 +81,14 @@ export function SearchOverlay({ open, onOpenChange: setOpen }: SearchOverlayProp
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogHeader className="sr-only">
-        <DialogTitle>Recherche</DialogTitle>
-      </DialogHeader>
-      <DialogContent className="overflow-hidden p-0">
-        <Command shouldFilter={false}>
+      <DialogContent
+        showCloseButton={false}
+        className="top-[26%] translate-y-0 overflow-hidden rounded-2xl border-border/60 p-0 shadow-2xl"
+      >
+        <DialogHeader className="sr-only">
+          <DialogTitle>Recherche</DialogTitle>
+        </DialogHeader>
+        <Command shouldFilter={false} className="bg-transparent">
           <CommandInput
             placeholder="Rechercher dans vos tâches et notes…"
             value={query}

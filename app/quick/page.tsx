@@ -191,15 +191,21 @@ export default function QuickPage() {
         ref={contentRef}
         className="max-h-screen w-full overflow-y-auto p-7"
       >
-        <Omnibar
-          key={mountKey}
-          autoFocus
-          defaultMode="task"
-          onSubmit={handleSubmit}
-          onSubmitNote={handleSubmitNote}
-          placeholder="Capturer une tâche…"
-          lists={lists}
-        />
+        {/* Ombre portée profonde : la fenêtre est transparente et sans ombre
+            native, c'est elle qui donne l'effet « flotte au-dessus du bureau ».
+            `.shadow-floating` = même recette (teintée oklch) que `.card-floating`,
+            avec sa variante sombre — pas de rgba noir en dur. */}
+        <div className="rounded-[1.25rem] shadow-floating">
+          <Omnibar
+            key={mountKey}
+            autoFocus
+            defaultMode="task"
+            onSubmit={handleSubmit}
+            onSubmitNote={handleSubmitNote}
+            placeholder="Capturer une tâche…"
+            lists={lists}
+          />
+        </div>
       </div>
     </div>
   );

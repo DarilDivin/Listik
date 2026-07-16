@@ -97,11 +97,21 @@ pub struct Todo {
     pub due_date: Option<String>,
     /// Rappel ponctuel : date-heure locale « YYYY-MM-DDTHH:MM » (None = aucun).
     pub remind_at: Option<String>,
+    /// Projet de rattachement (Phase E+). NULL tant que non affecté / avant la
+    /// réconciliation `list → projets` faite en Phase G.
+    pub project_id: Option<String>,
+    /// En-tête interne de projet (colonne/étape). NULL en lean (pas d'UI).
+    pub heading_id: Option<String>,
+    /// « Ce soir » : sous-section de la vue Aujourd'hui.
+    pub this_evening: bool,
+    /// « Un jour » (Someday) : rangée hors des horizons datés.
+    pub someday: bool,
     pub created_at: String,
     pub updated_at: String,
-    /// Checklist à un niveau. Absent des colonnes SQL de `todos` (`#[sqlx(default)]`
-    /// → liste vide par défaut) : peuplé séparément par `db::attach_subtasks`.
-    #[sqlx(default)]
+    /// Checklist à un niveau. Absent des colonnes SQL de `todos` (`#[sqlx(skip)]`
+    /// → jamais lu depuis la row, `Default::default()`) : peuplé séparément par
+    /// `db::attach_subtasks`.
+    #[sqlx(skip)]
     pub sub_tasks: Vec<super::SubTask>,
 }
 
@@ -123,6 +133,14 @@ pub struct CreateTodo {
     pub due_date: Option<String>,
     #[serde(default)]
     pub remind_at: Option<String>,
+    #[serde(default)]
+    pub project_id: Option<String>,
+    #[serde(default)]
+    pub heading_id: Option<String>,
+    #[serde(default)]
+    pub this_evening: bool,
+    #[serde(default)]
+    pub someday: bool,
 }
 
 /// Désérialise un champ `Option<Option<T>>` en distinguant l'absence du champ
@@ -159,6 +177,14 @@ pub struct UpdateTodo {
     pub due_date: Option<Option<String>>,
     #[serde(default, deserialize_with = "double_option")]
     pub remind_at: Option<Option<String>>,
+    #[serde(default, deserialize_with = "double_option")]
+    pub project_id: Option<Option<String>>,
+    #[serde(default, deserialize_with = "double_option")]
+    pub heading_id: Option<Option<String>>,
+    #[serde(default)]
+    pub this_evening: Option<bool>,
+    #[serde(default)]
+    pub someday: Option<bool>,
 }
 
 #[cfg(test)]

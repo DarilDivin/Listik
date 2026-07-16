@@ -23,9 +23,6 @@
   "dependencies": {
     "@fluentui/react-icons": "^2.0.307",
     "@fluentui/react-icons-mdl2": "^1.3.87",
-    "@radix-ui/react-checkbox": "^1.3.2",
-    "@radix-ui/react-popover": "^1.1.14",
-    "@radix-ui/react-select": "^2.2.5",
     "@radix-ui/react-slot": "^1.2.3",
     "@tauri-apps/api": "^2.7.0",
     "@tauri-apps/plugin-dialog": "^2.7.1",

@@ -1,6 +1,9 @@
 "use client";
 
 import { motion } from "motion/react";
+import { spring } from "@/lib/motion";
+import { cn } from "@/lib/utils";
+import { AnimatedNumber } from "@/components/ui/animated-number";
 
 export type TodoFilter = "all" | "pending" | "completed";
 
@@ -12,14 +15,17 @@ interface FilterTabsProps {
 
 const TABS: { key: TodoFilter; label: string }[] = [
   { key: "all", label: "Tout" },
-  { key: "pending", label: "En attente" },
+  { key: "pending", label: "En cours" },
   { key: "completed", label: "Terminées" },
 ];
 
-/** Onglets de filtrage avec indicateur souligné glissant. */
+/**
+ * Segmented control façon iOS : le « pouce » (carte claire, ombre de contact)
+ * glisse d'un segment à l'autre en ressort (layoutId partagé).
+ */
 export function FilterTabs({ value, onChange, counts }: FilterTabsProps) {
   return (
-    <div className="flex items-center">
+    <div className="inline-flex items-center gap-0.5 rounded-xl bg-foreground/[0.05] p-[3px] dark:bg-foreground/[0.08]">
       {TABS.map(({ key, label }) => {
         const active = value === key;
         return (
@@ -27,27 +33,31 @@ export function FilterTabs({ value, onChange, counts }: FilterTabsProps) {
             key={key}
             type="button"
             onClick={() => onChange(key)}
-            className={`relative px-3 py-2.5 text-sm transition-colors duration-200 ${
-              active ? "text-foreground" : "text-muted-foreground hover:text-foreground/80"
-            }`}
+            className={cn(
+              "relative rounded-[10px] px-3 py-1 text-[13px] transition-colors duration-200",
+              active
+                ? "font-medium text-foreground"
+                : "text-muted-foreground hover:text-foreground/80",
+            )}
           >
-            <span className="inline-flex items-center gap-1.5">
-              {label}
-              <span
-                className={`text-xs tabular-nums transition-colors ${
-                  active ? "text-foreground/45" : "text-muted-foreground/45"
-                }`}
-              >
-                {counts[key]}
-              </span>
-            </span>
             {active && (
               <motion.span
-                layoutId="filter-underline"
-                className="absolute inset-x-2 -bottom-px h-px bg-foreground"
-                transition={{ type: "spring", stiffness: 420, damping: 34 }}
+                layoutId="filter-thumb"
+                aria-hidden
+                className="absolute inset-0 rounded-[10px] bg-card shadow-[0_1px_3px_rgba(0,0,0,0.08)] ring-1 ring-black/[0.04] dark:bg-accent dark:ring-white/[0.07]"
+                transition={spring.snappy}
               />
             )}
+            <span className="relative z-10 inline-flex items-center gap-1.5">
+              {label}
+              <AnimatedNumber
+                value={counts[key]}
+                className={cn(
+                  "font-mono text-[11px] tabular-nums transition-colors",
+                  active ? "text-foreground/45" : "text-muted-foreground/45",
+                )}
+              />
+            </span>
           </button>
         );
       })}

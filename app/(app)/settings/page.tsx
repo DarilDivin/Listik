@@ -2,12 +2,26 @@
 
 import { useState } from "react";
 import { toast } from "sonner";
-import { Bell, Download, Info, Keyboard, List, Palette, Zap } from "lucide-react";
+import {
+  Bell,
+  Download,
+  Info,
+  Keyboard,
+  List,
+  Navigation,
+  Paintbrush,
+  Palette,
+  Zap,
+} from "lucide-react";
 import { useSettings } from "@/hooks/useSettings";
 import { ThemeSetting } from "@/components/ThemeSetting";
-import { ToggleSwitch } from "@/components/ToggleSwitch";
+import { AccentPicker } from "@/components/settings/AccentPicker";
+import { NavSetting } from "@/components/settings/NavSetting";
+import { Switch } from "@/components/ui/switch";
+import { Spinner } from "@/components/ui/spinner";
 import { TimePicker } from "@/components/ui/time-picker";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import { SettingsGroup } from "@/components/settings/SettingsGroup";
 import { SettingsRow } from "@/components/settings/SettingsRow";
 import { exportBackup } from "@/features/backup/export";
@@ -17,9 +31,12 @@ const APP_VERSION = "0.1.0";
 /** Petite pastille « Bientôt » pour les fonctionnalités prévues. */
 function SoonBadge() {
   return (
-    <span className="rounded-full bg-foreground/[0.06] px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+    <Badge
+      variant="secondary"
+      className="rounded-full text-[10px] font-medium uppercase tracking-wide text-muted-foreground"
+    >
       Bientôt
-    </span>
+    </Badge>
   );
 }
 
@@ -41,14 +58,14 @@ export default function SettingsPage() {
   };
 
   return (
-    <div className="relative h-full overflow-y-auto bg-secondary dark:bg-background">
+    <div className="relative h-full overflow-y-auto bg-background">
       {/* Halo d'ambiance, cohérent avec le planner */}
       <div
         aria-hidden
         className="pointer-events-none absolute inset-x-0 top-0 z-0 h-80"
         style={{
           background:
-            "radial-gradient(46% 60% at 50% -8%, oklch(0.62 0.10 265 / 0.10), transparent 70%)",
+            "radial-gradient(46% 60% at 50% -8%, var(--brand-soft), transparent 70%)",
         }}
       />
 
@@ -56,7 +73,25 @@ export default function SettingsPage() {
         <h1 className="text-large-title text-foreground">Réglages</h1>
 
         <div className="mt-8 space-y-7">
-          <SettingsGroup title="Apparence" index={0}>
+          <SettingsGroup title="Personnalisation" index={0}>
+            <SettingsRow
+              label="Couleur d'accent"
+              description="Teinte la progression, les sélections et les états actifs."
+              icon={Paintbrush}
+              iconClassName="bg-brand-soft text-brand"
+              stacked
+            >
+              <AccentPicker />
+            </SettingsRow>
+            <SettingsRow
+              label="Navigation"
+              description="Dock flottant d'icônes, ou barre latérale repliable (Ctrl+B)."
+              icon={Navigation}
+              iconClassName="bg-sky-500/8 text-sky-600 dark:text-sky-400"
+              stacked
+            >
+              <NavSetting />
+            </SettingsRow>
             <SettingsRow
               label="Thème"
               description="Suit le système par défaut."
@@ -75,10 +110,10 @@ export default function SettingsPage() {
               icon={Bell}
               iconClassName="bg-rose-500/8 text-rose-600 dark:text-rose-400"
             >
-              <ToggleSwitch
+              <Switch
                 checked={settings.daily_digest_enabled}
-                onChange={(daily_digest_enabled) => update({ daily_digest_enabled })}
-                label="Activer le résumé quotidien"
+                onCheckedChange={(daily_digest_enabled) => update({ daily_digest_enabled })}
+                aria-label="Activer le résumé quotidien"
               />
             </SettingsRow>
 
@@ -115,6 +150,7 @@ export default function SettingsPage() {
               iconClassName="bg-emerald-500/8 text-emerald-600 dark:text-emerald-400"
             >
               <Button size="sm" variant="outline" onClick={handleExport} disabled={exporting}>
+                {exporting && <Spinner data-icon="inline-start" />}
                 {exporting ? "Export…" : "Exporter"}
               </Button>
             </SettingsRow>

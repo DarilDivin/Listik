@@ -2,28 +2,40 @@
 
 import { useState } from "react";
 import { motion } from "motion/react";
-import { BellRing, Plus, Repeat, Tag, X } from "lucide-react";
-import type { Todo, UpdateTodoInput } from "@/features/todos/types";
-import { recurrenceLabel } from "@/features/todos/recurrence";
+import { spring } from "@/lib/motion";
+import { cn } from "@/lib/utils";
+import {
+  ArrowRight,
+  Check,
+  Flag,
+  RotateCcw,
+  SquarePen,
+  Sun,
+  Trash2,
+  X,
+} from "lucide-react";
+import type { Priority, Todo, UpdateTodoInput } from "@/features/todos/types";
+import { todayLocalISODate, toLocalISODate } from "@/lib/date";
 import { TodoCheckbox } from "@/components/todo/TodoCheckbox";
-import { TodoDate } from "@/components/todo/TodoDate";
-import { TodoDateControl } from "@/components/todo/TodoDateControl";
-import { ListControl } from "@/components/todo/ListControl";
-import { RecurrenceControl } from "@/components/todo/RecurrenceControl";
-import { ReminderControl } from "@/components/todo/ReminderControl";
-import { InlineEdit } from "@/components/todo/InlineEdit";
-
-/** Étiquette compacte d'un rappel pour l'affichage en lecture seule. */
-function reminderLabel(remindAt: string, scheduledFor: string | null): string {
-  const time = remindAt.slice(11, 16);
-  if (scheduledFor && remindAt.slice(0, 10) === scheduledFor) return time;
-  const [y, m, d] = remindAt.slice(0, 10).split("-").map(Number);
-  const short = new Date(y, m - 1, d).toLocaleDateString("fr-FR", {
-    day: "numeric",
-    month: "short",
-  });
-  return `${short} ${time}`;
-}
+import { TodoMetaLine } from "@/components/todo/TodoMetaLine";
+import { TodoDetailSheet } from "@/components/todo/TodoDetailSheet";
+import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuRadioGroup,
+  ContextMenuRadioItem,
+  ContextMenuSeparator,
+  ContextMenuSub,
+  ContextMenuSubContent,
+  ContextMenuSubTrigger,
+  ContextMenuTrigger,
+} from "@/components/ui/context-menu";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 
 interface TodoItemProps {
   todo: Todo;
@@ -31,9 +43,9 @@ interface TodoItemProps {
   onDelete: () => void;
   showDate?: boolean;
   overdue?: boolean;
-  /** Listes existantes proposées (pour le contrôle de liste). */
+  /** Listes existantes proposées (pour le champ liste du formulaire de détail). */
   lists?: string[];
-  /** Si fourni, la tâche devient éditable (texte/note au clic, date replanifiable). */
+  /** Si fourni, la tâche devient éditable — un clic ouvre son formulaire de détail. */
   onUpdate?: (payload: UpdateTodoInput) => void;
 }
 
@@ -42,6 +54,14 @@ const titleVariants = {
   completed: { color: "var(--color-muted-foreground)" },
 };
 
+/**
+ * Ligne de tâche : purement d'affichage — checkbox, titre, note, métadonnées
+ * (voir `TodoMetaLine`). Sa structure ne dépend JAMAIS de l'état d'interaction
+ * (survol, édition) : c'est ce qui rend le glissement des lignes voisines
+ * fluide. Toute édition (titre, note, date, liste, récurrence, rappel,
+ * priorité, suppression) vit dans `TodoDetailSheet`, ouvert au clic sur la
+ * ligne ou via le menu contextuel.
+ */
 export function TodoItem({
   todo,
   onToggle,
@@ -53,173 +73,167 @@ export function TodoItem({
 }: TodoItemProps) {
   const isCompleted = todo.status === "completed";
   const editable = Boolean(onUpdate);
-  const showMeta =
-    showDate &&
-    (editable ||
-      Boolean(todo.scheduled_for) ||
-      Boolean(todo.list) ||
-      todo.recurrence !== "none" ||
-      Boolean(todo.remind_at));
 
-  const [editingTitle, setEditingTitle] = useState(false);
-  const [editingNote, setEditingNote] = useState(false);
+  const [hovered, setHovered] = useState(false);
+  const [detailOpen, setDetailOpen] = useState(false);
 
-  const saveTitle = (value: string) => {
-    const next = value.trim();
-    if (next && next !== todo.text) onUpdate?.({ text: next });
-    setEditingTitle(false);
+  const reschedule = (date: string) =>
+    onUpdate?.({ scheduled_for: date, due_date: date });
+
+  const tomorrowISO = () => {
+    const t = new Date();
+    t.setDate(t.getDate() + 1);
+    return toLocalISODate(t);
   };
 
-  const saveNote = (value: string) => {
-    const next = value.trim();
-    if (next !== (todo.note ?? "")) onUpdate?.({ note: next || null });
-    setEditingNote(false);
-  };
+  const openDetail = () => editable && setDetailOpen(true);
 
   return (
-    <motion.div
-      layout
-      initial={false}
-      animate={{ opacity: isCompleted ? 0.5 : 1 }}
-      transition={{ duration: 0.25, ease: "easeOut" }}
-      className="group relative flex items-start gap-3 rounded-lg px-3 py-2.5 transition-colors duration-200 hover:bg-foreground/[0.05]"
-    >
-      <TodoCheckbox checked={isCompleted} onToggle={onToggle} priority={todo.priority} />
-
-      <div className="min-w-0 flex-1 pt-px">
-        {editingTitle ? (
-          <InlineEdit
-            value={todo.text}
-            submitOnEnter
-            onSave={saveTitle}
-            onCancel={() => setEditingTitle(false)}
-            className="w-full resize-none overflow-hidden border-none bg-transparent p-0 text-[15px] leading-snug tracking-[-0.01em] text-foreground outline-none"
-          />
-        ) : (
-          <motion.p
-            variants={titleVariants}
+    <>
+      <ContextMenu>
+        <ContextMenuTrigger asChild>
+          <motion.div
             initial={false}
-            animate={isCompleted ? "completed" : "pending"}
-            transition={{ duration: 0.25 }}
-            onClick={() => editable && setEditingTitle(true)}
-            className={`text-[15px] leading-snug tracking-[-0.01em] break-words ${
-              editable ? "cursor-text" : ""
-            } ${
-              isCompleted ? "line-through decoration-1 decoration-muted-foreground/50" : ""
-            }`}
+            animate={{ opacity: isCompleted ? 0.5 : 1 }}
+            transition={{ duration: 0.25, ease: "easeOut" }}
+            onHoverStart={() => setHovered(true)}
+            onHoverEnd={() => setHovered(false)}
+            onFocus={() => setHovered(true)}
+            onBlur={(e) => {
+              if (!e.currentTarget.contains(e.relatedTarget as Node)) setHovered(false);
+            }}
+            className="group relative flex items-start gap-3 rounded-lg px-3 py-2.5 transition-colors duration-200 hover:bg-foreground/[0.045]"
           >
-            {todo.text}
-          </motion.p>
-        )}
+            <TodoCheckbox checked={isCompleted} onToggle={onToggle} priority={todo.priority} />
 
-        {editingNote ? (
-          <InlineEdit
-            value={todo.note ?? ""}
-            placeholder="Ajouter une note…"
-            onSave={saveNote}
-            onCancel={() => setEditingNote(false)}
-            className="mt-1 w-full resize-none overflow-hidden border-none bg-transparent p-0 text-[13px] leading-relaxed text-muted-foreground outline-none placeholder:text-muted-foreground/50"
-          />
-        ) : todo.note ? (
-          <p
-            onClick={() => editable && setEditingNote(true)}
-            className={`mt-1 whitespace-pre-wrap break-words text-[13px] leading-relaxed text-muted-foreground ${
-              editable ? "cursor-text" : ""
-            }`}
-          >
-            {todo.note}
-          </p>
-        ) : (
-          editable && (
-            <button
-              type="button"
-              onClick={() => setEditingNote(true)}
-              className="mt-1 inline-flex items-center gap-1 text-xs text-muted-foreground/0 transition-colors hover:text-muted-foreground group-hover:text-muted-foreground/60"
+            <div
+              role={editable ? "button" : undefined}
+              tabIndex={editable ? 0 : undefined}
+              aria-label={editable ? `Modifier « ${todo.text} »` : undefined}
+              onClick={openDetail}
+              onKeyDown={(e) => {
+                if (editable && (e.key === "Enter" || e.key === " ")) {
+                  e.preventDefault();
+                  openDetail();
+                }
+              }}
+              className={cn("min-w-0 flex-1 pt-px", editable && "cursor-pointer outline-none")}
             >
-              <Plus size={12} />
-              Ajouter une note
-            </button>
-          )
-        )}
+              <motion.p
+                variants={titleVariants}
+                initial={false}
+                animate={isCompleted ? "completed" : "pending"}
+                transition={{ duration: 0.25 }}
+                className={cn(
+                  "text-[15px] leading-snug tracking-[-0.01em] break-words",
+                  isCompleted && "line-through decoration-1 decoration-muted-foreground/50",
+                )}
+              >
+                {todo.text}
+              </motion.p>
 
-        {showMeta && (
-          <div className="mt-1.5 flex flex-wrap items-center gap-x-1 gap-y-1">
-            {editable ? (
-              <TodoDateControl
-                date={todo.scheduled_for}
+              {todo.note && (
+                <p className="mt-1 whitespace-pre-wrap break-words text-[13px] leading-relaxed text-muted-foreground">
+                  {todo.note}
+                </p>
+              )}
+
+              <TodoMetaLine
+                todo={todo}
+                showDate={showDate}
                 overdue={overdue && !isCompleted}
                 dimmed={isCompleted}
-                onChange={(date) => onUpdate?.({ scheduled_for: date, due_date: date })}
               />
-            ) : (
-              todo.scheduled_for && (
-                <TodoDate
-                  date={todo.scheduled_for}
-                  dimmed={isCompleted}
-                  overdue={overdue && !isCompleted}
-                />
-              )
-            )}
+            </div>
 
-            {editable ? (
-              <ListControl
-                list={todo.list}
-                lists={lists}
-                dimmed={isCompleted}
-                onChange={(list) => onUpdate?.({ list })}
-              />
-            ) : (
-              todo.list && (
-                <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
-                  <Tag size={12} className="opacity-70" />
-                  {todo.list}
-                </span>
-              )
-            )}
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <motion.button
+                  type="button"
+                  onClick={onDelete}
+                  animate={{ opacity: hovered ? 1 : 0 }}
+                  transition={{ duration: 0.16 }}
+                  whileTap={{ scale: 0.85, transition: spring.snappy }}
+                  aria-label="Supprimer la tâche"
+                  className={cn(
+                    "-mr-1 mt-px shrink-0 rounded-md p-1.5 text-muted-foreground transition-colors duration-150 hover:bg-destructive/10 hover:text-destructive",
+                    !hovered && "pointer-events-none",
+                  )}
+                >
+                  <X size={15} />
+                </motion.button>
+              </TooltipTrigger>
+              <TooltipContent side="left" sideOffset={6}>
+                Supprimer
+              </TooltipContent>
+            </Tooltip>
+          </motion.div>
+        </ContextMenuTrigger>
 
-            {editable ? (
-              <RecurrenceControl
-                recurrence={todo.recurrence}
-                dimmed={isCompleted}
-                onChange={(recurrence) => onUpdate?.({ recurrence })}
-              />
-            ) : (
-              todo.recurrence !== "none" && (
-                <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
-                  <Repeat size={12} className="opacity-70" />
-                  {recurrenceLabel(todo.recurrence)}
-                </span>
-              )
-            )}
+        {/* Clic droit : actions rapides, façon menu contextuel macOS. */}
+        <ContextMenuContent className="w-52">
+          <ContextMenuItem onSelect={onToggle}>
+            {isCompleted ? <RotateCcw /> : <Check />}
+            {isCompleted ? "Rouvrir" : "Terminer"}
+          </ContextMenuItem>
 
-            {editable ? (
-              <ReminderControl
-                remindAt={todo.remind_at}
-                scheduledFor={todo.scheduled_for}
-                dimmed={isCompleted}
-                onChange={(remind_at) => onUpdate?.({ remind_at })}
-              />
-            ) : (
-              todo.remind_at && (
-                <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
-                  <BellRing size={12} className="opacity-70" />
-                  {reminderLabel(todo.remind_at, todo.scheduled_for)}
-                </span>
-              )
-            )}
-          </div>
-        )}
-      </div>
+          {editable && (
+            <ContextMenuItem onSelect={openDetail}>
+              <SquarePen />
+              Modifier…
+            </ContextMenuItem>
+          )}
 
-      <motion.button
-        type="button"
-        onClick={onDelete}
-        whileTap={{ scale: 0.85 }}
-        aria-label="Supprimer la tâche"
-        className="-mr-1 mt-px shrink-0 rounded-md p-1.5 text-muted-foreground opacity-0 transition-[opacity,color,background-color] duration-150 hover:bg-destructive/10 hover:text-destructive focus-visible:opacity-100 group-hover:opacity-100"
-      >
-        <X size={15} />
-      </motion.button>
-    </motion.div>
+          {editable && !isCompleted && (
+            <>
+              <ContextMenuItem onSelect={() => reschedule(todayLocalISODate())}>
+                <Sun />
+                Aujourd&apos;hui
+              </ContextMenuItem>
+              <ContextMenuItem onSelect={() => reschedule(tomorrowISO())}>
+                <ArrowRight />
+                Demain
+              </ContextMenuItem>
+
+              <ContextMenuSub>
+                <ContextMenuSubTrigger>
+                  <Flag className="text-muted-foreground" />
+                  Priorité
+                </ContextMenuSubTrigger>
+                <ContextMenuSubContent className="w-36">
+                  <ContextMenuRadioGroup
+                    value={todo.priority ?? "normal"}
+                    onValueChange={(value) =>
+                      onUpdate?.({ priority: value as Priority })
+                    }
+                  >
+                    <ContextMenuRadioItem value="high">Haute</ContextMenuRadioItem>
+                    <ContextMenuRadioItem value="normal">Normale</ContextMenuRadioItem>
+                    <ContextMenuRadioItem value="low">Basse</ContextMenuRadioItem>
+                  </ContextMenuRadioGroup>
+                </ContextMenuSubContent>
+              </ContextMenuSub>
+            </>
+          )}
+
+          <ContextMenuSeparator />
+          <ContextMenuItem variant="destructive" onSelect={onDelete}>
+            <Trash2 />
+            Supprimer
+          </ContextMenuItem>
+        </ContextMenuContent>
+      </ContextMenu>
+
+      {editable && onUpdate && (
+        <TodoDetailSheet
+          open={detailOpen}
+          onOpenChange={setDetailOpen}
+          todo={todo}
+          lists={lists}
+          onUpdate={onUpdate}
+          onDelete={onDelete}
+        />
+      )}
+    </>
   );
 }

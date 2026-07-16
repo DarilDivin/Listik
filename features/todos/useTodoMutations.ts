@@ -45,8 +45,13 @@ export function useTodoMutations() {
       scheduled_for: payload.scheduled_for ?? null,
       due_date: payload.due_date ?? null,
       remind_at: payload.remind_at ?? null,
+      project_id: payload.project_id ?? null,
+      heading_id: payload.heading_id ?? null,
+      this_evening: payload.this_evening ?? false,
+      someday: payload.someday ?? false,
       created_at: now,
       updated_at: now,
+      sub_tasks: [],
     };
 
     mutate<Todo[]>(SWR_KEYS.ALL_TODOS, (current = []) => [optimistic, ...current], false);

@@ -1,5 +1,8 @@
 # Listik → Assistant personnel intelligent — Feuille de route
 
+> **Évolution ergonomie Things 3** (Domaines/Projets, Inbox, tags, dates avancées,
+> réordonnancement, undo, etc.) → voir [`ROADMAP-THINGS.md`](./ROADMAP-THINGS.md).
+
 ## Contexte
 
 Listik est un gestionnaire de tâches Tauri (UI Next.js/React + backend Rust/sqlx/SQLite). Objectif :

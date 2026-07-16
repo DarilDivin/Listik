@@ -144,7 +144,6 @@ export default function Omnibar({
       <PrioritySelect value={task.priority} onChange={task.setPriority} />
       {lists !== undefined && (
         <ListControl
-          variant="chip"
           list={task.list}
           lists={lists}
           onChange={task.setList}
@@ -158,12 +157,14 @@ export default function Omnibar({
       ref={formRef}
       className={`w-full max-w-4xl rounded-[1.25rem] transition-[background-color,border-color,box-shadow] duration-500 ease-out ${
         isFocused
-          ? "bg-background border border-border/50"
-          : "bg-background/50 border border-transparent blur-0"
+          ? "bg-popover border border-border/60"
+          : "bg-foreground/[0.035] border border-transparent dark:bg-foreground/[0.05]"
       } ${
         isTask && task.hasGlow
           ? "shadow-[0_0_20px_rgba(250,204,21,0.18)] dark:shadow-[0_0_20px_rgba(250,204,21,0.12)]"
-          : "shadow-none"
+          : isFocused
+            ? "shadow-[0_1px_2px_rgba(0,0,0,0.04),0_12px_32px_-12px_rgba(0,0,0,0.14)] dark:shadow-[0_1px_2px_rgba(0,0,0,0.3),0_12px_32px_-12px_rgba(0,0,0,0.55)]"
+            : "shadow-none"
       } relative flex items-stretch gap-2 p-2 text-left`}
       onSubmit={(e) => {
         e.preventDefault();

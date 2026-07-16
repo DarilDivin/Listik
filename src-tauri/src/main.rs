@@ -169,6 +169,18 @@ fn main() {
             commands::create_subtask,
             commands::update_subtask,
             commands::delete_subtask,
+            commands::list_areas,
+            commands::create_area,
+            commands::update_area,
+            commands::delete_area,
+            commands::list_projects,
+            commands::create_project,
+            commands::update_project,
+            commands::delete_project,
+            commands::list_tags,
+            commands::create_tag,
+            commands::update_tag,
+            commands::delete_tag,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

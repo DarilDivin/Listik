@@ -1,6 +1,7 @@
 use crate::models::{
-    CreateNote, CreateSubTask, CreateTodo, Note, Recurrence, Settings, SubTask, Todo, TodoStatus,
-    UpdateNote, UpdateSettings, UpdateSubTask, UpdateTodo,
+    Area, CreateArea, CreateNote, CreateProject, CreateSubTask, CreateTag, CreateTodo, Note,
+    Project, Recurrence, Settings, SubTask, Tag, Todo, TodoStatus, UpdateArea, UpdateNote,
+    UpdateProject, UpdateSettings, UpdateSubTask, UpdateTag, UpdateTodo,
 };
 use sqlx::sqlite::{SqliteConnectOptions, SqlitePoolOptions};
 use sqlx::{QueryBuilder, Sqlite, SqlitePool};
@@ -13,7 +14,8 @@ pub struct AppState {
 }
 
 const SELECT_COLUMNS: &str =
-    "id, text, note, list, status, priority, recurrence, scheduled_for, due_date, remind_at, created_at, updated_at";
+    "id, text, note, list, status, priority, recurrence, scheduled_for, due_date, remind_at, \
+     project_id, heading_id, this_evening, someday, created_at, updated_at";
 
 const NOTE_COLUMNS: &str = "id, title, content, pinned, created_at, updated_at";
 
@@ -99,14 +101,19 @@ pub async fn create(pool: &SqlitePool, input: CreateTodo) -> Result<Todo, sqlx::
         scheduled_for: input.scheduled_for,
         due_date: input.due_date,
         remind_at: input.remind_at,
+        project_id: input.project_id,
+        heading_id: input.heading_id,
+        this_evening: input.this_evening,
+        someday: input.someday,
         created_at: now.clone(),
         updated_at: now,
         sub_tasks: Vec::new(),
     };
 
     sqlx::query(
-        "INSERT INTO todos (id, text, note, list, status, priority, recurrence, scheduled_for, due_date, remind_at, created_at, updated_at) \
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        "INSERT INTO todos (id, text, note, list, status, priority, recurrence, scheduled_for, due_date, remind_at, \
+         project_id, heading_id, this_evening, someday, created_at, updated_at) \
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
     )
     .bind(&todo.id)
     .bind(&todo.text)
@@ -118,6 +125,10 @@ pub async fn create(pool: &SqlitePool, input: CreateTodo) -> Result<Todo, sqlx::
     .bind(&todo.scheduled_for)
     .bind(&todo.due_date)
     .bind(&todo.remind_at)
+    .bind(&todo.project_id)
+    .bind(&todo.heading_id)
+    .bind(todo.this_evening)
+    .bind(todo.someday)
     .bind(&todo.created_at)
     .bind(&todo.updated_at)
     .execute(pool)
@@ -160,6 +171,18 @@ pub async fn update(pool: &SqlitePool, id: &str, input: UpdateTodo) -> Result<To
         // Le rappel change → on réarme la notification (reminded remis à 0).
         sep.push("remind_at = ").push_bind_unseparated(remind_at);
         sep.push("reminded = ").push_bind_unseparated(0_i64);
+    }
+    if let Some(project_id) = input.project_id {
+        sep.push("project_id = ").push_bind_unseparated(project_id);
+    }
+    if let Some(heading_id) = input.heading_id {
+        sep.push("heading_id = ").push_bind_unseparated(heading_id);
+    }
+    if let Some(this_evening) = input.this_evening {
+        sep.push("this_evening = ").push_bind_unseparated(this_evening);
+    }
+    if let Some(someday) = input.someday {
+        sep.push("someday = ").push_bind_unseparated(someday);
     }
     sep.push("updated_at = ").push_bind_unseparated(now);
     // Contenu potentiellement modifié → à ré-indexer côté sidecar (D3).
@@ -218,7 +241,17 @@ pub async fn toggle(pool: &SqlitePool, id: &str) -> Result<Todo, sqlx::Error> {
 }
 
 pub async fn delete(pool: &SqlitePool, id: &str) -> Result<(), sqlx::Error> {
+    // Pas de FK/cascade dans ce schéma → on nettoie les enfants à la main
+    // (sous-tâches, liens de tags, ordre manuel) pour ne pas laisser d'orphelins.
     sqlx::query("DELETE FROM sub_tasks WHERE todo_id = ?")
+        .bind(id)
+        .execute(pool)
+        .await?;
+    sqlx::query("DELETE FROM task_tags WHERE todo_id = ?")
+        .bind(id)
+        .execute(pool)
+        .await?;
+    sqlx::query("DELETE FROM orderings WHERE todo_id = ?")
         .bind(id)
         .execute(pool)
         .await?;
@@ -649,15 +682,260 @@ pub async fn search_notes(pool: &SqlitePool, query: &str) -> Result<Vec<Note>, s
         .await
 }
 
+// ---------------------------------------------------------------------------
+// Domaines (Areas) — grands piliers regroupant des projets
+// ---------------------------------------------------------------------------
+
+const AREA_COLUMNS: &str = "id, name, position, created_at";
+
+async fn next_position(pool: &SqlitePool, table: &str) -> Result<i64, sqlx::Error> {
+    let (max,): (Option<i64>,) =
+        sqlx::query_as(&format!("SELECT MAX(position) FROM {table}"))
+            .fetch_one(pool)
+            .await?;
+    Ok(max.map(|p| p + 1).unwrap_or(0))
+}
+
+pub async fn list_areas(pool: &SqlitePool) -> Result<Vec<Area>, sqlx::Error> {
+    let query = format!("SELECT {AREA_COLUMNS} FROM areas ORDER BY position ASC, name ASC");
+    sqlx::query_as::<_, Area>(&query).fetch_all(pool).await
+}
+
+pub async fn create_area(pool: &SqlitePool, input: CreateArea) -> Result<Area, sqlx::Error> {
+    let area = Area {
+        id: Uuid::new_v4().to_string(),
+        name: input.name,
+        position: next_position(pool, "areas").await?,
+        created_at: now_iso(),
+    };
+    sqlx::query("INSERT INTO areas (id, name, position, created_at) VALUES (?, ?, ?, ?)")
+        .bind(&area.id)
+        .bind(&area.name)
+        .bind(area.position)
+        .bind(&area.created_at)
+        .execute(pool)
+        .await?;
+    Ok(area)
+}
+
+pub async fn update_area(pool: &SqlitePool, id: &str, input: UpdateArea) -> Result<Area, sqlx::Error> {
+    // Rien à écrire → éviter un « SET » vide (SQL invalide), simple relecture.
+    if input.name.is_some() || input.position.is_some() {
+        let mut qb: QueryBuilder<Sqlite> = QueryBuilder::new("UPDATE areas SET ");
+        let mut sep = qb.separated(", ");
+        if let Some(name) = input.name {
+            sep.push("name = ").push_bind_unseparated(name);
+        }
+        if let Some(position) = input.position {
+            sep.push("position = ").push_bind_unseparated(position);
+        }
+        qb.push(" WHERE id = ").push_bind(id);
+        qb.build().execute(pool).await?;
+    }
+
+    let query = format!("SELECT {AREA_COLUMNS} FROM areas WHERE id = ?");
+    sqlx::query_as::<_, Area>(&query)
+        .bind(id)
+        .fetch_one(pool)
+        .await
+}
+
+/// Supprime un domaine et détache ses projets (pas de cascade dans ce schéma).
+pub async fn delete_area(pool: &SqlitePool, id: &str) -> Result<(), sqlx::Error> {
+    sqlx::query("UPDATE projects SET area_id = NULL WHERE area_id = ?")
+        .bind(id)
+        .execute(pool)
+        .await?;
+    sqlx::query("DELETE FROM areas WHERE id = ?")
+        .bind(id)
+        .execute(pool)
+        .await?;
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// Projets — conteneurs concrets (note, deadline, achèvement)
+// ---------------------------------------------------------------------------
+
+const PROJECT_COLUMNS: &str =
+    "id, name, note, area_id, status, deadline, position, created_at, updated_at";
+
+pub async fn list_projects(pool: &SqlitePool) -> Result<Vec<Project>, sqlx::Error> {
+    let query = format!("SELECT {PROJECT_COLUMNS} FROM projects ORDER BY position ASC, name ASC");
+    sqlx::query_as::<_, Project>(&query).fetch_all(pool).await
+}
+
+pub async fn get_project(pool: &SqlitePool, id: &str) -> Result<Option<Project>, sqlx::Error> {
+    let query = format!("SELECT {PROJECT_COLUMNS} FROM projects WHERE id = ?");
+    sqlx::query_as::<_, Project>(&query)
+        .bind(id)
+        .fetch_optional(pool)
+        .await
+}
+
+pub async fn create_project(
+    pool: &SqlitePool,
+    input: CreateProject,
+) -> Result<Project, sqlx::Error> {
+    let now = now_iso();
+    let project = Project {
+        id: Uuid::new_v4().to_string(),
+        name: input.name,
+        note: input.note,
+        area_id: input.area_id,
+        status: crate::models::ProjectStatus::Active,
+        deadline: input.deadline,
+        position: next_position(pool, "projects").await?,
+        created_at: now.clone(),
+        updated_at: now,
+    };
+    sqlx::query(
+        "INSERT INTO projects (id, name, note, area_id, status, deadline, position, created_at, updated_at) \
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+    )
+    .bind(&project.id)
+    .bind(&project.name)
+    .bind(&project.note)
+    .bind(&project.area_id)
+    .bind(project.status)
+    .bind(&project.deadline)
+    .bind(project.position)
+    .bind(&project.created_at)
+    .bind(&project.updated_at)
+    .execute(pool)
+    .await?;
+    Ok(project)
+}
+
+pub async fn update_project(
+    pool: &SqlitePool,
+    id: &str,
+    input: UpdateProject,
+) -> Result<Project, sqlx::Error> {
+    let mut qb: QueryBuilder<Sqlite> = QueryBuilder::new("UPDATE projects SET ");
+    let mut sep = qb.separated(", ");
+    if let Some(name) = input.name {
+        sep.push("name = ").push_bind_unseparated(name);
+    }
+    if let Some(note) = input.note {
+        sep.push("note = ").push_bind_unseparated(note);
+    }
+    if let Some(area_id) = input.area_id {
+        sep.push("area_id = ").push_bind_unseparated(area_id);
+    }
+    if let Some(status) = input.status {
+        sep.push("status = ").push_bind_unseparated(status);
+    }
+    if let Some(deadline) = input.deadline {
+        sep.push("deadline = ").push_bind_unseparated(deadline);
+    }
+    if let Some(position) = input.position {
+        sep.push("position = ").push_bind_unseparated(position);
+    }
+    sep.push("updated_at = ").push_bind_unseparated(now_iso());
+    qb.push(" WHERE id = ").push_bind(id);
+    qb.build().execute(pool).await?;
+
+    get_project(pool, id).await?.ok_or(sqlx::Error::RowNotFound)
+}
+
+/// Supprime un projet : détache ses tâches (project_id/heading_id → NULL) et
+/// supprime ses en-têtes (pas de cascade dans ce schéma).
+pub async fn delete_project(pool: &SqlitePool, id: &str) -> Result<(), sqlx::Error> {
+    sqlx::query("UPDATE todos SET project_id = NULL, heading_id = NULL WHERE project_id = ?")
+        .bind(id)
+        .execute(pool)
+        .await?;
+    sqlx::query("DELETE FROM headings WHERE project_id = ?")
+        .bind(id)
+        .execute(pool)
+        .await?;
+    sqlx::query("DELETE FROM projects WHERE id = ?")
+        .bind(id)
+        .execute(pool)
+        .await?;
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// Tags — contexte transverse (nom unique insensible à la casse)
+// ---------------------------------------------------------------------------
+
+const TAG_COLUMNS: &str = "id, name, parent_id, created_at";
+
+pub async fn list_tags(pool: &SqlitePool) -> Result<Vec<Tag>, sqlx::Error> {
+    let query = format!("SELECT {TAG_COLUMNS} FROM tags ORDER BY name COLLATE NOCASE ASC");
+    sqlx::query_as::<_, Tag>(&query).fetch_all(pool).await
+}
+
+/// Crée un tag, ou renvoie l'existant si le nom (insensible à la casse) existe
+/// déjà — évite une violation de contrainte UNIQUE et sert de « get-or-create ».
+pub async fn create_tag(pool: &SqlitePool, input: CreateTag) -> Result<Tag, sqlx::Error> {
+    let existing = sqlx::query_as::<_, Tag>(&format!(
+        "SELECT {TAG_COLUMNS} FROM tags WHERE name = ? COLLATE NOCASE"
+    ))
+    .bind(&input.name)
+    .fetch_optional(pool)
+    .await?;
+    if let Some(tag) = existing {
+        return Ok(tag);
+    }
+
+    let tag = Tag {
+        id: Uuid::new_v4().to_string(),
+        name: input.name,
+        parent_id: input.parent_id,
+        created_at: now_iso(),
+    };
+    sqlx::query("INSERT INTO tags (id, name, parent_id, created_at) VALUES (?, ?, ?, ?)")
+        .bind(&tag.id)
+        .bind(&tag.name)
+        .bind(&tag.parent_id)
+        .bind(&tag.created_at)
+        .execute(pool)
+        .await?;
+    Ok(tag)
+}
+
+pub async fn update_tag(pool: &SqlitePool, id: &str, input: UpdateTag) -> Result<Tag, sqlx::Error> {
+    if let Some(name) = input.name {
+        sqlx::query("UPDATE tags SET name = ? WHERE id = ?")
+            .bind(name)
+            .bind(id)
+            .execute(pool)
+            .await?;
+    }
+    sqlx::query_as::<_, Tag>(&format!("SELECT {TAG_COLUMNS} FROM tags WHERE id = ?"))
+        .bind(id)
+        .fetch_one(pool)
+        .await
+}
+
+/// Supprime un tag et ses liaisons (pas de cascade dans ce schéma).
+pub async fn delete_tag(pool: &SqlitePool, id: &str) -> Result<(), sqlx::Error> {
+    sqlx::query("DELETE FROM task_tags WHERE tag_id = ?")
+        .bind(id)
+        .execute(pool)
+        .await?;
+    sqlx::query("DELETE FROM tags WHERE id = ?")
+        .bind(id)
+        .execute(pool)
+        .await?;
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::{
-        create, create_note, delete, delete_note, due_reminders, get_settings, list_all,
-        list_by_date, list_notes, mark_reminded, search_notes, take_due_digest, toggle, update,
-        update_note, update_settings,
+        create, create_area, create_note, create_project, create_tag, delete, delete_area,
+        delete_note, delete_project, delete_tag, due_reminders, get_settings, list_all, list_areas,
+        list_by_date, list_notes, list_projects, list_tags, mark_reminded, search_notes,
+        take_due_digest, toggle, update, update_area, update_note, update_project, update_settings,
+        update_tag,
     };
     use crate::models::{
-        CreateNote, CreateTodo, TodoStatus, UpdateNote, UpdateSettings, UpdateTodo,
+        CreateArea, CreateNote, CreateProject, CreateTag, CreateTodo, TodoStatus, UpdateArea,
+        UpdateNote, UpdateProject, UpdateSettings, UpdateTag, UpdateTodo,
     };
     use sqlx::sqlite::SqlitePoolOptions;
     use sqlx::SqlitePool;
@@ -683,6 +961,10 @@ mod tests {
             scheduled_for: None,
             due_date: None,
             remind_at: None,
+            project_id: None,
+            heading_id: None,
+            this_evening: false,
+            someday: false,
         }
     }
 
@@ -996,5 +1278,96 @@ mod tests {
 
         delete_note(&pool, &a.id).await.unwrap();
         assert_eq!(list_notes(&pool).await.unwrap().len(), 1);
+    }
+
+    #[tokio::test]
+    async fn area_crud_and_project_detach_on_delete() {
+        let pool = memory_pool().await;
+        let area = create_area(&pool, CreateArea { name: "Travail".into() })
+            .await
+            .unwrap();
+        let project = create_project(
+            &pool,
+            CreateProject {
+                name: "Listik".into(),
+                area_id: Some(area.id.clone()),
+                note: None,
+                deadline: None,
+            },
+        )
+        .await
+        .unwrap();
+        assert_eq!(list_areas(&pool).await.unwrap().len(), 1);
+
+        let renamed = update_area(
+            &pool,
+            &area.id,
+            UpdateArea { name: Some("Perso".into()), ..Default::default() },
+        )
+        .await
+        .unwrap();
+        assert_eq!(renamed.name, "Perso");
+
+        // Supprimer le domaine détache le projet (area_id → NULL), sans le supprimer.
+        delete_area(&pool, &area.id).await.unwrap();
+        assert!(list_areas(&pool).await.unwrap().is_empty());
+        let projects = list_projects(&pool).await.unwrap();
+        assert_eq!(projects.len(), 1);
+        assert_eq!(projects[0].area_id, None);
+        assert_eq!(projects[0].id, project.id);
+    }
+
+    #[tokio::test]
+    async fn project_delete_detaches_its_tasks() {
+        let pool = memory_pool().await;
+        let project = create_project(
+            &pool,
+            CreateProject { name: "Courses".into(), area_id: None, note: None, deadline: None },
+        )
+        .await
+        .unwrap();
+
+        let mut input = new_todo("Acheter du lait");
+        input.project_id = Some(project.id.clone());
+        let todo = create(&pool, input).await.unwrap();
+        assert_eq!(todo.project_id.as_deref(), Some(project.id.as_str()));
+
+        let updated = update_project(
+            &pool,
+            &project.id,
+            UpdateProject { name: Some("Épicerie".into()), ..Default::default() },
+        )
+        .await
+        .unwrap();
+        assert_eq!(updated.name, "Épicerie");
+
+        // Supprimer le projet détache la tâche (project_id → NULL), sans la supprimer.
+        delete_project(&pool, &project.id).await.unwrap();
+        assert!(list_projects(&pool).await.unwrap().is_empty());
+        let all = list_all(&pool).await.unwrap();
+        assert_eq!(all.len(), 1);
+        assert_eq!(all[0].project_id, None);
+    }
+
+    #[tokio::test]
+    async fn tag_create_is_case_insensitive_get_or_create() {
+        let pool = memory_pool().await;
+        let a = create_tag(&pool, CreateTag { name: "Urgent".into(), parent_id: None })
+            .await
+            .unwrap();
+        // Même nom, casse différente → renvoie le tag existant (pas de doublon).
+        let b = create_tag(&pool, CreateTag { name: "urgent".into(), parent_id: None })
+            .await
+            .unwrap();
+        assert_eq!(a.id, b.id);
+        assert_eq!(list_tags(&pool).await.unwrap().len(), 1);
+
+        let renamed = update_tag(&pool, &a.id, UpdateTag { name: Some("Prioritaire".into()) })
+            .await
+            .unwrap();
+        assert_eq!(renamed.name, "Prioritaire");
+
+        delete_tag(&pool, &a.id).await.unwrap();
+        assert!(list_tags(&pool).await.unwrap().is_empty());
     }
 }
