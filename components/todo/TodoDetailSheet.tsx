@@ -30,9 +30,27 @@ import {
   SheetTitle,
 } from "@/components/ui/sheet";
 import { Switch } from "@/components/ui/switch";
+import { Input } from "@/components/ui/input";
 import { RECURRENCE_OPTIONS } from "@/features/todos/recurrence";
 import { priorityRingColor } from "@/features/todos/priority";
-import type { Priority, Recurrence, Todo, UpdateTodoInput } from "@/features/todos/types";
+import type {
+  Priority,
+  RecurMode,
+  Recurrence,
+  RecurWeekday,
+  Todo,
+  UpdateTodoInput,
+} from "@/features/todos/types";
+
+const WEEKDAY_OPTIONS: { value: RecurWeekday; label: string }[] = [
+  { value: "mon", label: "lundi" },
+  { value: "tue", label: "mardi" },
+  { value: "wed", label: "mercredi" },
+  { value: "thu", label: "jeudi" },
+  { value: "fri", label: "vendredi" },
+  { value: "sat", label: "samedi" },
+  { value: "sun", label: "dimanche" },
+];
 
 const PRIORITIES: { value: Priority; label: string }[] = [
   { value: "low", label: "Basse" },
@@ -355,7 +373,24 @@ export function TodoDetailSheet({
             <DetailRow icon={<Repeat size={15} />} label="Répéter">
               <Select
                 value={todo.recurrence}
-                onValueChange={(value) => onUpdate({ recurrence: value as Recurrence })}
+                onValueChange={(value) => {
+                  const recurrence = value as Recurrence;
+                  // Changer de fréquence normalise les modificateurs : ce qui
+                  // n'a pas de sens pour la nouvelle fréquence est remis à zéro.
+                  if (recurrence === "none" || recurrence === "weekdays") {
+                    onUpdate({
+                      recurrence,
+                      recur_interval: 1,
+                      recur_weekday: null,
+                      recur_setpos: null,
+                      recur_mode: "fixed",
+                    });
+                  } else if (recurrence !== "monthly") {
+                    onUpdate({ recurrence, recur_weekday: null, recur_setpos: null });
+                  } else {
+                    onUpdate({ recurrence });
+                  }
+                }}
               >
                 <SelectTrigger size="sm" className="w-40">
                   <SelectValue />
@@ -369,6 +404,131 @@ export function TodoDetailSheet({
                 </SelectContent>
               </Select>
             </DetailRow>
+
+            {/* Intervalle « toutes les N » — pas pour les jours ouvrés
+                (« un ouvré sur deux » ne veut rien dire). */}
+            {["daily", "weekly", "monthly"].includes(todo.recurrence) &&
+              todo.recur_setpos === null && (
+                <DetailRow icon={<Repeat size={15} className="opacity-0" />} label="Intervalle">
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm text-muted-foreground">
+                      {todo.recurrence === "daily"
+                        ? "tous les"
+                        : todo.recurrence === "weekly"
+                          ? "toutes les"
+                          : "tous les"}
+                    </span>
+                    <Input
+                      type="number"
+                      min={1}
+                      max={99}
+                      value={Number(todo.recur_interval)}
+                      onChange={(e) => {
+                        const n = Math.max(1, Math.min(99, Number(e.target.value) || 1));
+                        onUpdate({ recur_interval: n });
+                      }}
+                      className="h-8 w-16 text-center"
+                      aria-label="Intervalle de répétition"
+                    />
+                    <span className="text-sm text-muted-foreground">
+                      {todo.recurrence === "daily"
+                        ? "jours"
+                        : todo.recurrence === "weekly"
+                          ? "semaines"
+                          : "mois"}
+                    </span>
+                  </div>
+                </DetailRow>
+              )}
+
+            {/* Positionnel mensuel : jour d'ancrage / Ne jour de semaine /
+                dernier jour du mois. */}
+            {todo.recurrence === "monthly" && (
+              <DetailRow icon={<Repeat size={15} className="opacity-0" />} label="Le">
+                <div className="flex items-center gap-1.5">
+                  <Select
+                    value={
+                      todo.recur_setpos === null
+                        ? "anchor"
+                        : todo.recur_weekday === null
+                          ? "lastday"
+                          : String(todo.recur_setpos)
+                    }
+                    onValueChange={(value) => {
+                      if (value === "anchor") {
+                        onUpdate({ recur_setpos: null, recur_weekday: null });
+                      } else if (value === "lastday") {
+                        onUpdate({ recur_setpos: -1, recur_weekday: null });
+                      } else {
+                        // Positionnel → mode fixe forcé : « le prochain 1er
+                        // lundi au moins N mois après complétion » n'est un
+                        // planning pour personne.
+                        onUpdate({
+                          recur_setpos: Number(value),
+                          recur_weekday: todo.recur_weekday ?? "mon",
+                          recur_mode: "fixed",
+                        });
+                      }
+                    }}
+                  >
+                    <SelectTrigger size="sm" className="w-32">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent align="end">
+                      <SelectItem value="anchor">Jour d&apos;ancrage</SelectItem>
+                      <SelectItem value="1">1er</SelectItem>
+                      <SelectItem value="2">2e</SelectItem>
+                      <SelectItem value="3">3e</SelectItem>
+                      <SelectItem value="4">4e</SelectItem>
+                      <SelectItem value="-1">Dernier</SelectItem>
+                      <SelectItem value="lastday">Dernier jour du mois</SelectItem>
+                    </SelectContent>
+                  </Select>
+
+                  {todo.recur_setpos !== null && todo.recur_weekday !== null && (
+                    <Select
+                      value={todo.recur_weekday}
+                      onValueChange={(value) =>
+                        onUpdate({ recur_weekday: value as RecurWeekday })
+                      }
+                    >
+                      <SelectTrigger size="sm" className="w-28">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent align="end">
+                        {WEEKDAY_OPTIONS.map((o) => (
+                          <SelectItem key={o.value} value={o.value}>
+                            {o.label}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  )}
+                </div>
+              </DetailRow>
+            )}
+
+            {/* Base du report : date fixe ou après complétion — réservé aux
+                règles simples (façon Things). */}
+            {["daily", "weekly", "monthly"].includes(todo.recurrence) &&
+              todo.recur_setpos === null && (
+                <DetailRow icon={<Repeat size={15} className="opacity-0" />} label="À partir de">
+                  <Select
+                    value={todo.recur_mode}
+                    onValueChange={(value) =>
+                      onUpdate({ recur_mode: value as RecurMode })
+                    }
+                  >
+                    <SelectTrigger size="sm" className="w-44">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent align="end">
+                      <SelectItem value="fixed">La date planifiée</SelectItem>
+                      <SelectItem value="after_completion">La complétion</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </DetailRow>
+              )}
 
             <DetailRow icon={<BellRing size={15} />} label="Rappel">
               <div className="flex items-center gap-1">

@@ -325,28 +325,43 @@ l'UI synchronisait systématiquement.
 
 ---
 
-## Phase J — Récurrences avancées
+## Phase J — Récurrences avancées ✅ FAITE
 
-**But** : couvrir « toutes les N », « 1er lundi du mois », et surtout **après-complétion** vs
-date fixe — sans RRULE complet ni table d'occurrences.
+**But** : « toutes les N », « 1er lundi du mois », **après-complétion** vs date fixe — sans
+RRULE complet ni table d'occurrences.
 
-**Concepts** : modèle de récurrence structuré, matérialisation à la complétion.
+1. **Modèle : enum + modificateurs** (déviation validée par fable — plutôt qu'une structure
+   JSON) : l'enum `recurrence` existant RESTE la fréquence ; migration `0013` ajoute
+   `recur_interval` (défaut 1, CHECK >= 1), `recur_weekday`, `recur_setpos`, `recur_mode`
+   (fixed | after_completion). Les défauts reproduisent exactement l'ancien comportement →
+   **aucun backfill**, conversion sans perte par définition, zéro ripple frontend
+   (`!== "none"` inchangé). `bymonthday` abandonné : redondant avec la date d'ancrage —
+   SAUF fin de mois (un ancrage au 31 se borne au 28 et n'y revient jamais) → couverte par
+   **`setpos = -1` sans weekday = « dernier jour du mois »**. Non-objectif assumé : les
+   ensembles de jours (« lun/mer/ven »).
+2. **Sémantique strict-après** (`RecurrenceRule::advance`) : la prochaine occurrence est
+   STRICTEMENT postérieure à la base — avec `>=`, une tâche « 1er lundi » cochée le 1er lundi
+   se renverrait elle-même et ne bougerait plus jamais. Base désalignée avant l'occurrence du
+   mois → rattrapée (ne pas sauter d'occurrence). « Dernier » calculé depuis la FIN du mois
+   (« dernier vendredi » ≠ « 4e » : un mois en compte 4 ou 5).
+3. **Après-complétion** : base = jour où l'on coche. Réservé aux règles simples
+   (daily/weekly/monthly × intervalle) — masqué pour jours ouvrés et positionnel (façon
+   Things). Le delta échéance/rappel s'ancre sur l'ANCIENNE date planifiée, pas sur la base :
+   sinon les écarts seraient faussés. Sémantique d'échéance déclarée : « due N jours après
+   l'occurrence » — le delta la préserve exactement à chaque saut (la note de dérive de la
+   Phase I était une fausse alerte, close).
+4. **Miroir JS** (`recurrence.ts`) réécrit en arithmétique (y, m, d) pure : `setMonth(+1)`
+   déborde (31 janv → 3 mars) là où chrono borne (28 févr) — l'optimiste aurait « fliqué » ;
+   jamais de `new Date("YYYY-MM-DD")` (UTC → veille en fuseau négatif) ; numérotation chrono
+   (0 = lundi ≠ `getDay()`). **Table de parité** : les mêmes cas testés côté Rust et côté JS.
+5. **UI** : rangées conditionnelles dans le `Sheet` — fréquence, intervalle (masqué pour jours
+   ouvrés), positionnel mensuel (ancrage / 1er..4e / dernier <jour> / dernier jour du mois),
+   base du report. `i64 → number` forcé côté ts-rs (`#[ts(type)]`) : le `bigint` par défaut
+   contaminait les spreads.
 
-1. **Modèle structuré** (colonnes ou JSON sur `todos`, migration `0012_*`) :
-   `freq(day/week/month/year)` + `interval(N)` + `byweekday(set)` + `bymonthday` +
-   `bysetpos` (⇒ « 1er lundi » = freq=month, byweekday=MO, bysetpos=1) + `mode(fixed|after_completion)`.
-   Mapper l'enum existant (`daily/weekdays/weekly/monthly`) dessus dans la migration (conversion
-   sans perte).
-2. **Logique** : étendre `Recurrence::advance` (`src-tauri/src/models/task.rs`) ; **garder la
-   matérialisation-en-avant à la complétion** dans `db::toggle` (pas d'historique d'occurrences).
-3. **UI** : éditeur de récurrence dans le `Sheet` (segments + popover) remplaçant le `Select`
-   figé actuel (`TodoDetailSheet.tsx:258-274`).
-
-**Tester** : « toutes les 2 semaines », « 1er lundi » avancent correctement ; une tâche
-after-completion ne se reprogramme qu'une fois cochée.
-
-**Fichiers clés** : `src-tauri/src/models/task.rs`, `src-tauri/src/db.rs`,
-`features/todos/recurrence.ts`, `components/todo/TodoDetailSheet.tsx`.
+**Fichiers clés** : `src-tauri/migrations/0013_recurrence_modifiers.sql`,
+`src-tauri/src/models/task.rs`, `src-tauri/src/db.rs`, `features/todos/recurrence.ts`,
+`components/todo/TodoDetailSheet.tsx`.
 
 ---
 

@@ -42,6 +42,10 @@ export function useTodoMutations() {
       status: "pending",
       priority: payload.priority ?? "normal",
       recurrence: payload.recurrence ?? "none",
+      recur_interval: payload.recur_interval ?? 1,
+      recur_weekday: payload.recur_weekday ?? null,
+      recur_setpos: payload.recur_setpos ?? null,
+      recur_mode: payload.recur_mode ?? "fixed",
       scheduled_for: payload.scheduled_for ?? null,
       due_date: payload.due_date ?? null,
       remind_at: payload.remind_at ?? null,
@@ -83,7 +87,7 @@ export function useTodoMutations() {
       // L'échéance décale du MÊME delta (« planifiée lundi, due vendredi »
       // garde ses 4 jours d'écart) — jamais inventée si absente. Miroir du
       // comportement backend (db::toggle).
-      const next = nextOccurrence(todo.scheduled_for, todo.recurrence);
+      const next = nextOccurrence(todo.scheduled_for, todo);
       let nextDue = todo.due_date;
       if (next && todo.due_date && todo.scheduled_for) {
         const delta = Date.parse(next) - Date.parse(todo.scheduled_for);

@@ -4,10 +4,14 @@ export type { Todo } from "./generated/Todo";
 export type { Priority } from "./generated/Priority";
 export type { TodoStatus } from "./generated/TodoStatus";
 export type { Recurrence } from "./generated/Recurrence";
+export type { RecurMode } from "./generated/RecurMode";
+export type { RecurWeekday } from "./generated/RecurWeekday";
 
 import type { Priority } from "./generated/Priority";
 import type { TodoStatus } from "./generated/TodoStatus";
 import type { Recurrence } from "./generated/Recurrence";
+import type { RecurMode } from "./generated/RecurMode";
+import type { RecurWeekday } from "./generated/RecurWeekday";
 
 // Types d'ENTRÉE (construits côté frontend) : champs optionnels, écrits à la main.
 export interface CreateTodoInput {
@@ -16,6 +20,14 @@ export interface CreateTodoInput {
   list?: string | null;
   priority?: Priority;
   recurrence?: Recurrence;
+  /** Toutes les N occurrences (>= 1). */
+  recur_interval?: number;
+  /** Ne jour de semaine du mois (avec recur_setpos, monthly uniquement). */
+  recur_weekday?: RecurWeekday | null;
+  /** 1..4, -1 = dernier ; -1 sans weekday = dernier jour du mois. */
+  recur_setpos?: number | null;
+  /** Base du report : date fixe, ou jour de complétion. */
+  recur_mode?: RecurMode;
   scheduled_for?: string | null;
   due_date?: string | null;
   /** Rappel : date-heure locale « YYYY-MM-DDTHH:MM » ou null. */
@@ -38,6 +50,14 @@ export interface UpdateTodoInput {
   list?: string | null;
   priority?: Priority;
   recurrence?: Recurrence;
+  /** Toutes les N occurrences (>= 1). */
+  recur_interval?: number;
+  /** Ne jour de semaine du mois (avec recur_setpos, monthly uniquement). */
+  recur_weekday?: RecurWeekday | null;
+  /** 1..4, -1 = dernier ; -1 sans weekday = dernier jour du mois. */
+  recur_setpos?: number | null;
+  /** Base du report : date fixe, ou jour de complétion. */
+  recur_mode?: RecurMode;
   status?: TodoStatus;
   scheduled_for?: string | null;
   due_date?: string | null;

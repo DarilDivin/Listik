@@ -139,7 +139,7 @@ export function TodoMetaLine({
           )}
         >
           <Repeat size={12} className="opacity-70" />
-          {recurrenceLabel(todo.recurrence)}
+          {recurrenceLabel(todo)}
         </span>
       )}
 

@@ -14,7 +14,8 @@ pub struct AppState {
 }
 
 const SELECT_COLUMNS: &str =
-    "id, text, note, list, status, priority, recurrence, scheduled_for, due_date, remind_at, \
+    "id, text, note, list, status, priority, recurrence, recur_interval, recur_weekday, \
+     recur_setpos, recur_mode, scheduled_for, due_date, remind_at, \
      project_id, area_id, heading_id, this_evening, someday, created_at, updated_at";
 
 const NOTE_COLUMNS: &str = "id, title, content, pinned, created_at, updated_at";
@@ -102,6 +103,10 @@ pub async fn create(pool: &SqlitePool, input: CreateTodo) -> Result<Todo, sqlx::
         status: TodoStatus::Pending,
         priority: input.priority.unwrap_or_default(),
         recurrence: input.recurrence.unwrap_or_default(),
+        recur_interval: input.recur_interval.max(1),
+        recur_weekday: input.recur_weekday,
+        recur_setpos: input.recur_setpos,
+        recur_mode: input.recur_mode,
         scheduled_for: input.scheduled_for,
         due_date: input.due_date,
         remind_at: input.remind_at,
@@ -119,9 +124,10 @@ pub async fn create(pool: &SqlitePool, input: CreateTodo) -> Result<Todo, sqlx::
     };
 
     sqlx::query(
-        "INSERT INTO todos (id, text, note, list, status, priority, recurrence, scheduled_for, due_date, remind_at, \
+        "INSERT INTO todos (id, text, note, list, status, priority, recurrence, recur_interval, \
+         recur_weekday, recur_setpos, recur_mode, scheduled_for, due_date, remind_at, \
          project_id, area_id, heading_id, this_evening, someday, created_at, updated_at) \
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
     )
     .bind(&todo.id)
     .bind(&todo.text)
@@ -130,6 +136,10 @@ pub async fn create(pool: &SqlitePool, input: CreateTodo) -> Result<Todo, sqlx::
     .bind(todo.status)
     .bind(todo.priority)
     .bind(todo.recurrence)
+    .bind(todo.recur_interval)
+    .bind(todo.recur_weekday)
+    .bind(todo.recur_setpos)
+    .bind(todo.recur_mode)
     .bind(&todo.scheduled_for)
     .bind(&todo.due_date)
     .bind(&todo.remind_at)
@@ -166,6 +176,18 @@ pub async fn update(pool: &SqlitePool, id: &str, input: UpdateTodo) -> Result<To
     }
     if let Some(recurrence) = input.recurrence {
         sep.push("recurrence = ").push_bind_unseparated(recurrence);
+    }
+    if let Some(interval) = input.recur_interval {
+        sep.push("recur_interval = ").push_bind_unseparated(interval.max(1));
+    }
+    if let Some(weekday) = input.recur_weekday {
+        sep.push("recur_weekday = ").push_bind_unseparated(weekday);
+    }
+    if let Some(setpos) = input.recur_setpos {
+        sep.push("recur_setpos = ").push_bind_unseparated(setpos);
+    }
+    if let Some(mode) = input.recur_mode {
+        sep.push("recur_mode = ").push_bind_unseparated(mode);
     }
     if let Some(status) = input.status {
         sep.push("status = ").push_bind_unseparated(status);
@@ -212,29 +234,50 @@ pub async fn toggle(pool: &SqlitePool, id: &str) -> Result<Todo, sqlx::Error> {
     // Tâche récurrente que l'on coche : on la reporte à la prochaine occurrence
     // (elle reste « à faire ») au lieu de la marquer terminée.
     if current.status == TodoStatus::Pending && current.recurrence != Recurrence::None {
-        let base = current
-            .scheduled_for
-            .as_deref()
-            .and_then(|s| chrono::NaiveDate::parse_from_str(s, "%Y-%m-%d").ok())
-            .unwrap_or_else(|| chrono::Local::now().date_naive());
+        // Base du report : la date planifiée (règle fixe), ou le jour où l'on
+        // coche (« 3 semaines après complétion » se compte depuis MAINTENANT).
+        let base = match current.recur_mode {
+            crate::models::RecurMode::AfterCompletion => chrono::Local::now().date_naive(),
+            crate::models::RecurMode::Fixed => current
+                .scheduled_for
+                .as_deref()
+                .and_then(|s| chrono::NaiveDate::parse_from_str(s, "%Y-%m-%d").ok())
+                .unwrap_or_else(|| chrono::Local::now().date_naive()),
+        };
 
-        if let Some(next) = current.recurrence.advance(base) {
+        let rule = crate::models::RecurrenceRule {
+            recurrence: current.recurrence,
+            interval: current.recur_interval,
+            weekday: current.recur_weekday,
+            setpos: current.recur_setpos,
+        };
+
+        if let Some(next) = rule.advance(base) {
             let next_str = next.format("%Y-%m-%d").to_string();
+            // Delta appliqué au rappel et à l'échéance : depuis l'ANCIENNE date
+            // planifiée (leurs écarts s'y rattachent), pas depuis la base de
+            // calcul — en après-complétion, base = aujourd'hui, et un décalage
+            // « next - aujourd'hui » fausserait les écarts.
+            let anchor = current
+                .scheduled_for
+                .as_deref()
+                .and_then(|s| chrono::NaiveDate::parse_from_str(s, "%Y-%m-%d").ok())
+                .unwrap_or(base);
+            let shift = next - anchor;
             // Décale le rappel de la même durée (conserve l'heure) et le réarme.
             let next_remind = current.remind_at.as_deref().and_then(|s| {
                 chrono::NaiveDateTime::parse_from_str(s, "%Y-%m-%dT%H:%M")
                     .ok()
-                    .map(|dt| (dt + (next - base)).format("%Y-%m-%dT%H:%M").to_string())
+                    .map(|dt| (dt + shift).format("%Y-%m-%dT%H:%M").to_string())
             });
-            // L'échéance décale du MÊME delta (« planifiée lundi, due vendredi »
-            // reste un écart de 4 jours) — jamais inventée si absente. L'ancien
-            // comportement l'écrasait avec la date planifiée : c'était le bug.
-            // Dérive possible sur un delta calendaire (mois de longueurs
-            // différentes) — accepté ici, à revoir avec la refonte Phase J.
+            // L'échéance suit la sémantique « due N jours après l'occurrence » :
+            // le delta préserve EXACTEMENT l'écart due-planifiée à chaque saut,
+            // y compris sur des règles positionnelles où « le même jour du
+            // mois » n'aurait pas de sens. Jamais inventée si absente.
             let next_due = current.due_date.as_deref().and_then(|s| {
                 chrono::NaiveDate::parse_from_str(s, "%Y-%m-%d")
                     .ok()
-                    .map(|d| (d + (next - base)).format("%Y-%m-%d").to_string())
+                    .map(|d| (d + shift).format("%Y-%m-%d").to_string())
             });
             sqlx::query(
                 "UPDATE todos SET scheduled_for = ?, due_date = ?, remind_at = ?, reminded = 0, \
@@ -1148,6 +1191,10 @@ mod tests {
             list: None,
             priority: None,
             recurrence: None,
+            recur_interval: 1,
+            recur_weekday: None,
+            recur_setpos: None,
+            recur_mode: crate::models::RecurMode::Fixed,
             scheduled_for: None,
             due_date: None,
             remind_at: None,
@@ -1299,6 +1346,35 @@ mod tests {
             due_reminders(&pool, "2026-06-14T09:00").await.unwrap().len(),
             1
         );
+    }
+
+    #[tokio::test]
+    async fn toggle_after_completion_counts_from_today_and_keeps_offsets() {
+        use crate::models::{RecurMode, Recurrence};
+        let pool = memory_pool().await;
+
+        // « 3 semaines après complétion », planifiée dans le passé, échéance
+        // 2 jours après la planification.
+        let mut input = new_todo("Arroser les plantes");
+        input.recurrence = Some(Recurrence::Weekly);
+        input.recur_interval = 3;
+        input.recur_mode = RecurMode::AfterCompletion;
+        input.scheduled_for = Some("2026-06-10".to_string());
+        input.due_date = Some("2026-06-12".to_string());
+        let todo = create(&pool, input).await.unwrap();
+
+        let after = toggle(&pool, &todo.id).await.unwrap();
+
+        // La prochaine occurrence se compte depuis AUJOURD'HUI, pas depuis la
+        // date planifiée dépassée.
+        let today = chrono::Local::now().date_naive();
+        let expected = (today + chrono::Duration::days(21)).format("%Y-%m-%d").to_string();
+        assert_eq!(after.scheduled_for.as_deref(), Some(expected.as_str()));
+
+        // L'écart planifiée→échéance (+2 jours) survit : le delta s'ancre sur
+        // l'ANCIENNE date planifiée, pas sur la base de calcul (aujourd'hui).
+        let expected_due = (today + chrono::Duration::days(23)).format("%Y-%m-%d").to_string();
+        assert_eq!(after.due_date.as_deref(), Some(expected_due.as_str()));
     }
 
     #[tokio::test]

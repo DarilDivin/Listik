@@ -315,6 +315,10 @@ pub async fn ai_agent(
                     list: task.list,
                     priority: Some(task.priority),
                     recurrence: None,
+                    recur_interval: 1,
+                    recur_weekday: None,
+                    recur_setpos: None,
+                    recur_mode: crate::models::RecurMode::Fixed,
                     // La date extraite par l'IA est un « quand » (planification),
                     // pas une échéance : celle-ci ne se pose que dans le détail.
                     scheduled_for: Some(task.due_date.unwrap_or(today)),
