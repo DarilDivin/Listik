@@ -184,8 +184,10 @@ export default function QuickPage() {
         text: data.text,
         note: data.note ?? null,
         priority: data.priority ?? "normal",
+        // La date saisie est une planification ; l'échéance ne se pose que
+        // dans le panneau de détail.
         scheduled_for: due ?? todayLocalISODate(),
-        due_date: due,
+        due_date: null,
         project_id: projectId,
       });
 

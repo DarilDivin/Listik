@@ -115,6 +115,50 @@ describe("groupTodosByDate", () => {
     expect(groups.tomorrow.map((t) => t.id)).toEqual(["demain-soir"]);
   });
 
+  // --- Échéances (Phase I) : une deadline qui arrive force la visibilité ---
+
+  it("échéance atteinte aujourd'hui → remonte dans Aujourd'hui, même sans planification", () => {
+    const groups = group([
+      todo({ id: "sans-date", due_date: TODAY }),
+      todo({ id: "planifiee-plus-tard", due_date: TODAY, scheduled_for: "2026-06-20" }),
+    ]);
+
+    expect(groups.today.map((t) => t.id)).toEqual([
+      "sans-date",
+      "planifiee-plus-tard",
+    ]);
+    expect(groups.inbox).toHaveLength(0);
+    expect(groups.upcoming).toHaveLength(0);
+  });
+
+  it("échéance dépassée → En retard (l'en-tête honnête, cohérent avec J+n)", () => {
+    const groups = group([todo({ id: "late", due_date: "2026-06-10" })]);
+    expect(groups.overdue.map((t) => t.id)).toEqual(["late"]);
+  });
+
+  it("échéance aujourd'hui + rangée Ce soir → reste dans Ce soir", () => {
+    const groups = group([
+      todo({ id: "soir", due_date: TODAY, scheduled_for: TODAY, this_evening: true }),
+    ]);
+    expect(groups.evening.map((t) => t.id)).toEqual(["soir"]);
+    expect(groups.today).toHaveLength(0);
+  });
+
+  it("échéance future : la planification garde la main", () => {
+    const groups = group([
+      todo({ id: "tranquille", due_date: "2026-06-30", scheduled_for: TOMORROW }),
+    ]);
+    expect(groups.tomorrow.map((t) => t.id)).toEqual(["tranquille"]);
+  });
+
+  it("« Un jour » prime même sur une échéance dépassée (le badge reste visible)", () => {
+    const groups = group([
+      todo({ id: "un-jour", someday: true, due_date: "2026-06-01" }),
+    ]);
+    expect(groups.someday.map((t) => t.id)).toEqual(["un-jour"]);
+    expect(groups.overdue).toHaveLength(0);
+  });
+
   it("une tâche quitte la boîte de réception dès qu'on la planifie", () => {
     const captured = todo({ id: "a" });
     expect(group([captured]).inbox).toHaveLength(1);

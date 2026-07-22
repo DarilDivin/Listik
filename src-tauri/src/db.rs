@@ -226,12 +226,22 @@ pub async fn toggle(pool: &SqlitePool, id: &str) -> Result<Todo, sqlx::Error> {
                     .ok()
                     .map(|dt| (dt + (next - base)).format("%Y-%m-%dT%H:%M").to_string())
             });
+            // L'échéance décale du MÊME delta (« planifiée lundi, due vendredi »
+            // reste un écart de 4 jours) — jamais inventée si absente. L'ancien
+            // comportement l'écrasait avec la date planifiée : c'était le bug.
+            // Dérive possible sur un delta calendaire (mois de longueurs
+            // différentes) — accepté ici, à revoir avec la refonte Phase J.
+            let next_due = current.due_date.as_deref().and_then(|s| {
+                chrono::NaiveDate::parse_from_str(s, "%Y-%m-%d")
+                    .ok()
+                    .map(|d| (d + (next - base)).format("%Y-%m-%d").to_string())
+            });
             sqlx::query(
                 "UPDATE todos SET scheduled_for = ?, due_date = ?, remind_at = ?, reminded = 0, \
                  needs_embedding = 1, updated_at = ? WHERE id = ?",
             )
             .bind(&next_str)
-            .bind(&next_str)
+            .bind(&next_due)
             .bind(&next_remind)
             .bind(now_iso())
             .bind(id)
@@ -568,15 +578,20 @@ pub async fn update_settings(
     get_settings(pool).await
 }
 
-/// Tâches à inclure dans le digest : à faire et planifiées pour aujourd'hui ou
-/// en retard (`scheduled_for` <= today).
+/// Tâches à inclure dans le digest : à faire et planifiées pour aujourd'hui/en
+/// retard, OU dont l'échéance est atteinte — les mêmes que la vue Aujourd'hui
+/// fait remonter. `someday = 0` : « Un jour » prime dans le regroupement, le
+/// digest ne doit pas annoncer des tâches que la vue refuse d'afficher.
 pub async fn digest_tasks(pool: &SqlitePool, today: &str) -> Result<Vec<Todo>, sqlx::Error> {
     let query = format!(
         "SELECT {SELECT_COLUMNS} FROM todos \
-         WHERE status = 'pending' AND scheduled_for IS NOT NULL AND scheduled_for <= ? \
+         WHERE status = 'pending' AND someday = 0 AND \
+           ((scheduled_for IS NOT NULL AND scheduled_for <= ?) \
+            OR (due_date IS NOT NULL AND due_date <= ?)) \
          ORDER BY scheduled_for ASC, created_at ASC"
     );
     sqlx::query_as::<_, Todo>(&query)
+        .bind(today)
         .bind(today)
         .fetch_all(pool)
         .await
@@ -1284,6 +1299,59 @@ mod tests {
             due_reminders(&pool, "2026-06-14T09:00").await.unwrap().len(),
             1
         );
+    }
+
+    #[tokio::test]
+    async fn toggle_shifts_deadline_by_the_same_delta_and_never_invents_one() {
+        use crate::models::Recurrence;
+        let pool = memory_pool().await;
+
+        // « Planifiée lundi, due vendredi » : l'écart de 4 jours doit survivre.
+        let mut input = new_todo("Rapport hebdo");
+        input.recurrence = Some(Recurrence::Weekly);
+        input.scheduled_for = Some("2026-06-15".to_string()); // lundi
+        input.due_date = Some("2026-06-19".to_string()); // vendredi
+        let todo = create(&pool, input).await.unwrap();
+
+        let after = toggle(&pool, &todo.id).await.unwrap();
+        assert_eq!(after.scheduled_for.as_deref(), Some("2026-06-22"));
+        assert_eq!(after.due_date.as_deref(), Some("2026-06-26"));
+
+        // Sans échéance : elle n'est jamais inventée (l'ancien comportement
+        // l'écrasait avec la date planifiée).
+        let mut input = new_todo("Sport");
+        input.recurrence = Some(Recurrence::Daily);
+        input.scheduled_for = Some("2026-06-14".to_string());
+        let todo = create(&pool, input).await.unwrap();
+        let after = toggle(&pool, &todo.id).await.unwrap();
+        assert_eq!(after.scheduled_for.as_deref(), Some("2026-06-15"));
+        assert_eq!(after.due_date, None);
+    }
+
+    #[tokio::test]
+    async fn digest_includes_reached_deadlines_and_excludes_someday() {
+        let pool = memory_pool().await;
+
+        // Échéance atteinte, non planifiée → doit figurer au digest.
+        let mut due = new_todo("Payer l'assurance");
+        due.due_date = Some("2026-06-14".to_string());
+        create(&pool, due).await.unwrap();
+
+        // « Un jour » avec date passée : la vue ne l'affiche pas, le digest
+        // ne doit pas l'annoncer.
+        let mut someday = new_todo("Trier le grenier");
+        someday.scheduled_for = Some("2026-06-01".to_string());
+        someday.someday = true;
+        create(&pool, someday).await.unwrap();
+
+        // Échéance future → pas encore.
+        let mut later = new_todo("Déclaration");
+        later.due_date = Some("2026-07-01".to_string());
+        create(&pool, later).await.unwrap();
+
+        let tasks = super::digest_tasks(&pool, "2026-06-15").await.unwrap();
+        let texts: Vec<&str> = tasks.iter().map(|t| t.text.as_str()).collect();
+        assert_eq!(texts, ["Payer l'assurance"]);
     }
 
     #[tokio::test]

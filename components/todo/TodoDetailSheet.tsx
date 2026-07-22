@@ -1,9 +1,9 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { BellRing, Calendar, FolderOpen, Hash, Repeat, Trash2, X } from "lucide-react";
+import { BellRing, Calendar, Flag, FolderOpen, Hash, Repeat, Sunset, Trash2, X } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { toLocalISODate, todayLocalISODate } from "@/lib/date";
+import { deadlineCountdown, toLocalISODate, todayLocalISODate } from "@/lib/date";
 import { DatePickerCalendar } from "@/components/date-picker-calendar";
 import { TimePicker } from "@/components/ui/time-picker";
 import { ProjectControl } from "@/components/todo/ProjectControl";
@@ -29,6 +29,7 @@ import {
   SheetHeader,
   SheetTitle,
 } from "@/components/ui/sheet";
+import { Switch } from "@/components/ui/switch";
 import { RECURRENCE_OPTIONS } from "@/features/todos/recurrence";
 import { priorityRingColor } from "@/features/todos/priority";
 import type { Priority, Recurrence, Todo, UpdateTodoInput } from "@/features/todos/types";
@@ -104,6 +105,7 @@ export function TodoDetailSheet({
   const [title, setTitle] = useState(todo.text);
   const [note, setNote] = useState(todo.note ?? "");
   const [dateOpen, setDateOpen] = useState(false);
+  const [deadlineOpen, setDeadlineOpen] = useState(false);
   const [reminderOpen, setReminderOpen] = useState(false);
 
   // Resynchronise à chaque ouverture (la tâche a pu changer côté serveur).
@@ -126,10 +128,29 @@ export function TodoDetailSheet({
   };
 
   const selectedDate = todo.scheduled_for ? parseLocalISODate(todo.scheduled_for) : null;
+  // Planifiée (« quand je m'y mets ») et Échéance (« pour quand ») sont deux
+  // dates DISTINCTES depuis la Phase I — plus jamais écrites ensemble.
   const pickDate = (next: Date | undefined) => {
     const iso = next ? toLocalISODate(next) : null;
-    onUpdate({ scheduled_for: iso, due_date: iso });
+    onUpdate({ scheduled_for: iso });
     setDateOpen(false);
+  };
+
+  const selectedDeadline = todo.due_date ? parseLocalISODate(todo.due_date) : null;
+  const pickDeadline = (next: Date | undefined) => {
+    onUpdate({ due_date: next ? toLocalISODate(next) : null });
+    setDeadlineOpen(false);
+  };
+
+  // Activer « Ce soir » sur une tâche non planifiée aujourd'hui l'y planifie
+  // (façon Things : « ce soir » = le soir d'aujourd'hui, pas un soir abstrait).
+  const toggleEvening = (on: boolean) => {
+    const today = todayLocalISODate();
+    onUpdate(
+      on && todo.scheduled_for !== today
+        ? { this_evening: true, scheduled_for: today }
+        : { this_evening: on },
+    );
   };
 
   const remindDatePart = todo.remind_at
@@ -247,6 +268,64 @@ export function TodoDetailSheet({
                   <DatePickerCalendar date={selectedDate} onPick={pickDate} />
                 </PopoverContent>
               </Popover>
+            </DetailRow>
+
+            <DetailRow icon={<Sunset size={15} />} label="Ce soir">
+              <Switch
+                checked={todo.this_evening}
+                onCheckedChange={toggleEvening}
+                aria-label="Ranger dans Ce soir"
+              />
+            </DetailRow>
+
+            <DetailRow icon={<Flag size={15} />} label="Échéance">
+              <div className="flex items-center gap-1">
+                <Popover open={deadlineOpen} onOpenChange={setDeadlineOpen} modal>
+                  <PopoverTrigger asChild>
+                    <Button variant="outline" size="sm" className="font-normal">
+                      {todo.due_date ? (
+                        <span className="inline-flex items-center gap-1.5">
+                          {formatShortDate(todo.due_date)}
+                          <span
+                            className={cn(
+                              "font-mono text-[11px] tabular-nums",
+                              deadlineCountdown(todo.due_date, todayLocalISODate())
+                                .reached
+                                ? "text-destructive"
+                                : "text-muted-foreground",
+                            )}
+                          >
+                            {
+                              deadlineCountdown(todo.due_date, todayLocalISODate())
+                                .label
+                            }
+                          </span>
+                        </span>
+                      ) : (
+                        "Choisir…"
+                      )}
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent
+                    side="bottom"
+                    align="end"
+                    collisionPadding={8}
+                    className="max-h-[var(--radix-popover-content-available-height)] w-auto overflow-y-auto p-0"
+                  >
+                    <DatePickerCalendar date={selectedDeadline} onPick={pickDeadline} />
+                  </PopoverContent>
+                </Popover>
+                {todo.due_date && (
+                  <Button
+                    variant="ghost"
+                    size="icon-sm"
+                    aria-label="Retirer l'échéance"
+                    onClick={() => onUpdate({ due_date: null })}
+                  >
+                    <X size={14} />
+                  </Button>
+                )}
+              </div>
             </DetailRow>
 
             <DetailRow icon={<FolderOpen size={15} />} label="Projet">

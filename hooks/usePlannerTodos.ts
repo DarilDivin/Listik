@@ -68,8 +68,10 @@ export const usePlannerTodos = () => {
       text: taskData.text,
       note: taskData.note ?? null,
       priority: taskData.priority ?? "normal",
+      // Une date saisie est un « quand je m'y mets » (planification) — jamais
+      // une échéance. Celle-ci ne se pose que dans le panneau de détail.
       scheduled_for: dueDate,
-      due_date: dueDate,
+      due_date: null,
       ...(dueDate ? {} : options?.whenUndated),
       ...options?.container,
       // Un `#projet` explicitement tapé prime sur le conteneur ouvert (et exclut

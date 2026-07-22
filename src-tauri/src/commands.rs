@@ -315,8 +315,10 @@ pub async fn ai_agent(
                     list: task.list,
                     priority: Some(task.priority),
                     recurrence: None,
-                    scheduled_for: Some(task.due_date.clone().unwrap_or(today)),
-                    due_date: task.due_date,
+                    // La date extraite par l'IA est un « quand » (planification),
+                    // pas une échéance : celle-ci ne se pose que dans le détail.
+                    scheduled_for: Some(task.due_date.unwrap_or(today)),
+                    due_date: None,
                     remind_at: None,
                     project_id: None,
                     area_id: None,

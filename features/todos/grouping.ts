@@ -124,13 +124,33 @@ export function groupTodosByDate(
     }
     if (todo.status === "cancelled") continue;
 
-    // « Un jour » est un choix explicite : il prime sur tout horizon daté.
+    // « Un jour » est un choix explicite : il prime sur tout horizon daté —
+    // y compris une échéance atteinte (le badge J+n reste visible dans la
+    // liste, l'échéance n'est donc pas enterrée en silence).
     if (todo.someday) {
       groups.someday.push(todo);
       continue;
     }
 
     const date = todo.scheduled_for;
+
+    // Échéance atteinte → la tâche REMONTE, quelle que soit sa planification
+    // (nulle ou future) : une deadline qui arrive force la visibilité, comme
+    // dans Things. Dépassée = « En retard » (l'en-tête honnête, cohérent avec
+    // le badge J+n) ; atteinte aujourd'hui = « Aujourd'hui », en respectant le
+    // découpage « Ce soir » si la tâche y était rangée.
+    if (todo.due_date && todo.due_date <= today) {
+      if (todo.due_date < today) {
+        groups.overdue.push(todo);
+      } else {
+        (todo.this_evening && date === today
+          ? groups.evening
+          : groups.today
+        ).push(todo);
+      }
+      continue;
+    }
+
     if (!date) {
       (isTriaged(todo) ? groups.anytime : groups.inbox).push(todo);
     } else if (date < today) {

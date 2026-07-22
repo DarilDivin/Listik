@@ -80,11 +80,21 @@ export function useTodoMutations() {
 
     if (reschedules && todo) {
       // Tâche récurrente cochée → reportée à la prochaine occurrence.
+      // L'échéance décale du MÊME delta (« planifiée lundi, due vendredi »
+      // garde ses 4 jours d'écart) — jamais inventée si absente. Miroir du
+      // comportement backend (db::toggle).
       const next = nextOccurrence(todo.scheduled_for, todo.recurrence);
+      let nextDue = todo.due_date;
+      if (next && todo.due_date && todo.scheduled_for) {
+        const delta = Date.parse(next) - Date.parse(todo.scheduled_for);
+        nextDue = new Date(Date.parse(todo.due_date) + delta)
+          .toISOString()
+          .slice(0, 10);
+      }
       patchCaches((todos) =>
         todos.map((t) =>
           t.id === id
-            ? { ...t, scheduled_for: next, due_date: next, updated_at: now }
+            ? { ...t, scheduled_for: next, due_date: nextDue, updated_at: now }
             : t,
         ),
       );

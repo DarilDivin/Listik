@@ -1,0 +1,11 @@
+-- Découplage Planifiée / Échéance (Phase I). Jusqu'ici, TOUS les chemins
+-- d'écriture posaient la même valeur dans scheduled_for et due_date :
+-- l'égalité ne porte donc aucune intention d'échéance — c'est un artefact.
+-- Sans ce nettoyage, chaque tâche datée de l'historique recevrait
+-- rétroactivement une « échéance » (badge rouge + remontée dans Aujourd'hui).
+--
+-- Volontairement en migration SQL (et non en code de démarrage rejoué) : ce
+-- nettoyage doit tourner EXACTEMENT une fois. Après la Phase I, une égalité
+-- due_date == scheduled_for est une intention légitime (« à faire le jour de
+-- l'échéance ») qu'un rejeu écraserait.
+UPDATE todos SET due_date = NULL WHERE due_date = scheduled_for;

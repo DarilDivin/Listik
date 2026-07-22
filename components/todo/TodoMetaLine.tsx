@@ -1,7 +1,8 @@
 "use client";
 
-import { BellRing, Repeat } from "lucide-react";
+import { BellRing, Flag, Repeat } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { deadlineCountdown, todayLocalISODate } from "@/lib/date";
 import { recurrenceLabel } from "@/features/todos/recurrence";
 import { TodoDate } from "@/components/todo/TodoDate";
 import { useProjects } from "@/hooks/useProjects";
@@ -51,8 +52,15 @@ export function TodoMetaLine({
     projects.find((p) => p.id === todo.project_id)?.name ?? todo.list;
 
   const hasDate = showDate && Boolean(todo.scheduled_for);
+  // L'échéance ne se montre que sur une tâche encore à faire : sur une
+  // terminée, le compte à rebours n'a plus de sens.
+  const deadline =
+    todo.due_date && todo.status === "pending"
+      ? deadlineCountdown(todo.due_date, todayLocalISODate())
+      : null;
   const hasAny =
     hasDate ||
+    deadline ||
     projectName ||
     todo.tags.length > 0 ||
     todo.recurrence !== "none" ||
@@ -64,6 +72,24 @@ export function TodoMetaLine({
     <div className="mt-1.5 flex flex-wrap items-center gap-x-1.5 gap-y-1">
       {hasDate && todo.scheduled_for && (
         <TodoDate date={todo.scheduled_for} dimmed={dimmed} overdue={overdue} />
+      )}
+
+      {deadline && (
+        <span
+          title="Échéance"
+          className={cn(
+            "inline-flex items-center gap-1 font-mono text-[11px] font-medium tabular-nums",
+            deadline.reached ? "text-destructive" : "text-muted-foreground",
+            dimmed && "opacity-60",
+          )}
+        >
+          <Flag
+            size={11}
+            className={deadline.reached ? "" : "opacity-70"}
+            fill={deadline.reached ? "currentColor" : "none"}
+          />
+          {deadline.label}
+        </span>
       )}
 
       {projectName && (

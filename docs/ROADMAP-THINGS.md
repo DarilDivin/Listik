@@ -290,24 +290,38 @@ progression ; terminer un projet ; renommer/supprimer avec confirmation.
 
 ---
 
-## Phase I — Dates avancées (deadline vs planification)
+## Phase I — Dates avancées (deadline vs planification) ✅ FAITE
 
 **But** : exploiter la distinction déjà présente en base (`scheduled_for` vs `due_date`), que
-l'UI synchronise aujourd'hui.
+l'UI synchronisait systématiquement.
 
-1. **Découpler** : `TodoDetailSheet` et `usePlannerTodos.createTodoFromSmart` écrivent
-   aujourd'hui la même valeur dans les deux champs (`hooks/usePlannerTodos.ts:32-40`,
-   `components/todo/TodoDetailSheet.tsx:126-129`). Les séparer : « Planifiée » (quand je m'y
-   mets) et « Échéance » (deadline) distinctes dans le `Sheet` et à la capture.
-2. **Compte à rebours** : badge « J-3 » sur les lignes ayant une `due_date` proche (rouge à
-   l'approche), dans `TodoMetaLine`. Ajouter une vérif d'échéance au digest (`reminders.rs`).
-3. **Ce soir** : bascule `this_evening` dans le `Sheet` et via menu contextuel.
+1. **Migration 0012 (l'oubli qu'a attrapé fable)** : tous les chemins d'écriture ayant toujours
+   dual-writé, `due_date == scheduled_for` sur tout l'historique — une égalité qui ne porte
+   AUCUNE intention d'échéance. `UPDATE todos SET due_date = NULL WHERE due_date = scheduled_for`,
+   en **migration SQL** (doit tourner exactement une fois : après I, l'égalité redevient une
+   intention légitime qu'un rejeu au démarrage écraserait). Sans ça : badges rouges rétroactifs
+   sur tout l'historique + routage faussé.
+2. **Découplage** : « Planifiée » et « Échéance » sont deux lignes distinctes du `Sheet`
+   (échéance avec compte à rebours + bouton effacer). Une date SAISIE (omnibar, Alt+Q, IA) est
+   toujours une planification — l'échéance ne se pose que dans le détail. `due_date <
+   scheduled_for` est permis (badge, pas de blocage).
+3. **Échéance atteinte → remonte** (comportement Things) : dans `grouping.ts`, avant les tests
+   de planification — dépassée → « En retard » (en-tête honnête, cohérent avec J+n) ; atteinte
+   aujourd'hui → « Aujourd'hui », en préservant le découpage « Ce soir ». « Un jour » prime même
+   sur une échéance dépassée (choix explicite), mais le badge J+n reste visible dans la liste.
+4. **Badge** : `deadlineCountdown` (helper pur testé) → « J-3 » / « J-0 » / « J+2 », mono,
+   drapeau ; `text-destructive` dès l'échéance atteinte (pas de palier orange — hors palette).
+   Masqué sur une tâche terminée.
+5. **Ce soir** : Switch dans le `Sheet` ; l'activer sur une tâche non planifiée aujourd'hui l'y
+   planifie (« ce soir » = le soir d'aujourd'hui, pas un soir abstrait).
+6. **Boucles de fond (invariant)** : `db::toggle` décale l'échéance récurrente du MÊME delta que
+   la planification (« planifiée lundi, due vendredi » garde ses 4 jours) — jamais inventée si
+   absente (l'ancien code l'écrasait : c'était le bug). Dérive possible sur delta calendaire →
+   à revoir en Phase J. `digest_tasks` inclut les échéances atteintes et exclut `someday` (le
+   digest ne doit pas annoncer ce que la vue refuse d'afficher — bug préexistant corrigé).
 
-**Tester** : une tâche planifiée demain avec échéance après-demain montre J-2 sans changer de
-section ; bascule Ce soir déplace la tâche dans la sous-section du soir.
-
-**Fichiers clés** : `components/todo/{TodoDetailSheet,TodoMetaLine}.tsx`,
-`hooks/usePlannerTodos.ts`, `features/todos/grouping.ts`, `src-tauri/src/reminders.rs`.
+**Fichiers clés** : `src-tauri/migrations/0012_decouple_deadline.sql`, `src-tauri/src/db.rs`,
+`features/todos/grouping.ts`, `lib/date.ts`, `components/todo/{TodoDetailSheet,TodoMetaLine}.tsx`.
 
 ---
 
