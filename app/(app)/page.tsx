@@ -45,6 +45,11 @@ import {
   type RailDropTarget,
 } from "@/features/todos/ordering";
 import { useOrderings } from "@/features/todos/useOrderings";
+import {
+  SelectionProvider,
+  useSelectionController,
+} from "@/features/todos/selection-context";
+import { SelectionBar } from "@/components/todo/SelectionBar";
 import type { TodoListDnd } from "@/components/todo/AnimatedTodoList";
 import { todayLocalISODate, toLocalISODate } from "@/lib/date";
 import type { Priority, Todo, TodoStatus } from "@/features/todos/types";
@@ -292,6 +297,66 @@ export default function PlannerPage() {
       })
     : [];
 
+  // Ordre affiché à plat de la branche courante — l'ancre de la sélection par
+  // plage (Maj+clic) doit correspondre à ce que l'œil voit.
+  const visibleOrderedIds = useMemo(() => {
+    if (activeProject)
+      return applyOrdering(
+        tasksOfProject(todos, activeProject.id),
+        positionsByContext.get(projectOrderingContext(activeProject.id)),
+      )
+        .filter((t) => t.status === "pending")
+        .map((t) => t.id);
+    if (activeArea)
+      return tasksOfArea(todos, activeArea.id)
+        .filter((t) => t.status === "pending")
+        .map((t) => t.id);
+    return viewSections.flatMap((s) => s.items.map((t) => t.id));
+  }, [activeProject, activeArea, viewSections, todos, positionsByContext]);
+
+  const multiSelect = useSelectionController(visibleOrderedIds);
+  const selectedCount = multiSelect.selectedIds.size;
+
+  // Actions par lot : rejoue en boucle les mutations existantes puis vide la
+  // sélection. Volumes personnels (quelques tâches) → séquentiel, sans souci.
+  const forSelection = async (fn: (todo: Todo) => Promise<unknown> | void) => {
+    const picked = todos.filter((t) => multiSelect.selectedIds.has(t.id));
+    multiSelect.clear();
+    for (const t of picked) await fn(t);
+  };
+  const batch = {
+    today: () =>
+      void forSelection((t) =>
+        updateTodo(t.id, { scheduled_for: todayISO, someday: false, this_evening: false }),
+      ),
+    tomorrow: () =>
+      void forSelection((t) =>
+        updateTodo(t.id, { scheduled_for: tomorrowISO, someday: false }),
+      ),
+    someday: () => void forSelection((t) => updateTodo(t.id, { someday: true })),
+    // Terminer ne coche que les tâches en cours (cocher une terminée la rouvrirait).
+    complete: () =>
+      void forSelection((t) => {
+        if (t.status === "pending") return toggleTodo(t.id);
+      }),
+    assignProject: (projectId: string) =>
+      void forSelection((t) => updateTodo(t.id, { project_id: projectId, area_id: null })),
+    remove: () => void forSelection((t) => deleteTodo(t.id)),
+  };
+
+  // Échap vide la sélection (avant le portail : deux gestes distincts).
+  useEffect(() => {
+    if (selectedCount === 0) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        e.stopPropagation();
+        multiSelect.clear();
+      }
+    };
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+  }, [selectedCount, multiSelect]);
+
   // Une ligne en pause LINGER n'est pas déplaçable : le minuteur la ferait
   // disparaître en plein geste, et le drop entrerait en course avec le toggle.
   const canDragTodo = (id: string) => !linger.has(id);
@@ -470,6 +535,7 @@ export default function PlannerPage() {
 
   return (
     <TagFilterProvider onFilterTag={setTagFilter}>
+    <SelectionProvider value={multiSelect}>
     <div className="relative flex h-full">
       <PlannerRail
         selection={selection}
@@ -658,6 +724,22 @@ export default function PlannerPage() {
           </div>
         </div>
 
+        {/* Barre d'actions par lot : flotte au-dessus de la capture. */}
+        <div className="pointer-events-none absolute inset-x-0 bottom-24 z-30 flex justify-center px-4">
+          <SelectionBar
+            count={selectedCount}
+            projects={projects}
+            areas={areas}
+            onScheduleToday={batch.today}
+            onScheduleTomorrow={batch.tomorrow}
+            onSomeday={batch.someday}
+            onComplete={batch.complete}
+            onAssignProject={batch.assignProject}
+            onDelete={batch.remove}
+            onClear={multiSelect.clear}
+          />
+        </div>
+
         {/* ───────── Capture épinglée en bas ───────── */}
         <div className="relative z-10 shrink-0 bg-background/90 backdrop-blur-sm">
           {/* Fondu doux au-dessus de la capture (au lieu d'un trait) */}
@@ -677,6 +759,7 @@ export default function PlannerPage() {
         </div>
       </div>
     </div>
+    </SelectionProvider>
     </TagFilterProvider>
   );
 }

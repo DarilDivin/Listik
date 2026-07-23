@@ -412,8 +412,18 @@ raccourcis n'agissent que si la div-ligne ELLE-MÊME est ciblée et sans modific
 remonte au réordonnancement). **Bug Phase I corrigé au passage** : le menu contextuel
 « Aujourd'hui/Demain » écrivait encore `due_date` en double.
 
-### K1c — Multi-sélection (à faire, premier candidat à la coupe)
-Sélection Shift/Ctrl + barre d'actions par lot (mutations existantes en boucle).
+### K1c — Multi-sélection ✅ FAITE
+
+Version **lean** (fable : pas de lasso ni d'aperçu multi-lignes au drag — le coûteux). Logique
+pure testée (`selection.ts`) : **Ctrl/Cmd+clic** bascule, **Maj+clic** sélectionne la plage
+ancre→cible ; un **clic simple** n'est pas consommé (ouvre le détail) mais congédie une sélection
+en cours. Distribuée par contexte (`selection-context.tsx`, comme `TagFilterProvider`), l'état
+possédé par la PAGE (qui en dérive la barre). Ligne sélectionnée = `bg-brand-soft ring-brand`.
+**Barre d'actions** flottante au-dessus de la capture (`SelectionBar`, `.card-floating` justifié —
+c'est du chrome flottant) : Aujourd'hui / Demain / Un jour / Terminer (ne coche que les en cours) /
+Projet… (popover) / Supprimer, + Échap. Chaque action rejoue en boucle les mutations existantes
+puis vide la sélection. `orderedIds` fourni par la page = ordre affiché exact (ancre de plage
+fidèle à l'œil). Collision de nom évitée : `multiSelect` ≠ `PlannerSelection` (vue/projet/domaine).
 
 **Fichiers clés** : `features/todos/{ordering,useOrderings}.ts`,
 `components/todo/AnimatedTodoList.tsx`, `components/planner/PlannerRail.tsx`,

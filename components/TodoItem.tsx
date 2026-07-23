@@ -19,6 +19,7 @@ import { todayLocalISODate, toLocalISODate } from "@/lib/date";
 import { TodoCheckbox } from "@/components/todo/TodoCheckbox";
 import { TodoMetaLine } from "@/components/todo/TodoMetaLine";
 import { TodoDetailSheet } from "@/components/todo/TodoDetailSheet";
+import { useSelection } from "@/features/todos/selection-context";
 import {
   ContextMenu,
   ContextMenuContent,
@@ -70,6 +71,8 @@ export function TodoItem({
 }: TodoItemProps) {
   const isCompleted = todo.status === "completed";
   const editable = Boolean(onUpdate);
+  const selection = useSelection();
+  const isSelected = selection?.isSelected(todo.id) ?? false;
 
   const [hovered, setHovered] = useState(false);
   const [detailOpen, setDetailOpen] = useState(false);
@@ -84,6 +87,14 @@ export function TodoItem({
   };
 
   const openDetail = () => editable && setDetailOpen(true);
+
+  // Clic modifié (Ctrl/Cmd, Maj) = sélectionner ; clic simple = ouvrir le
+  // détail (et congédier une sélection en cours). La sélection prime toujours
+  // sur l'ouverture.
+  const handleRowClick = (e: React.MouseEvent) => {
+    if (selection?.handleClick(todo.id, e)) return;
+    openDetail();
+  };
 
   /**
    * Raccourcis clavier quand la ligne a le focus (navigation au clavier, K1b).
@@ -152,7 +163,12 @@ export function TodoItem({
             onBlur={(e) => {
               if (!e.currentTarget.contains(e.relatedTarget as Node)) setHovered(false);
             }}
-            className="group relative flex items-start gap-3 rounded-lg px-3 py-2.5 transition-colors duration-200 hover:bg-foreground/[0.045] focus-within:bg-foreground/[0.045]"
+            className={cn(
+              "group relative flex items-start gap-3 rounded-lg px-3 py-2.5 transition-colors duration-200",
+              isSelected
+                ? "bg-brand-soft ring-1 ring-brand/40"
+                : "hover:bg-foreground/[0.045] focus-within:bg-foreground/[0.045]",
+            )}
           >
             <TodoCheckbox checked={isCompleted} onToggle={onToggle} priority={todo.priority} />
 
@@ -161,7 +177,7 @@ export function TodoItem({
               role={editable ? "button" : undefined}
               tabIndex={editable ? 0 : undefined}
               aria-label={editable ? `Modifier « ${todo.text} »` : undefined}
-              onClick={openDetail}
+              onClick={handleRowClick}
               onKeyDown={onRowKeyDown}
               className={cn("min-w-0 flex-1 pt-px", editable && "cursor-pointer outline-none")}
             >
