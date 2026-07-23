@@ -399,9 +399,18 @@ RRULE complet ni table d'occurrences.
    écriture. Une ligne en pause LINGER n'est pas déplaçable (`canDrag`).
 6. DnD réservé au style « Liste » (une ligne compressée n'est pas une poignée honnête).
 
-### K1b — Navigation clavier (à faire)
-Flèches, Espace → Sheet, raccourcis de planification, déplacement Alt+↑/↓ (quasi gratuit :
-`reorderIds` + `set_ordering` existants — sert aussi de repli si le drag déçoit).
+### K1b — Navigation clavier ✅ FAITE
+
+Sur une ligne focalisée : **↑/↓** naviguent entre lignes (roving focus par requête DOM sur
+`[data-todo-row]` — traverse les sections dans l'ordre de lecture, marche partout où `TodoItem`
+est monté) ; **Espace/Entrée** ouvrent le détail ; **t/d/s** planifient (aujourd'hui/demain/
+un jour) ; **Suppr** supprime. Focus visible via `focus-within` (même surbrillance que le survol).
+**Alt+↑/↓** déplacent dans un contexte ordonné (`AnimatedTodoList`, là où l'ordre existe) —
+quasi gratuit : même `onReorder` que le drag ; le nœud focalisé garde le focus à travers
+l'animation `layout` (le focus suit l'élément, pas la position), donc rien à re-focaliser. Les
+raccourcis n'agissent que si la div-ligne ELLE-MÊME est ciblée et sans modificateur (Alt+flèches
+remonte au réordonnancement). **Bug Phase I corrigé au passage** : le menu contextuel
+« Aujourd'hui/Demain » écrivait encore `due_date` en double.
 
 ### K1c — Multi-sélection (à faire, premier candidat à la coupe)
 Sélection Shift/Ctrl + barre d'actions par lot (mutations existantes en boucle).

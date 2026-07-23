@@ -74,8 +74,8 @@ export function TodoItem({
   const [hovered, setHovered] = useState(false);
   const [detailOpen, setDetailOpen] = useState(false);
 
-  const reschedule = (date: string) =>
-    onUpdate?.({ scheduled_for: date, due_date: date });
+  // Planifier ≠ échéance depuis la Phase I : on n'écrit QUE la date planifiée.
+  const reschedule = (date: string) => onUpdate?.({ scheduled_for: date });
 
   const tomorrowISO = () => {
     const t = new Date();
@@ -84,6 +84,59 @@ export function TodoItem({
   };
 
   const openDetail = () => editable && setDetailOpen(true);
+
+  /**
+   * Raccourcis clavier quand la ligne a le focus (navigation au clavier, K1b).
+   * On n'agit que si la div-ligne ELLE-MÊME est ciblée (pas un enfant), et
+   * jamais avec un modificateur : Alt+flèches est réservé au réordonnancement
+   * (géré plus haut, dans `AnimatedTodoList`) → on laisse alors remonter.
+   */
+  const onRowKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
+    if (!editable || e.target !== e.currentTarget) return;
+    if (e.altKey || e.metaKey || e.ctrlKey) return;
+
+    switch (e.key) {
+      case "Enter":
+      case " ":
+        e.preventDefault();
+        openDetail();
+        break;
+      case "ArrowDown":
+      case "ArrowUp": {
+        e.preventDefault();
+        const rows = Array.from(
+          document.querySelectorAll<HTMLElement>("[data-todo-row]"),
+        );
+        const i = rows.indexOf(e.currentTarget);
+        rows[i + (e.key === "ArrowDown" ? 1 : -1)]?.focus();
+        break;
+      }
+      case "Backspace":
+      case "Delete":
+        e.preventDefault();
+        onDelete();
+        break;
+      // Raccourcis de planification (façon Things) — pas sur une tâche déjà faite.
+      case "t":
+        if (!isCompleted) {
+          e.preventDefault();
+          reschedule(todayLocalISODate());
+        }
+        break;
+      case "d":
+        if (!isCompleted) {
+          e.preventDefault();
+          reschedule(tomorrowISO());
+        }
+        break;
+      case "s":
+        if (!isCompleted) {
+          e.preventDefault();
+          onUpdate?.({ someday: true });
+        }
+        break;
+    }
+  };
 
   return (
     <>
@@ -99,21 +152,17 @@ export function TodoItem({
             onBlur={(e) => {
               if (!e.currentTarget.contains(e.relatedTarget as Node)) setHovered(false);
             }}
-            className="group relative flex items-start gap-3 rounded-lg px-3 py-2.5 transition-colors duration-200 hover:bg-foreground/[0.045]"
+            className="group relative flex items-start gap-3 rounded-lg px-3 py-2.5 transition-colors duration-200 hover:bg-foreground/[0.045] focus-within:bg-foreground/[0.045]"
           >
             <TodoCheckbox checked={isCompleted} onToggle={onToggle} priority={todo.priority} />
 
             <div
+              data-todo-row={editable ? "" : undefined}
               role={editable ? "button" : undefined}
               tabIndex={editable ? 0 : undefined}
               aria-label={editable ? `Modifier « ${todo.text} »` : undefined}
               onClick={openDetail}
-              onKeyDown={(e) => {
-                if (editable && (e.key === "Enter" || e.key === " ")) {
-                  e.preventDefault();
-                  openDetail();
-                }
-              }}
+              onKeyDown={onRowKeyDown}
               className={cn("min-w-0 flex-1 pt-px", editable && "cursor-pointer outline-none")}
             >
               <motion.p

@@ -156,6 +156,27 @@ export function AnimatedTodoList({
   onUpdate,
   dnd,
 }: AnimatedTodoListProps) {
+  const ids = todos.map((t) => t.id);
+
+  /**
+   * Déplacement au clavier Alt+↑/↓ dans un contexte ordonné — quasi gratuit :
+   * même `onReorder` que le glisser-déposer. Le nœud focalisé garde le focus à
+   * travers l'animation `layout` (le focus suit l'élément, pas la position),
+   * donc rien à re-focaliser. L'événement remonte de la div-ligne, dont le
+   * gestionnaire laisse passer les combinaisons avec Alt.
+   */
+  const onListKeyDown = (e: React.KeyboardEvent<HTMLDivElement>, todoId: string) => {
+    if (!dnd?.context || !e.altKey) return;
+    const i = ids.indexOf(todoId);
+    if (e.key === "ArrowDown" && i < ids.length - 1) {
+      e.preventDefault();
+      dnd.onReorder(todoId, ids[i + 1], "bottom");
+    } else if (e.key === "ArrowUp" && i > 0) {
+      e.preventDefault();
+      dnd.onReorder(todoId, ids[i - 1], "top");
+    }
+  };
+
   return (
     <div className="space-y-0.5">
       <AnimatePresence mode="popLayout">
@@ -171,7 +192,15 @@ export function AnimatedTodoList({
             />
           );
           return (
-            <motion.div key={todo.id} layout variants={rowVariants} initial="initial" animate="animate" exit="exit">
+            <motion.div
+              key={todo.id}
+              layout
+              variants={rowVariants}
+              initial="initial"
+              animate="animate"
+              exit="exit"
+              onKeyDown={dnd?.context ? (e) => onListKeyDown(e, todo.id) : undefined}
+            >
               {dnd ? (
                 <DraggableRow todo={todo} dnd={dnd}>
                   {row}
