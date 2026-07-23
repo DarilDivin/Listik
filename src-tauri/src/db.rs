@@ -1012,6 +1012,67 @@ pub async fn reconcile_lists_into_projects(pool: &SqlitePool) -> Result<usize, s
 }
 
 // ---------------------------------------------------------------------------
+// Ordre manuel par contexte (« la date choisit la section, la position choisit
+// l'ordre dans la section »)
+// ---------------------------------------------------------------------------
+
+/// Une position d'ordre manuel : `context` ∈ { 'today', 'inbox', 'anytime',
+/// 'someday', 'project:<id>' }.
+#[derive(Debug, Clone, serde::Serialize, sqlx::FromRow, ts_rs::TS)]
+#[ts(export, export_to = "../../features/todos/generated/")]
+pub struct Ordering {
+    pub context: String,
+    pub todo_id: String,
+    #[ts(type = "number")]
+    pub position: i64,
+}
+
+/// Toutes les positions (table minuscule à l'échelle personnelle : on la lit
+/// d'un bloc, le frontend en dérive une map par contexte).
+pub async fn get_orderings(pool: &SqlitePool) -> Result<Vec<Ordering>, sqlx::Error> {
+    sqlx::query_as::<_, Ordering>(
+        "SELECT context, todo_id, position FROM orderings ORDER BY context, position",
+    )
+    .fetch_all(pool)
+    .await
+}
+
+/// Remplace l'intégralité de l'ordre d'un contexte (positions 0..n dans
+/// l'ordre fourni), en transaction.
+///
+/// Le remplacement complet fait double emploi : il **auto-cicatrise** — une
+/// tâche supprimée ou replanifiée ailleurs disparaît simplement au prochain
+/// remplacement (aucun nettoyage en cascade à maintenir), et une ligne
+/// périmée est ignorée à la lecture. Pas de positions fractionnaires : rien à
+/// rééquilibrer à ~100 lignes par contexte.
+pub async fn set_ordering(
+    pool: &SqlitePool,
+    context: &str,
+    ordered_ids: &[String],
+) -> Result<(), sqlx::Error> {
+    let mut tx = pool.begin().await?;
+
+    sqlx::query("DELETE FROM orderings WHERE context = ?")
+        .bind(context)
+        .execute(&mut *tx)
+        .await?;
+
+    for (position, todo_id) in ordered_ids.iter().enumerate() {
+        sqlx::query(
+            "INSERT OR REPLACE INTO orderings (context, todo_id, position) VALUES (?, ?, ?)",
+        )
+        .bind(context)
+        .bind(todo_id)
+        .bind(position as i64)
+        .execute(&mut *tx)
+        .await?;
+    }
+
+    tx.commit().await?;
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
 // Tags — contexte transverse (nom unique insensible à la casse)
 // ---------------------------------------------------------------------------
 
@@ -1937,6 +1998,34 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(links, 0);
+    }
+
+    #[tokio::test]
+    async fn set_ordering_replaces_the_whole_context() {
+        let pool = memory_pool().await;
+
+        super::set_ordering(&pool, "today", &["a".into(), "b".into(), "c".into()])
+            .await
+            .unwrap();
+        // Doublon dans la charge utile : OR REPLACE, pas d'échec.
+        super::set_ordering(&pool, "inbox", &["x".into(), "x".into()])
+            .await
+            .unwrap();
+
+        // Remplacement : « b » disparaît, l'ordre change.
+        super::set_ordering(&pool, "today", &["c".into(), "a".into()])
+            .await
+            .unwrap();
+
+        let all = super::get_orderings(&pool).await.unwrap();
+        let today: Vec<(&str, i64)> = all
+            .iter()
+            .filter(|o| o.context == "today")
+            .map(|o| (o.todo_id.as_str(), o.position))
+            .collect();
+        assert_eq!(today, [("c", 0), ("a", 1)]);
+        // L'autre contexte n'est pas touché.
+        assert_eq!(all.iter().filter(|o| o.context == "inbox").count(), 1);
     }
 
     #[tokio::test]

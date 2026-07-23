@@ -365,30 +365,50 @@ RRULE complet ni table d'occurrences.
 
 ---
 
-## Phase K1 — Manipulation directe (DnD, multi-sélection, clavier)
+## Phase K1 — Manipulation directe
 
-**But** : mettre l'utilisateur aux commandes de l'ordre, comme Things — sans casser la
-mécanique d'animation (LINGER, portail, `popLayout`).
+**Principe** : **la date choisit la SECTION, la position choisit l'ORDRE dans la section.**
 
-**Principe réconciliateur** (voir risque n°2) : **la date choisit la SECTION, la position
-choisit l'ORDRE dans la section.**
-1. **DnD** : glisser DANS une section = écrire `orderings` (contexte courant) ; `sortTodos`
-   trie d'abord par `position` du contexte, puis retombe sur priorité/date pour les non
-   ordonnées. Glisser VERS une autre section = **mutation de replanification/affectation**
-   (`scheduled_for`, `project_id`…), exactement comme un toggle aujourd'hui → `groupTodosByDate`
-   reste pure, LINGER/portail intacts. Suspendre l'anim `layout` de la section pendant un drag
-   actif (changement local à `app/(app)/page.tsx`, pas au modèle).
-2. **Multi-sélection + actions par lot** : sélection (clic + Shift/Ctrl), barre d'actions
-   (planifier / déplacer vers projet / terminer / supprimer) réutilisant les mutations
-   existantes en boucle.
-3. **Navigation clavier** : flèches pour naviguer, Espace pour ouvrir le `Sheet`, raccourcis de
-   planification (aujourd'hui/demain/someday), le tout centralisé.
+### K1a — Drag & drop ✅ FAITE (à valider dans l'app réelle)
 
-**Tester** : réordonner dans une section persiste ; glisser vers Demain replanifie ; tout
-pilotable au clavier ; actions par lot sur 3 tâches.
+1. **Lib : pragmatic-drag-and-drop** (revue fable) — motion `Reorder` ne sait pas faire de
+   cible inter-conteneurs (rail), et dnd-kit ferait tourner DEUX systèmes de projection
+   (le sien + celui de motion). pdnd ne possède rien : **aucun réordonnancement en vol** —
+   pendant le drag, seul un trait `--brand` marque le bord d'insertion (le DOM ne bouge pas,
+   la projection `layout` n'a rien à combattre) ; au drop, l'état React change et les props
+   `layout` existantes animent le règlement avec les ressorts maison. Rien à suspendre.
+2. **Gate Tauri** : `dragDropEnabled: false` sur la fenêtre principale (sinon Tauri intercepte
+   le drag natif et WebView2 ne délivre jamais les événements HTML5). ⚠️ À vérifier au premier
+   `pnpm tauri dev` — c'est LA plus grosse inconnue ; repli documenté : dnd-kit + suspension.
+3. **Backend** : `set_ordering(context, ordered_ids)` = remplacement complet transactionnel —
+   double emploi : **auto-cicatrisant** (une tâche supprimée/replanifiée disparaît au prochain
+   remplacement, aucun nettoyage en cascade) et il élimine l'état mixte (le premier drag fige
+   l'ordre affiché de TOUTE la section). Pas de positions fractionnaires.
+4. **Ordre appliqué au rendu, par contexte** (`applyOrdering`) : les non-positionnées passent
+   DEVANT (une capture fraîche reste visible — la récompense de l'Omnibar) ; entre positionnées,
+   la position SEULE (pas de règle « pending d'abord » qui ferait sauter une ligne cochée en
+   pause LINGER). Contextes ordonnés : today, inbox, anytime, someday, project:<id>. En retard
+   reste trié par retard (son travail est de rappeler chronologiquement) ; Demain/À venir par
+   date — leurs lignes restent néanmoins des SOURCES de drag (glisser une tâche en retard sur
+   « Aujourd'hui » est le cas d'usage n°1).
+5. **Dépôt sur le rail = mutation** : mapping pur `dropIntent` (testé) — Aujourd'hui planifie
+   (et sort de Ce soir), À venir → demain, Un jour → drapeau, Boîte de réception → dé-trie
+   entièrement, projet → affecte (et quitte le domaine direct). Refus : Journal (terminer est
+   un geste, pas un dépôt) et Quand-je-peux sans rattachement (la tâche retomberait en inbox —
+   un dépôt qui atterrit ailleurs que sur sa cible est pire qu'un dépôt refusé). No-op → aucune
+   écriture. Une ligne en pause LINGER n'est pas déplaçable (`canDrag`).
+6. DnD réservé au style « Liste » (une ligne compressée n'est pas une poignée honnête).
 
-**Fichiers clés** : `app/(app)/page.tsx`, `features/todos/sort.ts`, `components/todo/`,
-nouvelle lib DnD (privilégier une lib compatible React 19 + `motion`).
+### K1b — Navigation clavier (à faire)
+Flèches, Espace → Sheet, raccourcis de planification, déplacement Alt+↑/↓ (quasi gratuit :
+`reorderIds` + `set_ordering` existants — sert aussi de repli si le drag déçoit).
+
+### K1c — Multi-sélection (à faire, premier candidat à la coupe)
+Sélection Shift/Ctrl + barre d'actions par lot (mutations existantes en boucle).
+
+**Fichiers clés** : `features/todos/{ordering,useOrderings}.ts`,
+`components/todo/AnimatedTodoList.tsx`, `components/planner/PlannerRail.tsx`,
+`app/(app)/page.tsx`, `src-tauri/tauri.conf.json`.
 
 ---
 

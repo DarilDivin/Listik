@@ -10,5 +10,7 @@ export const SWR_KEYS = {
   ALL_PROJECTS: "projects/all",
   ALL_AREAS: "projects/areas",
   ALL_TAGS: "tags/all",
+  /** Sous le préfixe `todos/` : revalidé par `todos:changed` (useTodosSync). */
+  ORDERINGS: "todos/orderings",
   SETTINGS: "settings",
 } as const;

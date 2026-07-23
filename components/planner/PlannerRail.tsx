@@ -1,7 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
+import { dropTargetForElements } from "@atlaskit/pragmatic-drag-and-drop/element/adapter";
 import {
   Archive,
   BookCheck,
@@ -44,6 +45,7 @@ import {
   type PlannerSelection,
   type PlannerView,
 } from "@/features/todos/grouping";
+import type { RailDropTarget } from "@/features/todos/ordering";
 import type { Area, Project } from "@/features/projects/types";
 
 /** Icône par vue. `filled` : l'icône se remplit à l'état actif (façon Things). */
@@ -56,7 +58,10 @@ const VIEW_ICON: Record<PlannerView, { icon: LucideIcon; filled?: boolean }> = {
   journal: { icon: BookCheck },
 };
 
-/** Rangée du rail : même gabarit pour une vue, un domaine ou un projet. */
+/** Rangée du rail : même gabarit pour une vue, un domaine ou un projet.
+ *  Si `dropTodo` est fourni, la rangée accepte le dépôt d'une tâche —
+ *  « glisser vers Aujourd'hui » est une mutation de replanification, pas un
+ *  réordonnancement (la date choisit la section). */
 function RailRow({
   active,
   indent = false,
@@ -65,6 +70,7 @@ function RailRow({
   label,
   trailing,
   className,
+  dropTodo,
 }: {
   active: boolean;
   indent?: boolean;
@@ -73,9 +79,31 @@ function RailRow({
   label: string;
   trailing?: React.ReactNode;
   className?: string;
+  dropTodo?: (todoId: string) => void;
 }) {
+  const ref = useRef<HTMLButtonElement>(null);
+  const [isOver, setIsOver] = useState(false);
+  const dropRef = useRef(dropTodo);
+  dropRef.current = dropTodo;
+
+  useEffect(() => {
+    const el = ref.current;
+    if (!el || !dropRef.current) return;
+    return dropTargetForElements({
+      element: el,
+      canDrop: ({ source }) => source.data.type === "todo",
+      onDragEnter: () => setIsOver(true),
+      onDragLeave: () => setIsOver(false),
+      onDrop: ({ source }) => {
+        setIsOver(false);
+        dropRef.current?.(source.data.id as string);
+      },
+    });
+  }, []);
+
   return (
     <motion.button
+      ref={ref}
       type="button"
       onClick={onClick}
       aria-current={active ? "page" : undefined}
@@ -85,6 +113,9 @@ function RailRow({
         "relative flex w-full items-center gap-2.5 rounded-xl py-2 text-left text-sm transition-colors max-md:justify-center max-md:px-0",
         indent ? "pl-7 pr-2.5 max-md:pl-0" : "px-2.5",
         active ? "text-brand" : "text-muted-foreground hover:text-foreground",
+        // Cible de dépôt survolée : anneau accent — lisible même sur la
+        // rangée active (qui a déjà le fond brand-soft).
+        isOver && "bg-brand-soft ring-1 ring-brand",
         className,
       )}
     >
@@ -121,6 +152,8 @@ interface PlannerRailProps {
   onRenameProject: (id: string, name: string) => void;
   onDeleteArea: (id: string) => void;
   onDeleteProject: (id: string) => void;
+  /** Dépôt d'une tâche sur une vue/un projet (mutation, voir `dropIntent`). */
+  onDropTodo: (target: RailDropTarget, todoId: string) => void;
 }
 
 /**
@@ -149,6 +182,7 @@ export function PlannerRail({
   onRenameProject,
   onDeleteArea,
   onDeleteProject,
+  onDropTodo,
 }: PlannerRailProps) {
   // Domaines dépliés (tous ouverts par défaut : on ne cache pas le travail).
   const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(new Set());
@@ -226,6 +260,9 @@ export function PlannerRail({
               indent={indent}
               onClick={() => onSelect({ kind: "project", id: project.id })}
               label={project.name}
+              dropTodo={(todoId) =>
+                onDropTodo({ kind: "project", id: project.id }, todoId)
+              }
               icon={
                 total > 0 ? (
                   <ProgressRing progress={done / total} size={15} strokeWidth={2.5} />
@@ -286,6 +323,13 @@ export function PlannerRail({
                   active={active}
                   onClick={() => onSelect({ kind: "view", view: view.id })}
                   label={view.label}
+                  // Le Journal refuse le dépôt : terminer est un geste (la
+                  // coche), pas un glissement.
+                  dropTodo={
+                    view.id === "journal"
+                      ? undefined
+                      : (todoId) => onDropTodo({ kind: "view", view: view.id }, todoId)
+                  }
                   icon={
                     <Icon
                       size={16}

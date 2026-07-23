@@ -36,6 +36,16 @@ import {
   type PlannerView,
   type TodoGroups,
 } from "@/features/todos/grouping";
+import {
+  applyOrdering,
+  dropIntent,
+  orderingContextOf,
+  projectOrderingContext,
+  reorderIds,
+  type RailDropTarget,
+} from "@/features/todos/ordering";
+import { useOrderings } from "@/features/todos/useOrderings";
+import type { TodoListDnd } from "@/components/todo/AnimatedTodoList";
 import { todayLocalISODate, toLocalISODate } from "@/lib/date";
 import type { Priority, Todo, TodoStatus } from "@/features/todos/types";
 
@@ -143,6 +153,7 @@ export default function PlannerPage() {
     completeProject,
   } = useProjects();
   const { tags } = useTags();
+  const { positionsByContext, setOrdering } = useOrderings();
   const { sectionStyles } = useUIPrefs();
 
   // Noms des projets actifs — autocomplétion `#` de l'omnibar.
@@ -269,14 +280,49 @@ export default function PlannerPage() {
   const currentView: PlannerView | null =
     selection.kind === "view" ? selection.view : null;
 
-  // Sections de la vue GTD courante, dans l'ordre.
+  // Sections de la vue GTD courante, dans l'ordre — avec l'ordre MANUEL du
+  // contexte appliqué là où il existe (today/inbox/anytime/someday).
   const viewSections: PlannerSection[] = currentView
-    ? VIEW_SECTIONS[currentView].map((key) => ({
-        key,
-        items: groups[key],
-        ...SECTION_META[key],
-      }))
+    ? VIEW_SECTIONS[currentView].map((key) => {
+        const ctx = orderingContextOf(key);
+        const items = ctx
+          ? applyOrdering(groups[key], positionsByContext.get(ctx))
+          : groups[key];
+        return { key, items, ...SECTION_META[key] };
+      })
     : [];
+
+  // Une ligne en pause LINGER n'est pas déplaçable : le minuteur la ferait
+  // disparaître en plein geste, et le drop entrerait en course avec le toggle.
+  const canDragTodo = (id: string) => !linger.has(id);
+
+  /** Câblage DnD d'une section : réordonnable si elle a un contexte, sinon
+   *  simple source (glisser vers le rail). */
+  const dndForSection = (key: SectionKey, items: Todo[]): TodoListDnd => {
+    const ctx = orderingContextOf(key);
+    return {
+      context: ctx,
+      onReorder: (draggedId, targetId, edge) => {
+        if (!ctx) return;
+        // Le premier drag fige l'ordre AFFICHÉ de toute la section : plus
+        // d'état mixte positionné/non-positionné après ce point.
+        void setOrdering(
+          ctx,
+          reorderIds(items.map((t) => t.id), draggedId, targetId, edge),
+        );
+      },
+      canDrag: canDragTodo,
+    };
+  };
+
+  // Dépôt d'une tâche sur le rail : la mutation vient du mapping pur
+  // `dropIntent` (no-op → on ne fait rien, pas d'écriture pour rien).
+  const handleRailDrop = (target: RailDropTarget, todoId: string) => {
+    const todo = todos.find((t) => t.id === todoId);
+    if (!todo) return;
+    const intent = dropIntent(target, todo, todayISO, tomorrowISO);
+    if (intent) void updateTodo(todoId, intent);
+  };
 
   const portalSection = portalKey
     ? viewSections.find((s) => s.key === portalKey) ?? null
@@ -440,6 +486,7 @@ export default function PlannerPage() {
         onRenameProject={(id, name) => void updateProject(id, { name })}
         onDeleteArea={(id) => void deleteArea(id)}
         onDeleteProject={(id) => void deleteProject(id)}
+        onDropTodo={handleRailDrop}
       />
 
       <div className="relative flex h-full min-w-0 flex-1 flex-col overflow-hidden">
@@ -469,7 +516,27 @@ export default function PlannerPage() {
             {activeProject ? (
               <ProjectView
                 project={activeProject}
-                todos={tasksOfProject(todos, activeProject.id)}
+                todos={applyOrdering(
+                  tasksOfProject(todos, activeProject.id),
+                  positionsByContext.get(projectOrderingContext(activeProject.id)),
+                )}
+                dnd={{
+                  context: projectOrderingContext(activeProject.id),
+                  onReorder: (draggedId, targetId, edge) => {
+                    const ctx = projectOrderingContext(activeProject.id);
+                    const pendingIds = applyOrdering(
+                      tasksOfProject(todos, activeProject.id),
+                      positionsByContext.get(ctx),
+                    )
+                      .filter((t) => t.status === "pending")
+                      .map((t) => t.id);
+                    void setOrdering(
+                      ctx,
+                      reorderIds(pendingIds, draggedId, targetId, edge),
+                    );
+                  },
+                  canDrag: canDragTodo,
+                }}
                 onToggle={handleToggle}
                 onDelete={deleteTodo}
                 onUpdate={updateTodo}
@@ -564,6 +631,7 @@ export default function PlannerPage() {
                               onUpdate={updateTodo}
                               overdue={section.overdue}
                               showDate={!section.dateImplied}
+                              dnd={dndForSection(section.key, section.items)}
                             />
                           ) : (
                             // La dernière tâche vient d'être cochée en portail.

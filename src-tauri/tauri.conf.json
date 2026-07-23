@@ -21,7 +21,8 @@
         "visible": true,
         "center": true,
         "decorations": false,
-        "resizable": true
+        "resizable": true,
+        "dragDropEnabled": false
       },
       {
         "label": "quick",

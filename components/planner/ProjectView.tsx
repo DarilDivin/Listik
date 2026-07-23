@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { motion } from "motion/react";
 import { CheckCircle2, RotateCcw } from "lucide-react";
 import { AnimatedNumber } from "@/components/ui/animated-number";
-import { AnimatedTodoList } from "@/components/todo/AnimatedTodoList";
+import { AnimatedTodoList, type TodoListDnd } from "@/components/todo/AnimatedTodoList";
 import { EmptyState } from "@/components/todo/EmptyState";
 import { ProgressRing } from "@/components/planner/ProgressRing";
 import { Button } from "@/components/ui/button";
@@ -26,6 +26,8 @@ interface ProjectViewProps {
   project: Project;
   /** Tâches du projet (terminées comprises) — filtrées par `project_id`. */
   todos: Todo[];
+  /** Drag & drop de la liste en cours (contexte `project:<id>`). */
+  dnd?: TodoListDnd;
   onToggle: (id: string) => void;
   onDelete: (id: string) => void;
   onUpdate: (id: string, payload: UpdateTodoInput) => void;
@@ -45,6 +47,7 @@ interface ProjectViewProps {
 export function ProjectView({
   project,
   todos,
+  dnd,
   onToggle,
   onDelete,
   onUpdate,
@@ -163,6 +166,7 @@ export function ProjectView({
             onDelete={onDelete}
             onUpdate={onUpdate}
             showDate
+            dnd={dnd}
           />
         ) : (
           <EmptyState

@@ -611,6 +611,34 @@ pub async fn delete_tag(
 }
 
 // ---------------------------------------------------------------------------
+// Commandes ordre manuel
+// ---------------------------------------------------------------------------
+
+#[tauri::command]
+pub async fn get_orderings(
+    state: State<'_, AppState>,
+) -> Result<Vec<crate::db::Ordering>, String> {
+    db::get_orderings(&state.pool)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// Remplace l'ordre manuel d'un contexte (drag & drop / déplacement clavier).
+#[tauri::command]
+pub async fn set_ordering(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    context: String,
+    ordered_ids: Vec<String>,
+) -> Result<(), String> {
+    db::set_ordering(&state.pool, &context, &ordered_ids)
+        .await
+        .map_err(|e| e.to_string())?;
+    notify_changed(&app);
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
 // Commandes Sous-tâches (checklist à un niveau)
 // ---------------------------------------------------------------------------
 
