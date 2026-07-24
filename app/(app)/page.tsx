@@ -57,6 +57,7 @@ import { TodoDetailSheet } from "@/components/todo/TodoDetailSheet";
 import type { TodoListDnd } from "@/components/todo/AnimatedTodoList";
 import { todayLocalISODate, toLocalISODate } from "@/lib/date";
 import type { Priority, Todo, TodoStatus } from "@/features/todos/types";
+import { buildGhostOccurrences } from "@/features/todos/recurrence";
 
 /** Présentation de chaque groupe : libellé, tonalité, date implicite. */
 const SECTION_META: Record<
@@ -259,6 +260,20 @@ function PlannerPageContent() {
     return result;
   }, [todos, tagFilter, todayISO, tomorrowISO, linger]);
 
+  // Fantômes (phase M) : occurrences futures projetées pour le style « zoom »
+  // de la section À venir. Semées depuis TOUTES les tâches récurrentes (pas
+  // seulement `groups.upcoming`) : une tâche dont la ligne réelle tombe
+  // AUJOURD'HUI doit quand même projeter ses prochaines occurrences dans les
+  // jours suivants — sinon elle n'aurait aucun fantôme le jour où sa ligne
+  // réelle sort justement de la vue À venir. Respecte le filtre de tag
+  // courant, comme le reste de la vue.
+  const upcomingGhosts = useMemo(() => {
+    const visible = tagFilter
+      ? todos.filter((t) => t.tags.some((tag) => tag.id === tagFilter))
+      : todos;
+    return buildGhostOccurrences(visible);
+  }, [todos, tagFilter]);
+
   // Compteurs du rail : calculés sur les mêmes données que le contenu — ce qui
   // est compté est exactement ce qui est affiché (filtre de liste compris).
   const counts = useMemo(
@@ -443,7 +458,12 @@ function PlannerPageContent() {
   // Une seule liste de sections : en mode portail elle se réduit à la section
   // ouverte, qui GARDE sa clé React — le même nœud morphe vers le haut pendant
   // que ses voisines s'effacent (aucun démontage/remontage, aucun trou).
-  const stackSections = viewSections.filter((s) => s.items.length > 0);
+  // La section À venir reste affichée même sans tâche réelle tant qu'elle a
+  // des fantômes à montrer (calendrier vide de vraies tâches mais avec une
+  // récurrence à venir cette semaine).
+  const stackSections = viewSections.filter(
+    (s) => s.items.length > 0 || (s.key === "upcoming" && upcomingGhosts.length > 0),
+  );
   const renderedSections = portalSection ? [portalSection] : stackSections;
   const isEmpty = stackSections.length === 0;
 
@@ -788,7 +808,8 @@ function PlannerPageContent() {
                           onEnterPortal={() => openPortal(section.key)}
                           onExitPortal={closePortal}
                         >
-                          {section.items.length > 0 ? (
+                          {section.items.length > 0 ||
+                          (section.key === "upcoming" && upcomingGhosts.length > 0) ? (
                             <SectionBody
                               style={sectionStyles[section.key]}
                               todos={section.items}
@@ -798,6 +819,7 @@ function PlannerPageContent() {
                               overdue={section.overdue}
                               showDate={!section.dateImplied}
                               dnd={dndForSection(section.key, section.items)}
+                              ghosts={section.key === "upcoming" ? upcomingGhosts : undefined}
                             />
                           ) : (
                             // La dernière tâche vient d'être cochée en portail.

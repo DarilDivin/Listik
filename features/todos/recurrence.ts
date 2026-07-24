@@ -10,7 +10,7 @@
 // (parsé en UTC : minuit UTC = la veille en fuseau négatif) ni de
 // `setMonth(+n)` (31 janv + 1 mois « déborde » au 3 mars là où chrono borne
 // au 28 févr : l'optimiste afficherait une date que le backend corrigerait).
-import type { Recurrence } from "./types";
+import type { Recurrence, Todo } from "./types";
 import type { RecurMode } from "./generated/RecurMode";
 import type { RecurWeekday } from "./generated/RecurWeekday";
 
@@ -70,6 +70,10 @@ const addMonthsClamped = (date: Ymd, months: number): Ymd => {
 
 const compareYmd = (a: Ymd, b: Ymd): number =>
   a.y - b.y || a.m - b.m || a.d - b.d;
+
+/** Jour d'epoch (UTC) — seulement pour comparer un ÉCART en jours entre deux
+ *  (y,m,d), jamais pour dériver une date affichée (voir les pièges ci-dessus). */
+const epochDay = ({ y, m, d }: Ymd): number => Math.floor(Date.UTC(y, m - 1, d) / 86_400_000);
 
 /** Occurrence positionnelle dans le mois de `anchor` (Ne/dernier jour de semaine,
  *  ou dernier jour du mois). Miroir de `positional_in_month` côté Rust. */
@@ -178,6 +182,39 @@ export function nextOccurrence(
   return next ? formatYmd(next) : scheduledFor;
 }
 
+/**
+ * Projette les PROCHAINES occurrences d'une tâche récurrente au-delà de
+ * `seed` (sa date planifiée réelle) — pour un affichage en lecture seule,
+ * jamais matérialisé. Compose `advanceRule` uniquement (aucune arithmétique
+ * dupliquée) pour rester fidèle à la parité Rust/JS.
+ *
+ * Exclut volontairement le mode `after_completion` : sa prochaine occurrence
+ * dépend d'une date de complétion future inconnue (voir `nextOccurrence` ci-
+ * dessus, `base = today` dans ce mode) — la projeter inventerait une date
+ * que le backend ne produira jamais.
+ */
+export function projectFutureOccurrences(
+  seed: string,
+  todo: RecurrenceFields,
+  { horizonDays = 90, maxCount = 10 }: { horizonDays?: number; maxCount?: number } = {},
+): string[] {
+  if (todo.recurrence === "none" || todo.recur_mode === "after_completion") return [];
+
+  const rule = ruleOf(todo);
+  const seedYmd = parseYmd(seed);
+  const limit = epochDay(seedYmd) + horizonDays;
+  const dates: string[] = [];
+  let current = seedYmd;
+
+  for (let i = 0; i < maxCount; i++) {
+    const next = advanceRule(current, rule);
+    if (!next || epochDay(next) > limit) break;
+    dates.push(formatYmd(next));
+    current = next;
+  }
+  return dates;
+}
+
 // ---------------------------------------------------------------------------
 // Libellés
 // ---------------------------------------------------------------------------
@@ -236,4 +273,62 @@ export function recurrenceLabel(todo: RecurrenceFields): string {
   return unit === "semaine"
     ? `Toutes les ${interval} semaines`
     : `Tous les ${interval} ${plural}`;
+}
+
+// ---------------------------------------------------------------------------
+// Projection « fantôme » (vue À venir, style zoom — phase M)
+// ---------------------------------------------------------------------------
+
+/** Occurrence future projetée : jamais une ligne réelle (pas d'id en base). */
+export interface GhostOccurrence {
+  /** Stable pour AnimatePresence, mais ne collisionne jamais avec un id réel. */
+  key: string;
+  date: string;
+  text: string;
+  recurrenceLabel: string;
+}
+
+/**
+ * Construit les fantômes de TOUTES les tâches récurrentes à date fixe — à
+ * partir de l'ensemble COMPLET des tâches, pas seulement de celles déjà
+ * présentes dans la vue À venir : une tâche dont la ligne réelle tombe
+ * AUJOURD'HUI (donc visible dans la section Aujourd'hui, pas Upcoming) doit
+ * quand même projeter ses prochaines occurrences dans les jours suivants.
+ *
+ * `[minDay, maxDay]` borne l'affichage (par défaut J+1 → l'horizon de calcul
+ * lui-même) : une récurrence hebdomadaire doit apparaître à J+7, J+14, J+21…
+ * pas seulement dans la semaine courante — le style zoom regroupe les jours
+ * lointains en semaines/mois, mais les fantômes y voyagent avec les tâches
+ * réelles plutôt que de disparaître après J+7.
+ */
+export function buildGhostOccurrences(
+  todos: Todo[],
+  opts: { horizonDays?: number; maxCount?: number; minDay?: number; maxDay?: number } = {},
+): GhostOccurrence[] {
+  const { horizonDays = 90, maxCount = 10, minDay = 1, maxDay = horizonDays } = opts;
+
+  const now = new Date();
+  const todayEpoch = epochDay({ y: now.getFullYear(), m: now.getMonth() + 1, d: now.getDate() });
+
+  const ghosts: GhostOccurrence[] = [];
+  for (const todo of todos) {
+    if (
+      todo.status !== "pending" ||
+      todo.someday ||
+      !todo.scheduled_for ||
+      todo.recurrence === "none" ||
+      todo.recur_mode === "after_completion"
+    ) {
+      continue;
+    }
+
+    const dates = projectFutureOccurrences(todo.scheduled_for, todo, { horizonDays, maxCount });
+    const label = recurrenceLabel(todo);
+    for (const date of dates) {
+      const dist = epochDay(parseYmd(date)) - todayEpoch;
+      if (dist < minDay || dist > maxDay) continue;
+      ghosts.push({ key: `ghost-${todo.id}-${date}`, date, text: todo.text, recurrenceLabel: label });
+    }
+  }
+  return ghosts.sort((a, b) => a.date.localeCompare(b.date));
 }

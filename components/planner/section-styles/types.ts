@@ -1,4 +1,5 @@
 import type { Todo, UpdateTodoInput } from "@/features/todos/types";
+import type { GhostOccurrence } from "@/features/todos/recurrence";
 
 /** Interface commune à tous les renderers de section (Liste, Horizon, Zoom…). */
 export interface SectionStyleProps {
@@ -13,4 +14,10 @@ export interface SectionStyleProps {
    * styles qui regroupent déjà par date (Zoom, Stratigraphie) l'ignorent.
    */
   showDate?: boolean;
+  /**
+   * Occurrences futures projetées des tâches récurrentes (lecture seule,
+   * jamais matérialisées) — seul le style « zoom » de la section À venir les
+   * consomme ; les autres styles l'ignorent silencieusement.
+   */
+  ghosts?: GhostOccurrence[];
 }

@@ -518,7 +518,7 @@ d'une affectation (le supprimer serait plus effrayant que le garder).
 
 ---
 
-## Phase M — Vue « À venir » calendaire
+## Phase M — Vue « À venir » calendaire ✅ FAITE
 
 **But** : la vue Upcoming de Things — calendrier des jours/semaines à venir, tâches datées +
 occurrences futures des récurrences.
@@ -535,6 +535,52 @@ jours à venir.
 
 **Fichiers clés** : `components/planner/section-styles/ZoomList.tsx`, `app/(app)/page.tsx`,
 `features/todos/recurrence.ts`.
+
+### Notes d'implémentation
+
+- **`projectFutureOccurrences`** (`features/todos/recurrence.ts`) : projette les prochaines
+  occurrences d'une règle en composant `advanceRule` (aucune arithmétique dupliquée — parité
+  Rust/JS préservée). Exclut `recur_mode === "after_completion"` : sa prochaine occurrence
+  dépend d'une date de complétion future inconnue (`nextOccurrence` calcule alors depuis
+  AUJOURD'HUI, pas depuis la planification) — la projeter inventerait une date que le backend
+  ne produira jamais. Bornée par `maxCount` (défaut 10) et `horizonDays` (défaut 90).
+- **`buildGhostOccurrences`** (même fichier) : construit les fantômes à partir de
+  **l'ensemble complet des tâches**, pas seulement de celles déjà dans `groups.upcoming` —
+  piège identifié en revue d'architecture (Opus) : une tâche récurrente dont la ligne réelle
+  tombe AUJOURD'HUI (donc visible dans la section Aujourd'hui) doit quand même projeter ses
+  prochaines occurrences dans les jours suivants. Exclut aussi `someday`, non-`pending`, et
+  sans `scheduled_for`. Respecte le filtre de tag courant de la vue.
+- **Fenêtre d'affichage** : `[minDay, maxDay]` avec `maxDay` par défaut = `horizonDays` (pas de
+  cutoff artificiel à J+7) — une récurrence hebdomadaire voyage à J+7, J+14, J+21… jusque dans
+  les compartiments semaine/mois du style zoom, conformément au test d'acceptation de la
+  roadmap (« aux bons jours à venir », au pluriel). Un premier jet avait plafonné à J+7 par
+  souci de budget ; corrigé après revue car la contrainte qui justifiait la coupe (complexité
+  de `CompactBucket`) ne s'appliquait plus une fois les fantômes rendus en bloc séparé.
+- **`GhostRow`** (`components/planner/section-styles/GhostRow.tsx`) : composant dédié,
+  purement présentationnel — pas d'id, pas de coche, pas de survol, pas de menu. `TodoItem`
+  n'est PAS touché (contrat de stabilité structurelle préservé). Distinction visuelle par
+  texte `muted-foreground` + glyphe ↻ + absence d'affordance (pas d'opacité globale, ambiguë
+  avec un état désactivé).
+- **`ZoomList`** : les fantômes rejoignent l'union des jours à traiter à CHAQUE niveau de
+  zoom (jour détaillé, jour compact, semaine, mois) — un jour/semaine/mois peut n'exister que
+  parce qu'une récurrence y projette sa prochaine occurrence, sans aucune tâche réelle. Rendus
+  en bloc séparé sous/après le contenu réel (jamais interleaved dans l'`AnimatePresence` des
+  vraies tâches) via des clés synthétiques stables (`ghost-{todoId}-{date}`) — `CompactBucket`
+  reste intact, utilisé exactement comme avant pour les tâches réelles.
+- **`app/(app)/page.tsx`** : `upcomingGhosts` calculé une fois (mémoïsé) depuis l'ensemble
+  complet des tâches filtrées par tag, passé uniquement à la section `upcoming`. La garde
+  d'affichage de section (`stackSections`, et le rendu `SectionBody`/`EmptyState`) a été
+  élargie pour garder la section À venir visible si elle a des fantômes même sans aucune
+  vraie tâche (calendrier vide de tâches réelles mais avec une récurrence à venir).
+- **Décision utilisateur** : le badge de compteur de section reste basé sur les vraies tâches
+  uniquement (peut afficher 0 à côté de fantômes visibles) — cohérent avec Things, où les
+  aperçus ne comptent pas dans le badge.
+- **Vérification** : 32 tests JS sur `recurrence.ts` (dont le cas « ligne réelle aujourd'hui »
+  et « récurrence hebdo au-delà d'une semaine »), 117 tests JS au total, 59 tests Rust
+  (inchangés — aucun code Rust modifié), `tsc --noEmit` et `next lint` propres. Vérification
+  interactive en navigateur limitée par l'environnement (pas d'`invoke()` Tauri hors app) :
+  compilation et montage React confirmés sans erreur console/serveur ; le rendu avec données
+  réelles reste à confirmer au prochain `pnpm tauri dev`.
 
 ---
 
