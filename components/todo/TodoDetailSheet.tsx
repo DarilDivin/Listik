@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { motion } from "motion/react";
 import { BellRing, Calendar, Flag, FolderOpen, Hash, Repeat, Sunset, Trash2, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { deadlineCountdown, toLocalISODate, todayLocalISODate } from "@/lib/date";
@@ -77,15 +78,27 @@ interface DetailRowProps {
   icon: React.ReactNode;
   label: string;
   children: React.ReactNode;
+  /** Teinte le badge d'icône en accent (façon Things : l'icône « vit » avec
+   *  la donnée) et lui fait un petit pop, comme la coche. Réservé aux lignes
+   *  dont l'icône a un sens booléen clair (récurrence, rappel) — les autres
+   *  gardent le badge neutre par défaut. */
+  active?: boolean;
 }
 
 /** Ligne d'attribut : pastille d'icône + libellé à gauche, contrôle à droite. */
-function DetailRow({ icon, label, children }: DetailRowProps) {
+function DetailRow({ icon, label, children, active = false }: DetailRowProps) {
   return (
     <div className="flex min-h-11 items-center gap-3 border-t border-border/60 py-2 first:border-t-0">
-      <span className="flex size-7 shrink-0 items-center justify-center rounded-[8px] bg-foreground/[0.06] text-muted-foreground">
+      <motion.span
+        animate={{ scale: active ? [1, 1.15, 1] : 1 }}
+        transition={{ duration: 0.32, ease: [0.16, 1, 0.3, 1], times: [0, 0.4, 1] }}
+        className={cn(
+          "flex size-7 shrink-0 items-center justify-center rounded-[8px] transition-colors duration-200",
+          active ? "bg-brand-soft text-brand" : "bg-foreground/[0.06] text-muted-foreground",
+        )}
+      >
         {icon}
-      </span>
+      </motion.span>
       <span className="flex-1 text-[0.9375rem] text-foreground">{label}</span>
       <div className="shrink-0">{children}</div>
     </div>
@@ -370,7 +383,11 @@ export function TodoDetailSheet({
               />
             </DetailRow>
 
-            <DetailRow icon={<Repeat size={15} />} label="Répéter">
+            <DetailRow
+              icon={<Repeat size={15} />}
+              label="Répéter"
+              active={todo.recurrence !== "none"}
+            >
               <Select
                 value={todo.recurrence}
                 onValueChange={(value) => {
@@ -530,7 +547,11 @@ export function TodoDetailSheet({
                 </DetailRow>
               )}
 
-            <DetailRow icon={<BellRing size={15} />} label="Rappel">
+            <DetailRow
+              icon={<BellRing size={15} />}
+              label="Rappel"
+              active={todo.remind_at !== null}
+            >
               <div className="flex items-center gap-1">
                 <Popover open={reminderOpen} onOpenChange={setReminderOpen} modal>
                   <PopoverTrigger asChild>

@@ -79,6 +79,7 @@ const DEFAULT_SECTION_STYLES: Record<SectionKey, SectionStyleId> = {
 const ACCENT_KEY = "listik.accent";
 const NAV_KEY = "listik.nav";
 const SECTION_STYLES_KEY = "listik.sectionStyles";
+const OLED_KEY = "listik.oled";
 const DEFAULT_ACCENT: AccentId = "teal";
 const DEFAULT_NAV: NavStyle = "dock";
 
@@ -89,6 +90,10 @@ interface UIPrefs {
   setNav: (nav: NavStyle) => void;
   sectionStyles: Record<SectionKey, SectionStyleId>;
   setSectionStyle: (section: SectionKey, style: SectionStyleId) => void;
+  /** « Noir pur » (OLED) : orthogonal au thème clair/sombre, n'a d'effet que
+   *  combiné à `.dark` (voir `.dark[data-oled]` dans globals.css). */
+  oled: boolean;
+  setOled: (oled: boolean) => void;
 }
 
 const UIPrefsContext = createContext<UIPrefs | null>(null);
@@ -131,6 +136,7 @@ export function UIPrefsProvider({ children }: { children: ReactNode }) {
   const [nav, setNavState] = useState<NavStyle>(DEFAULT_NAV);
   const [sectionStyles, setSectionStyles] =
     useState<Record<SectionKey, SectionStyleId>>(DEFAULT_SECTION_STYLES);
+  const [oled, setOledState] = useState(false);
 
   // Lecture au montage (client uniquement — évite tout mismatch SSG).
   useEffect(() => {
@@ -139,6 +145,7 @@ export function UIPrefsProvider({ children }: { children: ReactNode }) {
     const storedNav = localStorage.getItem(NAV_KEY);
     if (storedNav === "dock" || storedNav === "sidebar") setNavState(storedNav);
     setSectionStyles(parseSectionStyles(localStorage.getItem(SECTION_STYLES_KEY)));
+    setOledState(localStorage.getItem(OLED_KEY) === "1");
   }, []);
 
   // Application de l'accent sur <html>.
@@ -146,9 +153,21 @@ export function UIPrefsProvider({ children }: { children: ReactNode }) {
     document.documentElement.setAttribute("data-accent", accent);
   }, [accent]);
 
+  // Application du Noir pur — n'a d'effet que combiné à `.dark` (voir
+  // globals.css), donc rester actif sans risque même quand le thème résolu
+  // est clair (l'attribut est simplement sans effet dans ce cas).
+  useEffect(() => {
+    document.documentElement.toggleAttribute("data-oled", oled);
+  }, [oled]);
+
   const setAccent = useCallback((next: AccentId) => {
     setAccentState(next);
     localStorage.setItem(ACCENT_KEY, next);
+  }, []);
+
+  const setOled = useCallback((next: boolean) => {
+    setOledState(next);
+    localStorage.setItem(OLED_KEY, next ? "1" : "0");
   }, []);
 
   const setNav = useCallback((next: NavStyle) => {
@@ -166,7 +185,7 @@ export function UIPrefsProvider({ children }: { children: ReactNode }) {
 
   return (
     <UIPrefsContext.Provider
-      value={{ accent, setAccent, nav, setNav, sectionStyles, setSectionStyle }}
+      value={{ accent, setAccent, nav, setNav, sectionStyles, setSectionStyle, oled, setOled }}
     >
       {children}
     </UIPrefsContext.Provider>

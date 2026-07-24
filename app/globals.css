@@ -193,6 +193,30 @@
   --brand-foreground: oklch(0.2 0.05 356);
 }
 
+/* ──────────────────────────────────────────────────────────────────────────
+ * « Noir pur » (OLED, phase N) — préférence ORTHOGONALE au thème next-themes
+ * (posée via `data-oled` sur <html> par `UIPrefsProvider`, comme `data-accent`),
+ * pas une 3e valeur de thème : n'a d'effet que combinée à `.dark`, donc hérite
+ * gratuitement de `--brand`/`--brand-foreground` déjà posés par
+ * `.dark[data-accent="X"]` sur le même élément — aucun bloc à dupliquer par
+ * accent. Ne redéfinit QUE les surfaces (fond quasi noir + profondeurs assez
+ * sombres pour rester « OLED ») ; texte/accent/graphiques restent ceux de
+ * `.dark`, dont le contraste sur un fond plus sombre encore reste valide.
+ * ────────────────────────────────────────────────────────────────────────── */
+.dark[data-oled] {
+  --background: oklch(0.03 0.004 60);
+  --card: oklch(0.09 0.006 60);
+  --popover: oklch(0.11 0.007 60);
+  --secondary: oklch(0.13 0.008 60);
+  --muted: oklch(0.13 0.008 60);
+  --accent: oklch(0.16 0.009 60);
+  --border: oklch(0.98 0.01 80 / 12%);
+  --input: oklch(0.98 0.01 80 / 16%);
+  --sidebar: oklch(0.03 0.004 60);
+  --sidebar-accent: oklch(0.16 0.009 60);
+  --sidebar-border: oklch(0.98 0.01 80 / 10%);
+}
+
 @layer base {
   * {
     @apply border-border outline-ring/50;
@@ -238,6 +262,24 @@
     0 0 0 1px oklch(0 0 0 / 0.32),
     0 2px 4px -1px oklch(0 0 0 / 0.4),
     0 20px 50px -16px oklch(0 0 0 / 0.6);
+}
+
+/*
+ * `prefers-reduced-motion` — ne couvre QUE les transitions/animations CSS
+ * pures (hover, `.grain`, la révélation de la TitleBar dans layout.tsx…).
+ * Framer Motion est déjà couvert séparément par `MotionConfig
+ * reducedMotion="user"` (app/layout.tsx) ; les deux mécanismes sont
+ * nécessaires, aucun des deux ne couvre l'autre.
+ */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }
 
 /*

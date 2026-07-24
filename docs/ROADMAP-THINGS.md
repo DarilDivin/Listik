@@ -602,6 +602,89 @@ respecté sur DnD et rail.
 
 **Fichiers clés** : `app/globals.css`, `components/settings/ThemeSetting.tsx`, transversal.
 
+### N1 — Noir pur ✅ FAIT
+
+Revue d'architecture faite avec opus (`Agent`/`Plan`) avant code. Note de méthode : cette
+revue tournait dans un worktree isolé qui s'est avéré basé sur `origin/main` — très en retard
+sur le `main` local (chantier Things entier non poussé) — l'agent l'a détecté lui-même et a
+répondu de façon conditionnelle ; seule la branche « le système d'accents existe » a été
+retenue, revérifiée contre le vrai dépôt avant d'écrire une ligne de code.
+
+- **Mécanisme retenu : attribut orthogonal, pas une 3e valeur next-themes.** `data-oled` posé
+  sur `<html>` par `UIPrefsProvider` (même mécanique que `data-accent` : état + localStorage
+  `listik.oled` + `useEffect`), effectif uniquement combiné à `.dark`
+  (`.dark[data-oled] { … }` dans `globals.css`, placé après les blocs `[data-accent="X"]`).
+  Ne redéfinit QUE les surfaces (`--background`/`--card`/`--popover`/`--secondary`/`--muted`/
+  `--accent`/`--border`/`--input`/`--sidebar*`) — texte, `--brand`/`--brand-foreground` et
+  graphiques restent ceux de `.dark`, hérités gratuitement sur le même élément. Zéro
+  duplication des 6 accents (contrairement à l'option « 3e thème » qui en aurait exigé 12).
+- **UI** : interrupteur séparé dans `ThemeSetting` (pas un 4e bouton bi-action dans le
+  tri-état Système/Clair/Sombre — désynchroniserait la sélection). N'apparaît que si
+  `resolvedTheme === "dark"` (jamais `theme` seul : « Système » en plein jour ne doit pas
+  montrer un interrupteur actif mais sans effet).
+- **Compromis assumé** : comme `data-accent`, l'attribut est posé en `useEffect`
+  (post-hydratation) plutôt que via un script bloquant anti-flash — cohérent avec le seul
+  autre mécanisme orthogonal existant plutôt qu'un cas spécial ; un flash de la teinte sombre
+  normale avant bascule Noir pur reste possible au chargement, comme pour l'accent.
+- **Vérification** : câblage React confirmé (état, attribut, localStorage) via clic natif —
+  le clic simulé du navigateur de test ne touchait pas ce Switch Radix précis (quirk d'outil,
+  pas un bug d'app). Confirmation VISUELLE de l'override CSS bloquée : le serveur de dev déjà
+  lancé par l'utilisateur ne recompilait plus (même cause que le bruit HMR `{"event":"ping"}`
+  observé plus tôt) ; une deuxième instance de secours s'est révélée se contaminer via le
+  cache `.next` partagé (même dossier de projet) — arrêtée immédiatement. `tsc`/`vitest`
+  (117 tests)/`lint` propres. **Reste à confirmer visuellement au prochain `pnpm tauri dev`
+  frais** (redémarrer le serveur de dev existant réglerait aussi le bruit HMR).
+
+Reste N2 (icônes-signature) et N3 (polish) — voir [[things-ergonomics-roadmap]] pour le
+détail de ce qui est déjà animé (coche, rail « Aujourd'hui » avec `fill`) vs statique
+(récurrence/rappel dans `TodoDetailSheet.tsx`, toujours de simples icônes Lucide sans
+animation ni état `fill`).
+
+### N2 — Icônes-signature (première tranche) ✅ FAIT
+
+- `DetailRow` (`TodoDetailSheet.tsx`) accepte un `active?: boolean` optionnel (défaut `false`,
+  rétrocompatible pour toutes les lignes existantes) : le badge d'icône passe de neutre
+  (`bg-foreground/[0.06] text-muted-foreground`) à teinté accent (`bg-brand-soft text-brand`)
+  + un petit pop de ressort (`scale: [1, 1.15, 1]`, même vocabulaire que `TodoCheckbox`) quand
+  l'état devient actif.
+- Câblé sur les deux lignes qui avaient un sens booléen clair et une icône jusqu'ici statique :
+  « Répéter » (`active={todo.recurrence !== "none"}`) et « Rappel »
+  (`active={todo.remind_at !== null}`).
+- La coche (`TodoCheckbox.tsx`) et le rail « Aujourd'hui » (`PlannerRail.tsx`, `fill` +
+  `layoutId="rail-active"`) étaient déjà animés — pas retouchés.
+- Volontairement PAS touché : les glyphes `Repeat`/`BellRing` dans `TodoMetaLine.tsx` (la
+  ligne méta compacte sur chaque `TodoItem`) — ils sont déjà conditionnellement rendus
+  (apparaissent seulement si actifs), donc il n'y a pas de bascule on/off visible à animer là ;
+  l'ajouter serait un embellissement superflu, pas une consolidation.
+- tsc 0 · vitest 117 · lint OK. Vérification visuelle toujours en attente (même blocage de
+  serveur de dev que N1).
+
+### N3 — Polish (audit ciblé, 2 trouvailles corrigées)
+
+Audit ciblé (pas exhaustif, sur demande explicite) avant de coder, pour ne pas deviner
+l'étendue d'un point de brief vague. Deux trouvailles concrètes, vérifiées contre le vrai
+dépôt (pas de fausse piste cette fois — voir aussi [[worktree-agent-stale-origin]]) :
+
+1. **`prefers-reduced-motion` non couvert côté CSS.** `MotionConfig reducedMotion="user"`
+   (`app/layout.tsx`) ne couvre que Framer Motion ; les transitions CSS pures (hover,
+   révélation de la TitleBar, `.grain`) n'avaient aucune media query. Ajouté dans
+   `globals.css` : `@media (prefers-reduced-motion: reduce)` qui réduit `animation-duration`/
+   `transition-duration` à ~0 globalement (`*`) — complète MotionConfig, ne le remplace pas.
+2. **`aria-pressed` sur 3 sélecteurs mutuellement exclusifs** (`ThemeSetting.tsx`,
+   `NavSetting.tsx`, `AccentPicker.tsx`) — sémantique de bouton-bascule indépendant, imprécise
+   pour un choix « un-parmi-N » (un lecteur d'écran n'annonce ni le groupe ni la position).
+   Remplacé par un `role="radiogroup"` + `role="radio"`/`aria-checked` avec tabindex flottant
+   et navigation aux flèches (nouveau hook partagé `lib/use-roving-radio.ts` — mêmes
+   sémantiques et code de navigation clavier factorisés une seule fois plutôt que triplés).
+
+Pistes NON retenues après vérification (fausses pistes de la revue en worktree périmée) :
+états vides/squelettes de la page Assistant (déjà présents : `EmptyAssistant`,
+`ThinkingIndicator`) ; fallback clavier du DnD (déjà couvert par K1b, Alt+↑/↓).
+
+tsc 0 · vitest 117 · lint OK. Reste du périmètre N3 (tooltips, copy FR, autres états vides)
+non traité — audit volontairement limité, à recadrer avec l'utilisateur si besoin d'aller
+plus loin.
+
 ---
 
 ## Reporté (passe ultérieure, hors « lean »)

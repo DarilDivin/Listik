@@ -4,6 +4,9 @@ import { AnimatePresence, motion } from "motion/react";
 import { Check } from "lucide-react";
 import { ACCENTS, useUIPrefs, type AccentId } from "@/components/ui-prefs";
 import { spring } from "@/lib/motion";
+import { useRovingRadioGroup } from "@/lib/use-roving-radio";
+
+const VALUES: readonly AccentId[] = ACCENTS.map((a) => a.id);
 
 /** Pastilles d'aperçu (indépendantes du thème pour rester lisibles). */
 const SWATCH: Record<AccentId, string> = {
@@ -22,10 +25,16 @@ const SWATCH: Record<AccentId, string> = {
  */
 export function AccentPicker() {
   const { accent, setAccent } = useUIPrefs();
+  const { onKeyDown, getItemProps } = useRovingRadioGroup(VALUES, accent, setAccent);
 
   return (
-    <div className="flex flex-wrap items-center gap-3">
-      {ACCENTS.map(({ id, label }) => {
+    <div
+      role="radiogroup"
+      aria-label="Couleur d'accent"
+      onKeyDown={onKeyDown}
+      className="flex flex-wrap items-center gap-3"
+    >
+      {ACCENTS.map(({ id, label }, i) => {
         const active = id === accent;
         return (
           <motion.button
@@ -36,7 +45,7 @@ export function AccentPicker() {
             whileTap={{ scale: 0.9 }}
             transition={spring.snappy}
             aria-label={`Accent ${label}`}
-            aria-pressed={active}
+            {...getItemProps(id, i)}
             title={label}
             className="relative grid size-8 place-items-center rounded-full"
             style={{ background: SWATCH[id] }}
