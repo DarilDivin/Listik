@@ -5,6 +5,7 @@ import { AnimatePresence, LayoutGroup, motion } from "motion/react";
 import { toast } from "sonner";
 import { spring } from "@/lib/motion";
 import { usePlannerTodos } from "@/hooks/usePlannerTodos";
+import { triggerPendingUndo } from "@/features/todos/useTodoMutations";
 import { useProjects } from "@/hooks/useProjects";
 import { useTags } from "@/hooks/useTags";
 import { TagFilterProvider } from "@/features/tags/tag-filter";
@@ -143,6 +144,8 @@ export default function PlannerPage() {
     toggleTodo,
     deleteTodo,
     updateTodo,
+    toggleManyTodos,
+    updateManyTodos,
   } = usePlannerTodos();
   const { createNote } = useNotesMutations();
   const {
@@ -298,50 +301,59 @@ export default function PlannerPage() {
     : [];
 
   // Ordre affiché à plat de la branche courante — l'ancre de la sélection par
-  // plage (Maj+clic) doit correspondre à ce que l'œil voit.
-  const visibleOrderedIds = useMemo(() => {
-    if (activeProject)
-      return applyOrdering(
+  // plage (Maj+clic) doit correspondre à ce que l'œil voit. Non mémoïsé :
+  // `useSelectionController` ne fait qu'assigner ce tableau à une ref à chaque
+  // rendu (voir plus bas), aucun autre calcul n'en dépend.
+  const visibleOrderedIds: string[] = activeProject
+    ? applyOrdering(
         tasksOfProject(todos, activeProject.id),
         positionsByContext.get(projectOrderingContext(activeProject.id)),
       )
         .filter((t) => t.status === "pending")
-        .map((t) => t.id);
-    if (activeArea)
-      return tasksOfArea(todos, activeArea.id)
-        .filter((t) => t.status === "pending")
-        .map((t) => t.id);
-    return viewSections.flatMap((s) => s.items.map((t) => t.id));
-  }, [activeProject, activeArea, viewSections, todos, positionsByContext]);
+        .map((t) => t.id)
+    : activeArea
+      ? tasksOfArea(todos, activeArea.id)
+          .filter((t) => t.status === "pending")
+          .map((t) => t.id)
+      : viewSections.flatMap((s) => s.items.map((t) => t.id));
 
   const multiSelect = useSelectionController(visibleOrderedIds);
   const selectedCount = multiSelect.selectedIds.size;
 
-  // Actions par lot : rejoue en boucle les mutations existantes puis vide la
-  // sélection. Volumes personnels (quelques tâches) → séquentiel, sans souci.
-  const forSelection = async (fn: (todo: Todo) => Promise<unknown> | void) => {
-    const picked = todos.filter((t) => multiSelect.selectedIds.has(t.id));
+  // Actions par lot (K2) : `updateManyTodos`/`toggleManyTodos` arment UN SEUL
+  // toast d'annulation restaurant chaque tâche à sa propre valeur d'avant —
+  // pas N annulations indépendantes qui se remplaceraient l'une l'autre. La
+  // suppression, elle, garde sa propre mécanique (délai + annulation par
+  // tâche) : c'est un système distinct, volontairement non unifié.
+  const withSelection = (run: (ids: string[]) => void) => {
+    const ids = [...multiSelect.selectedIds];
     multiSelect.clear();
-    for (const t of picked) await fn(t);
+    run(ids);
   };
   const batch = {
     today: () =>
-      void forSelection((t) =>
-        updateTodo(t.id, { scheduled_for: todayISO, someday: false, this_evening: false }),
+      withSelection((ids) =>
+        void updateManyTodos(ids, {
+          scheduled_for: todayISO,
+          someday: false,
+          this_evening: false,
+        }),
       ),
     tomorrow: () =>
-      void forSelection((t) =>
-        updateTodo(t.id, { scheduled_for: tomorrowISO, someday: false }),
+      withSelection((ids) =>
+        void updateManyTodos(ids, { scheduled_for: tomorrowISO, someday: false }),
       ),
-    someday: () => void forSelection((t) => updateTodo(t.id, { someday: true })),
-    // Terminer ne coche que les tâches en cours (cocher une terminée la rouvrirait).
-    complete: () =>
-      void forSelection((t) => {
-        if (t.status === "pending") return toggleTodo(t.id);
-      }),
+    someday: () =>
+      withSelection((ids) => void updateManyTodos(ids, { someday: true })),
+    // Ne coche que les tâches en cours (cocher une terminée la rouvrirait) —
+    // filtré dans `toggleManyTodos` lui-même.
+    complete: () => withSelection((ids) => void toggleManyTodos(ids)),
     assignProject: (projectId: string) =>
-      void forSelection((t) => updateTodo(t.id, { project_id: projectId, area_id: null })),
-    remove: () => void forSelection((t) => deleteTodo(t.id)),
+      withSelection(
+        (ids) => void updateManyTodos(ids, { project_id: projectId, area_id: null }),
+      ),
+    remove: () =>
+      withSelection((ids) => ids.forEach((id) => void deleteTodo(id))),
   };
 
   // Échap vide la sélection (avant le portail : deux gestes distincts).
@@ -356,6 +368,23 @@ export default function PlannerPage() {
     window.addEventListener("keydown", onKey, true);
     return () => window.removeEventListener("keydown", onKey, true);
   }, [selectedCount, multiSelect]);
+
+  // Ctrl/Cmd+Z : rejoue l'undo en attente (à un pas, pas un historique — un
+  // seul niveau, comme le reste de K2). Garde OBLIGATOIRE : ne rien faire si
+  // le focus est dans un champ de saisie, sinon on avalerait l'undo texte
+  // natif de l'Omnibar ou de l'éditeur de notes.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (!(e.metaKey || e.ctrlKey) || e.key.toLowerCase() !== "z") return;
+      const target = e.target as HTMLElement | null;
+      const tag = target?.tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA" || target?.isContentEditable) return;
+      e.preventDefault();
+      triggerPendingUndo();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
 
   // Une ligne en pause LINGER n'est pas déplaçable : le minuteur la ferait
   // disparaître en plein geste, et le drop entrerait en course avec le toggle.

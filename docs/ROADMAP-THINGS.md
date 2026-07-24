@@ -431,20 +431,48 @@ fidèle à l'œil). Collision de nom évitée : `multiSelect` ≠ `PlannerSelect
 
 ---
 
-## Phase K2 — Undo par toast (à un pas)
+## Phase K2 — Undo par toast (à un pas) ✅ FAITE
 
 **But** : « Annuler » sur chaque action réversible (au-delà de la suppression déjà couverte).
 
-1. **Mécanique** : chaque mutation réversible (compléter, replanifier, déplacer, lot) renvoie de
-   quoi rejouer son inverse ; toast sonner « Annuler » (déjà utilisé partout).
-2. **Cas récurrence** : annuler la complétion d'une tâche récurrente doit ramener
-   `scheduled_for`/`due_date`/`remind_at`/`reminded` à leur valeur d'avant (db::toggle les
-   avance — capturer l'état avant pour l'inverse).
+1. **Deux mécanismes distincts, volontairement non unifiés** (fable) : la suppression garde son
+   système existant (commit DIFFÉRÉ 5 s — rien n'est encore envoyé au backend tant qu'on n'a pas
+   cliqué ailleurs, `clearTimeout` suffit à annuler). Toggle/update sont déjà committés
+   (backend appelé, `todos:changed` émis) au moment où le toast s'affiche : annuler doit donc
+   rejouer une VRAIE seconde mutation restaurant les anciennes valeurs — jamais un `clearTimeout`.
+   Un toast de suppression et un toast d'undo générique peuvent coexister brièvement (deux
+   systèmes indépendants) : assumé, non corrigé.
+2. **Slot unique** (`useTodoMutations.ts`, module-level, décision « à un pas ») : toute nouvelle
+   action réversible remplace l'undo en attente et ferme son toast. Garde par id contre les
+   **closures de toast périmées** : si l'action B remplace l'undo de A pendant que le toast de A
+   est encore affiché (jusqu'à 5 s), cliquer sur son « Annuler » ne doit RIEN faire — sans cette
+   garde on aurait un undo à deux niveaux qui viole la règle « à un pas ». Armé APRÈS résolution
+   de l'IPC (jamais avant).
+3. **Le seul vrai piège** (`features/todos/undo.ts`, extrait en module PUR pour le tester sans
+   dépendance framework — `useTodoMutations.ts` importe `@/lib/swr-config` en valeur, non
+   résolvable par vitest sans plugin d'alias) : sur une tâche récurrente, `toggle()` n'achève pas,
+   il AVANCE `scheduled_for`/`due_date`/`remind_at`. Rejouer `toggle()` pour « annuler » avancerait
+   une SECONDE fois — ça ne l'annulerait pas. `restorePayloadForToggle` restaure explicitement les
+   trois champs vers leurs valeurs d'origine, jamais via un second `toggle()`.
+4. **`updateTodo` généralisé** : capture les valeurs d'AVANT pour les seules clés du payload
+   (`pickForRestore`) et arme un undo — ce qui rend réversibles À LA FOIS l'édition dans le
+   panneau de détail, le dépôt sur le rail (K1a) et les raccourcis du menu contextuel, sans code
+   dédié par site d'appel. `skipUndo` : utilisé par la restauration elle-même (jamais
+   d'undo-de-l'undo) et par les fonctions de lot.
+5. **Lot (K1c)** : `updateManyTodos`/`toggleManyTodos` — snapshot par tâche AVANT mutation,
+   **UN SEUL** toast restaure chacune à sa propre valeur d'avant (le lot est une unité, pas N
+   annulations indépendantes qui se remplaceraient). `Promise.allSettled`, pas `Promise.all` :
+   une restauration en échec ne doit pas annuler les N-1 autres.
+6. **Raccourci Ctrl/Cmd+Z** : rejoue le même slot (accélérateur, pas un historique). Garde
+   obligatoire : no-op si le focus est dans `input`/`textarea`/`contenteditable`, sinon on avale
+   l'undo texte natif de l'Omnibar ou de l'éditeur de notes.
 
-**Tester** : cocher puis Annuler restaure exactement l'état ; replanifier par lot puis Annuler
-revient en arrière.
+**Hors périmètre assumé** : réordonnancement seul (`set_ordering`, position pure, aucun risque de
+perte de données) ; création (supprimer EST l'undo) ; survie d'un projet/tag auto-créé après undo
+d'une affectation (le supprimer serait plus effrayant que le garder).
 
-**Fichiers clés** : `features/todos/useTodoMutations.ts`, `src-tauri/src/db.rs`.
+**Fichiers clés** : `features/todos/{undo,useTodoMutations}.ts`, `hooks/usePlannerTodos.ts`,
+`app/(app)/page.tsx`.
 
 ---
 

@@ -30,7 +30,8 @@ export const usePlannerTodos = () => {
 
   const todos = useMemo(() => sortTodos(rawTodos), [rawTodos]);
 
-  const { createTodo, toggleTodo, deleteTodo, updateTodo } = useTodoMutations();
+  const { createTodo, toggleTodo, deleteTodo, updateTodo, toggleManyTodos, updateManyTodos } =
+    useTodoMutations();
 
   /**
    * Crée une tâche depuis la saisie intelligente. `defaults` porte les défauts
@@ -142,6 +143,8 @@ export const usePlannerTodos = () => {
     toggleTodo,
     deleteTodo,
     updateTodo,
+    toggleManyTodos,
+    updateManyTodos,
     getTodosByStatus,
     getTodosByDate,
     getTodosByPriority,

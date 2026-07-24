@@ -2,6 +2,7 @@ import { useSWRConfig } from "swr";
 import { toast } from "sonner";
 import { todosApi } from "./api";
 import { nextOccurrence } from "./recurrence";
+import { pickForRestore, restorePayloadForToggle } from "./undo";
 import type { CreateTodoInput, Todo, UpdateTodoInput } from "./types";
 import { SWR_KEYS } from "@/lib/swr-config";
 import { todayLocalISODate } from "@/lib/date";
@@ -13,12 +14,82 @@ const UNDO_DELAY_MS = 5000;
 // hook : la suppression réelle n'est déclenchée qu'après le délai, sauf
 // annulation via le toast. Si l'app se ferme entre-temps, rien n'est perdu
 // côté base — seul le minuteur est perdu, la tâche réapparaîtra au rechargement.
+//
+// Mécanisme DÉLIBÉRÉMENT distinct de l'undo générique ci-dessous : restaurer
+// une tâche VRAIMENT supprimée impliquerait de recréer id/tags/sous-tâches
+// côté serveur, alors que retarder l'écriture est strictement plus simple.
+// Un toast de suppression et un toast d'undo générique peuvent donc coexister
+// brièvement — deux systèmes indépendants, volontairement non unifiés.
 const pendingDeletes = new Map<string, ReturnType<typeof setTimeout>>();
 
+// ---------------------------------------------------------------------------
+// Undo générique par MUTATION INVERSE (toggle, update, actions par lot).
+//
+// Contrairement à la suppression, ces mutations sont déjà committées (backend
+// appelé, `todos:changed` émis) au moment où le toast s'affiche : « annuler »
+// doit donc rejouer une VRAIE seconde mutation restaurant les anciennes
+// valeurs — jamais un `clearTimeout`. Un seul emplacement actif (décision :
+// undo « à un pas », pas d'historique) : toute nouvelle action réversible
+// remplace celle en attente et referme son toast.
+// ---------------------------------------------------------------------------
+
+interface UndoSlot {
+  id: number;
+  toastId: string | number;
+  run: () => Promise<void>;
+}
+
+let activeUndo: UndoSlot | null = null;
+let undoCounter = 0;
+
 /**
- * Mutations partagées (create / toggle / delete) avec mise à jour optimiste.
- * Le backend émet `todos:changed` après écriture : `useTodosSync` se charge
- * alors de la revalidation. On ne revalide ici qu'en cas d'erreur (rollback).
+ * Rejoue l'undo en attente, s'il y en a un — utilisé par le raccourci
+ * Ctrl/Cmd+Z. Ne couvre PAS les suppressions différées (mécanisme séparé,
+ * déjà annulables via leur propre toast tant qu'il est affiché).
+ */
+export function triggerPendingUndo(): void {
+  const slot = activeUndo;
+  if (!slot) return;
+  activeUndo = null;
+  toast.dismiss(slot.toastId);
+  void slot.run();
+}
+
+/**
+ * Arme l'undo générique : ferme le toast précédent s'il y en avait un (un
+ * seul emplacement actif), affiche le nouveau. La garde par `id` protège
+ * contre une closure de toast PÉRIMÉE : si une action B remplace l'undo de A
+ * pendant que le toast de A est encore visible (jusqu'à 5 s), cliquer sur
+ * « Annuler » de A ne doit rien faire — sans cette garde, on aurait un undo à
+ * deux niveaux qui viole la règle « à un pas ».
+ */
+function armUndo(message: string, run: () => Promise<void>): void {
+  if (activeUndo) toast.dismiss(activeUndo.toastId);
+  const id = ++undoCounter;
+  const clearIfCurrent = () => {
+    if (activeUndo?.id === id) activeUndo = null;
+  };
+  const toastId = toast(message, {
+    duration: UNDO_DELAY_MS,
+    action: {
+      label: "Annuler",
+      onClick: () => {
+        if (activeUndo?.id !== id) return; // périmé : remplacé depuis
+        activeUndo = null;
+        void run();
+      },
+    },
+    onDismiss: clearIfCurrent,
+    onAutoClose: clearIfCurrent,
+  });
+  activeUndo = { id, toastId, run };
+}
+
+/**
+ * Mutations partagées (create / toggle / delete / update) avec mise à jour
+ * optimiste. Le backend émet `todos:changed` après écriture : `useTodosSync`
+ * se charge alors de la revalidation. On ne revalide ici qu'en cas d'erreur
+ * (rollback).
  */
 export function useTodoMutations() {
   const { mutate, cache } = useSWRConfig();
@@ -31,6 +102,11 @@ export function useTodoMutations() {
   // Resynchronise depuis la base (utilisé pour le rollback sur erreur).
   const revalidate = () =>
     mutate((key) => typeof key === "string" && key.startsWith("todos"));
+
+  const getCached = (id: string): Todo | undefined =>
+    ((cache.get(SWR_KEYS.ALL_TODOS)?.data as Todo[] | undefined) ?? []).find(
+      (t) => t.id === id,
+    );
 
   const createTodo = async (payload: CreateTodoInput): Promise<Todo> => {
     const now = new Date().toISOString();
@@ -73,25 +149,33 @@ export function useTodoMutations() {
       await revalidate();
       throw error;
     }
+    // Pas d'undo à la création : supprimer EST l'undo (toast de `deleteTodo`).
   };
 
-  const toggleTodo = async (id: string): Promise<void> => {
-    const all = (cache.get(SWR_KEYS.ALL_TODOS)?.data as Todo[] | undefined) ?? [];
-    const todo = all.find((t) => t.id === id);
+  /**
+   * Bascule le statut d'une tâche. `skipUndo` : utilisé en interne par
+   * `toggleManyTodos` (un seul toast de lot, pas un par tâche) et par la
+   * restauration elle-même (jamais d'undo-de-l'undo).
+   */
+  const toggleTodo = async (
+    id: string,
+    options?: { skipUndo?: boolean },
+  ): Promise<void> => {
+    const before = getCached(id);
     const reschedules =
-      !!todo && todo.recurrence !== "none" && todo.status === "pending";
+      !!before && before.recurrence !== "none" && before.status === "pending";
     const now = new Date().toISOString();
 
-    if (reschedules && todo) {
+    if (reschedules && before) {
       // Tâche récurrente cochée → reportée à la prochaine occurrence.
       // L'échéance décale du MÊME delta (« planifiée lundi, due vendredi »
       // garde ses 4 jours d'écart) — jamais inventée si absente. Miroir du
       // comportement backend (db::toggle).
-      const next = nextOccurrence(todo.scheduled_for, todo);
-      let nextDue = todo.due_date;
-      if (next && todo.due_date && todo.scheduled_for) {
-        const delta = Date.parse(next) - Date.parse(todo.scheduled_for);
-        nextDue = new Date(Date.parse(todo.due_date) + delta)
+      const next = nextOccurrence(before.scheduled_for, before);
+      let nextDue = before.due_date;
+      if (next && before.due_date && before.scheduled_for) {
+        const delta = Date.parse(next) - Date.parse(before.scheduled_for);
+        nextDue = new Date(Date.parse(before.due_date) + delta)
           .toISOString()
           .slice(0, 10);
       }
@@ -118,13 +202,28 @@ export function useTodoMutations() {
 
     try {
       await todosApi.toggle(id);
-      toast.success(reschedules ? "Tâche reportée" : "Tâche mise à jour");
     } catch (error) {
       toast.error("Erreur lors de la mise à jour");
       await revalidate();
       throw error;
     }
+
+    if (options?.skipUndo || !before) return;
+
+    // Armé APRÈS résolution de l'IPC : latence locale imperceptible, et ça
+    // élimine le cas « undo armé sur un état déjà annulé par une erreur ».
+    const restore = restorePayloadForToggle(before);
+    const message = reschedules
+      ? "Tâche reportée"
+      : before.status === "completed"
+        ? "Tâche rouverte"
+        : "Tâche terminée";
+    armUndo(message, () => toggleRestoreUpdate(id, restore));
   };
+
+  /** Applique un payload de restauration sans jamais ré-armer d'undo. */
+  const toggleRestoreUpdate = (id: string, payload: UpdateTodoInput) =>
+    updateTodo(id, payload, { skipUndo: true });
 
   const deleteTodo = async (id: string): Promise<void> => {
     const all = (cache.get(SWR_KEYS.ALL_TODOS)?.data as Todo[] | undefined) ?? [];
@@ -159,10 +258,21 @@ export function useTodoMutations() {
     });
   };
 
+  /**
+   * Met à jour une tâche. Par défaut, capture les valeurs D'AVANT pour les
+   * seules clés du payload et arme un undo générique — c'est ce qui rend
+   * réversibles tout à la fois : édition dans le panneau de détail, glisser
+   * une tâche sur le rail (replanifier/affecter), et les raccourcis du menu
+   * contextuel. `skipUndo` : restauration elle-même, ou appel interne d'une
+   * fonction « par lot » qui arme SON PROPRE undo groupé.
+   */
   const updateTodo = async (
     id: string,
     payload: UpdateTodoInput,
+    options?: { skipUndo?: boolean; undoMessage?: string },
   ): Promise<void> => {
+    const before = getCached(id);
+
     patchCaches((todos) =>
       todos.map((todo) =>
         todo.id === id
@@ -178,7 +288,76 @@ export function useTodoMutations() {
       await revalidate();
       throw error;
     }
+
+    if (options?.skipUndo || !before) return;
+
+    const keys = Object.keys(payload) as (keyof UpdateTodoInput)[];
+    if (keys.length === 0) return;
+    const restore = pickForRestore(before, keys);
+    armUndo(options?.undoMessage ?? "Modifié", () =>
+      updateTodo(id, restore, { skipUndo: true }),
+    );
   };
 
-  return { createTodo, toggleTodo, deleteTodo, updateTodo };
+  /**
+   * Bascule plusieurs tâches (action par lot, K1c « Terminer ») : UN SEUL
+   * toast restaure chacune à sa propre valeur d'avant (décision : le lot est
+   * une unité, pas N annulations indépendantes). Ne touche que les tâches
+   * encore en cours (cocher une tâche déjà terminée la rouvrirait).
+   */
+  const toggleManyTodos = async (ids: string[]): Promise<void> => {
+    const all = (cache.get(SWR_KEYS.ALL_TODOS)?.data as Todo[] | undefined) ?? [];
+    const targets = ids
+      .map((id) => all.find((t) => t.id === id))
+      .filter((t): t is Todo => t !== undefined)
+      .filter((t) => t.status === "pending");
+    if (targets.length === 0) return;
+
+    await Promise.allSettled(targets.map((t) => toggleTodo(t.id, { skipUndo: true })));
+
+    const n = targets.length;
+    armUndo(`${n} tâche${n > 1 ? "s" : ""} terminée${n > 1 ? "s" : ""}`, async () => {
+      const results = await Promise.allSettled(
+        targets.map((t) => toggleRestoreUpdate(t.id, restorePayloadForToggle(t))),
+      );
+      if (results.some((r) => r.status === "rejected")) await revalidate();
+    });
+  };
+
+  /**
+   * Applique le MÊME payload à plusieurs tâches (action par lot, K1c). Un
+   * seul toast restaure chacune à sa propre valeur d'avant — les tâches
+   * peuvent avoir des dates différentes avant une replanification groupée.
+   */
+  const updateManyTodos = async (
+    ids: string[],
+    payload: UpdateTodoInput,
+  ): Promise<void> => {
+    const all = (cache.get(SWR_KEYS.ALL_TODOS)?.data as Todo[] | undefined) ?? [];
+    const keys = Object.keys(payload) as (keyof UpdateTodoInput)[];
+    const snapshots = ids
+      .map((id) => all.find((t) => t.id === id))
+      .filter((t): t is Todo => Boolean(t))
+      .map((t) => ({ id: t.id, restore: pickForRestore(t, keys) }));
+    if (snapshots.length === 0) return;
+
+    await Promise.allSettled(ids.map((id) => updateTodo(id, payload, { skipUndo: true })));
+
+    const n = snapshots.length;
+    armUndo(`${n} tâche${n > 1 ? "s" : ""} modifiée${n > 1 ? "s" : ""}`, async () => {
+      const results = await Promise.allSettled(
+        snapshots.map((s) => updateTodo(s.id, s.restore, { skipUndo: true })),
+      );
+      if (results.some((r) => r.status === "rejected")) await revalidate();
+    });
+  };
+
+  return {
+    createTodo,
+    toggleTodo,
+    deleteTodo,
+    updateTodo,
+    toggleManyTodos,
+    updateManyTodos,
+  };
 }
