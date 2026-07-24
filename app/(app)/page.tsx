@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { Suspense, useEffect, useMemo, useRef, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { AnimatePresence, LayoutGroup, motion } from "motion/react";
 import { toast } from "sonner";
 import { spring } from "@/lib/motion";
@@ -9,6 +10,7 @@ import { triggerPendingUndo } from "@/features/todos/useTodoMutations";
 import { useProjects } from "@/hooks/useProjects";
 import { useTags } from "@/hooks/useTags";
 import { TagFilterProvider } from "@/features/tags/tag-filter";
+import { DuplicateTodoProvider } from "@/features/todos/duplicate-context";
 import { useNotesMutations } from "@/features/notes/useNotesMutations";
 import Omnibar from "@/components/Omnibar";
 import { EmptyState } from "@/components/todo/EmptyState";
@@ -51,6 +53,7 @@ import {
   useSelectionController,
 } from "@/features/todos/selection-context";
 import { SelectionBar } from "@/components/todo/SelectionBar";
+import { TodoDetailSheet } from "@/components/todo/TodoDetailSheet";
 import type { TodoListDnd } from "@/components/todo/AnimatedTodoList";
 import { todayLocalISODate, toLocalISODate } from "@/lib/date";
 import type { Priority, Todo, TodoStatus } from "@/features/todos/types";
@@ -136,6 +139,19 @@ const chromeVariants = {
 } as const;
 
 export default function PlannerPage() {
+  return (
+    <Suspense fallback={null}>
+      <PlannerPageContent />
+    </Suspense>
+  );
+}
+
+/**
+ * Contenu réel de la page — extrait pour le `Suspense` qu'exige
+ * `useSearchParams()` sous export statique (même précédent que
+ * `app/(app)/notes/page.tsx`), sans réorganiser tout le composant autour.
+ */
+function PlannerPageContent() {
   const {
     todos,
     loading,
@@ -146,6 +162,7 @@ export default function PlannerPage() {
     updateTodo,
     toggleManyTodos,
     updateManyTodos,
+    duplicateTodo,
   } = usePlannerTodos();
   const { createNote } = useNotesMutations();
   const {
@@ -159,6 +176,7 @@ export default function PlannerPage() {
     deleteArea,
     deleteProject,
     completeProject,
+    duplicateProject,
   } = useProjects();
   const { tags } = useTags();
   const { positionsByContext, setOrdering } = useOrderings();
@@ -443,6 +461,53 @@ export default function PlannerPage() {
     scrollRef.current?.scrollTo({ top: 0 });
   };
 
+  /**
+   * Deep-link depuis Quick Find (Phase L) : `?project=`/`?area=`/`?tag=`/
+   * `?task=`, consommés puis EFFACÉS (`router.replace`) pour que retour et
+   * rafraîchissement ne rejouent pas la sélection. Gardé sur `searchParams`
+   * (pas un lecture au montage seul) : si l'utilisateur est DÉJÀ sur `/` et
+   * choisit un autre résultat, c'est une navigation de MÊME route — Next ne
+   * remonte pas la page, seul un effet keyé sur la valeur du paramètre le
+   * détecte.
+   *
+   * Pour une tâche : une seule tentative une fois les tâches chargées (pas de
+   * ré-essai indéfini sur un id invalide/supprimé) ; on résout son projet/
+   * domaine pour amener la bonne branche à l'écran AVANT d'ouvrir le détail —
+   * jamais un panneau flottant sur une vue sans rapport.
+   */
+  const searchParams = useSearchParams();
+  const router = useRouter();
+  const requestedProject = searchParams.get("project");
+  const requestedArea = searchParams.get("area");
+  const requestedTag = searchParams.get("tag");
+  const requestedTask = searchParams.get("task");
+  const [deepLinkedTaskId, setDeepLinkedTaskId] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!requestedProject && !requestedArea && !requestedTag && !requestedTask) return;
+    if (loading) return; // une seule tentative, une fois les tâches chargées
+
+    if (requestedProject) {
+      changeSelection({ kind: "project", id: requestedProject });
+    } else if (requestedArea) {
+      changeSelection({ kind: "area", id: requestedArea });
+    } else if (requestedTag) {
+      setTagFilter(requestedTag);
+      changeSelection({ kind: "view", view: "anytime" });
+    } else if (requestedTask) {
+      const t = todos.find((x) => x.id === requestedTask);
+      if (t) {
+        if (t.project_id) changeSelection({ kind: "project", id: t.project_id });
+        else if (t.area_id) changeSelection({ kind: "area", id: t.area_id });
+        setDeepLinkedTaskId(t.id);
+      }
+    }
+    router.replace("/", { scroll: false });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [requestedProject, requestedArea, requestedTag, requestedTask, loading, todos]);
+
+  const deepLinkedTodo = todos.find((t) => t.id === deepLinkedTaskId) ?? null;
+
   // Échap referme la vue portail.
   useEffect(() => {
     if (!portalKey) return;
@@ -565,6 +630,7 @@ export default function PlannerPage() {
   return (
     <TagFilterProvider onFilterTag={setTagFilter}>
     <SelectionProvider value={multiSelect}>
+    <DuplicateTodoProvider onDuplicate={(id) => void duplicateTodo(id)}>
     <div className="relative flex h-full">
       <PlannerRail
         selection={selection}
@@ -581,6 +647,11 @@ export default function PlannerPage() {
         onRenameProject={(id, name) => void updateProject(id, { name })}
         onDeleteArea={(id) => void deleteArea(id)}
         onDeleteProject={(id) => void deleteProject(id)}
+        onDuplicateProject={(id) =>
+          void duplicateProject(id).then((copy) =>
+            changeSelection({ kind: "project", id: copy.id }),
+          )
+        }
         onDropTodo={handleRailDrop}
       />
 
@@ -787,7 +858,27 @@ export default function PlannerPage() {
           </div>
         </div>
       </div>
+
+      {/* Panneau de détail autonome pour un deep-link Quick Find (`?task=`) :
+          la tâche n'est pas forcément le rendu d'une ligne montée à l'instant
+          (elle vient d'atterrir dans SA branche), donc pas de `TodoItem` à
+          ouvrir — un `Sheet` indépendant lié à son id. */}
+      {deepLinkedTodo && (
+        <TodoDetailSheet
+          open
+          onOpenChange={(nextOpen) => {
+            if (!nextOpen) setDeepLinkedTaskId(null);
+          }}
+          todo={deepLinkedTodo}
+          onUpdate={(payload) => void updateTodo(deepLinkedTodo.id, payload)}
+          onDelete={() => {
+            void deleteTodo(deepLinkedTodo.id);
+            setDeepLinkedTaskId(null);
+          }}
+        />
+      )}
     </div>
+    </DuplicateTodoProvider>
     </SelectionProvider>
     </TagFilterProvider>
   );

@@ -476,19 +476,45 @@ d'une affectation (le supprimer serait plus effrayant que le garder).
 
 ---
 
-## Phase L — Recherche & capture avancée
+## Phase L — Recherche & capture avancée ✅ FAITE
 
 **But** : Quick Find global + duplication/modèles.
 
-1. **Quick Find** : exposer la recherche (déjà amorcée : `components/SearchOverlay.tsx`,
-   `features/search/`) en palette globale — tâches, projets, tags, notes (fusion lexicale +
-   sémantique existante via le sidecar).
-2. **Duplication / modèles** : dupliquer une tâche ou un projet (avec ses tâches/sous-tâches)
-   comme gabarit réutilisable — commande Rust `duplicate_*` + option de menu contextuel.
+1. **Quick Find** : fusion **lexicale** (locale, sans le sidecar) pour projets/domaines/tags —
+   la base vectorielle n'indexe que tâches/notes depuis la Phase D, l'étendre serait un chantier
+   Python à part, hors périmètre. `lexicalMatch` (`features/search/lexical.ts`, pur, testé) :
+   sous-chaîne insensible à la casse ET aux **diacritiques** (NFD) — NOCASE seul (SQLite) ne
+   suffit pas pour une app en français, « epic » doit matcher « Épicerie ». Classement : préfixe
+   > position > longueur. Synchrone à chaque frappe (filtre en mémoire, pas de débounce) ; la
+   sémantique (tâches/notes, sidecar) reste débattue 250 ms. Regroupement par type dans la
+   palette (Projets, Domaines, Tags, Tâches, Notes — ordre façon Things). Clé composite
+   `kind:id` : un projet et une tâche peuvent partager un id selon le schéma.
+2. **Deep-link Quick Find → planner** (le point le plus risqué, verrouillé) : sélectionner un
+   résultat navigue vers `/?project=`/`?area=`/`?tag=`/`?task=`, consommé par un effet **keyé sur
+   la valeur du paramètre** (pas une lecture au montage seul — sinon un second choix alors qu'on
+   est DÉJÀ sur `/` serait ignoré, Next ne remonte pas la page sur une navigation de même route),
+   puis `router.replace("/")` pour que retour/rafraîchissement ne rejouent pas la sélection. Pour
+   une tâche : une seule tentative une fois les tâches chargées (pas de ré-essai indéfini sur un
+   id supprimé), résolution du projet/domaine parent AVANT ouverture d'un `TodoDetailSheet`
+   **autonome** (pas lié à une ligne montée — la tâche vient d'atterrir dans sa branche). Page
+   enveloppée en `Suspense` (requis par `useSearchParams` sous export statique), même précédent
+   que `app/(app)/notes/page.tsx`.
+3. **Duplication** : `duplicate_todo_tx`, helper Rust partagé en transaction — texte/note/
+   priorité/**règle de récurrence**/tags/sous-tâches copiés (jamais cochées, même si l'original
+   l'était) ; statut/dates remis à zéro (gabarit réutilisable, pas un clone d'état). Récurrence
+   copiée TELLE QUELLE en connaissance de cause : dupliquer une tâche récurrente signifie que la
+   copie génère sa propre prochaine occurrence, pas un bug. `duplicate_project` copie TOUTES les
+   tâches — y compris terminées, remises à faire (un projet achevé est le candidat n°1 à devenir
+   un gabarit) — suffixe « (copie) » sur le projet seulement (deux projets identiques dans le
+   rail prêteraient à confusion ; les tâches gardent leur nom exact). Pas d'undo dédié :
+   supprimer la copie EST l'undo, même classe que la création.
+4. **UI** : contexte `duplicate-context.tsx` (même parti pris que `tag-filter.tsx`) — tous les
+   styles de section rendent `TodoItem` directement, threader une prop aurait touché 6+ fichiers.
+   Entrée « Dupliquer » dans le menu contextuel de `TodoItem` et dans celui du projet au rail.
 
-**Tester** : Quick Find trouve un projet et une tâche ; dupliquer un projet recrée sa structure.
-
-**Fichiers clés** : `components/SearchOverlay.tsx`, `features/search/`, `src-tauri/src/commands.rs`.
+**Fichiers clés** : `components/SearchOverlay.tsx`, `features/search/lexical.ts`,
+`features/todos/duplicate-context.tsx`, `src-tauri/src/db.rs` (`duplicate_todo_tx`,
+`duplicate_project`), `app/(app)/page.tsx` (deep-link + Suspense).
 
 ---
 

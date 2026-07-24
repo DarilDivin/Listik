@@ -156,6 +156,143 @@ pub async fn create(pool: &SqlitePool, input: CreateTodo) -> Result<Todo, sqlx::
     Ok(todo)
 }
 
+// ---------------------------------------------------------------------------
+// Duplication — « gabarit réutilisable » (Phase L)
+// ---------------------------------------------------------------------------
+
+/// Copie une tâche DANS une transaction en cours : titre/note/priorité/règle
+/// de récurrence/tags/sous-tâches copiés ; statut et dates remis à zéro (un
+/// gabarit réutilisable, pas un clone d'état). Les sous-tâches sont copiées
+/// JAMAIS cochées, même si l'original l'était.
+///
+/// La règle de récurrence est copiée TELLE QUELLE, en connaissance de cause :
+/// si l'original est récurrent, la copie génère SA PROPRE prochaine
+/// occurrence en se terminant — c'est ce que « dupliquer une tâche
+/// récurrente » signifie, pas un bug à corriger.
+///
+/// `project_id`/`area_id` sont des paramètres (pas recopiés de `source`) pour
+/// que `duplicate_project` puisse rattacher chaque copie au NOUVEAU projet.
+async fn duplicate_todo_tx(
+    tx: &mut sqlx::Transaction<'_, Sqlite>,
+    source: &Todo,
+    project_id: Option<String>,
+    area_id: Option<String>,
+) -> Result<String, sqlx::Error> {
+    let now = now_iso();
+    let new_id = Uuid::new_v4().to_string();
+
+    sqlx::query(
+        "INSERT INTO todos (id, text, note, list, status, priority, recurrence, recur_interval, \
+         recur_weekday, recur_setpos, recur_mode, scheduled_for, due_date, remind_at, \
+         project_id, area_id, heading_id, this_evening, someday, needs_embedding, \
+         created_at, updated_at) \
+         VALUES (?, ?, ?, NULL, 'pending', ?, ?, ?, ?, ?, ?, NULL, NULL, NULL, ?, ?, NULL, 0, 0, 1, ?, ?)",
+    )
+    .bind(&new_id)
+    .bind(&source.text)
+    .bind(&source.note)
+    .bind(source.priority)
+    .bind(source.recurrence)
+    .bind(source.recur_interval)
+    .bind(source.recur_weekday)
+    .bind(source.recur_setpos)
+    .bind(source.recur_mode)
+    .bind(&project_id)
+    .bind(&area_id)
+    .bind(&now)
+    .bind(&now)
+    .execute(&mut **tx)
+    .await?;
+
+    for sub in &source.sub_tasks {
+        sqlx::query(
+            "INSERT INTO sub_tasks (id, todo_id, text, done, position, created_at) \
+             VALUES (?, ?, ?, 0, ?, ?)",
+        )
+        .bind(Uuid::new_v4().to_string())
+        .bind(&new_id)
+        .bind(&sub.text)
+        .bind(sub.position)
+        .bind(&now)
+        .execute(&mut **tx)
+        .await?;
+    }
+
+    for tag in &source.tags {
+        sqlx::query("INSERT OR IGNORE INTO task_tags (todo_id, tag_id) VALUES (?, ?)")
+            .bind(&new_id)
+            .bind(&tag.id)
+            .execute(&mut **tx)
+            .await?;
+    }
+
+    Ok(new_id)
+}
+
+/// Duplique une tâche isolée (menu contextuel) : même projet/domaine que
+/// l'original.
+pub async fn duplicate_todo(pool: &SqlitePool, id: &str) -> Result<Todo, sqlx::Error> {
+    let source = get(pool, id).await?.ok_or(sqlx::Error::RowNotFound)?;
+    let mut tx = pool.begin().await?;
+    let new_id = duplicate_todo_tx(
+        &mut tx,
+        &source,
+        source.project_id.clone(),
+        source.area_id.clone(),
+    )
+    .await?;
+    tx.commit().await?;
+    get(pool, &new_id).await?.ok_or(sqlx::Error::RowNotFound)
+}
+
+/// Duplique un projet AVEC toutes ses tâches — y compris terminées, remises à
+/// zéro : un projet achevé est le candidat n°1 à devenir un gabarit (« Voyage »
+/// bouclé le mois dernier, dupliqué pour le prochain). Le projet copié porte
+/// le suffixe « (copie) » (deux projets identiques dans le rail prêteraient à
+/// confusion) ; ses tâches, elles, gardent leur nom exact.
+pub async fn duplicate_project(pool: &SqlitePool, id: &str) -> Result<Project, sqlx::Error> {
+    let source = get_project(pool, id).await?.ok_or(sqlx::Error::RowNotFound)?;
+    let tasks = {
+        let query = format!("SELECT {SELECT_COLUMNS} FROM todos WHERE project_id = ?");
+        let rows = sqlx::query_as::<_, Todo>(&query)
+            .bind(id)
+            .fetch_all(pool)
+            .await?;
+        attach_relations(pool, rows).await?
+    };
+
+    let mut tx = pool.begin().await?;
+    let now = now_iso();
+    let new_project_id = Uuid::new_v4().to_string();
+    let new_name = format!("{} (copie)", source.name);
+    let (max,): (Option<i64>,) = sqlx::query_as("SELECT MAX(position) FROM projects")
+        .fetch_one(&mut *tx)
+        .await?;
+
+    sqlx::query(
+        "INSERT INTO projects (id, name, note, area_id, status, deadline, position, created_at, updated_at) \
+         VALUES (?, ?, ?, ?, 'active', NULL, ?, ?, ?)",
+    )
+    .bind(&new_project_id)
+    .bind(&new_name)
+    .bind(&source.note)
+    .bind(&source.area_id)
+    .bind(max.map(|p| p + 1).unwrap_or(0))
+    .bind(&now)
+    .bind(&now)
+    .execute(&mut *tx)
+    .await?;
+
+    for task in &tasks {
+        duplicate_todo_tx(&mut tx, task, Some(new_project_id.clone()), None).await?;
+    }
+
+    tx.commit().await?;
+    get_project(pool, &new_project_id)
+        .await?
+        .ok_or(sqlx::Error::RowNotFound)
+}
+
 pub async fn update(pool: &SqlitePool, id: &str, input: UpdateTodo) -> Result<Todo, sqlx::Error> {
     let now = now_iso();
 
@@ -1220,16 +1357,17 @@ pub async fn set_todo_tags(
 #[cfg(test)]
 mod tests {
     use super::{
-        create, create_area, create_note, create_project, create_tag, delete, delete_area,
-        delete_note, delete_project, delete_tag, due_reminders, get, get_settings, list_all,
-        list_areas, list_by_date, list_notes, list_projects, list_tags, mark_reminded,
-        reconcile_lists_into_projects, search_notes, set_todo_tags, take_due_digest,
-        todos_needing_embedding, toggle, update, update_area, update_note, update_project,
-        update_settings, update_tag,
+        create, create_area, create_note, create_project, create_subtask, create_tag, delete,
+        delete_area, delete_note, delete_project, delete_tag, due_reminders, duplicate_project,
+        duplicate_todo, get, get_settings, list_all, list_areas, list_by_date, list_notes,
+        list_projects, list_subtasks, list_tags, mark_reminded, reconcile_lists_into_projects,
+        search_notes, set_todo_tags, take_due_digest, todos_needing_embedding, toggle, update,
+        update_area, update_note, update_project, update_settings, update_subtask, update_tag,
     };
     use crate::models::{
-        CreateArea, CreateNote, CreateProject, CreateTag, CreateTodo, TodoStatus, UpdateArea,
-        UpdateNote, UpdateProject, UpdateSettings, UpdateTag, UpdateTodo,
+        CreateArea, CreateNote, CreateProject, CreateSubTask, CreateTag, CreateTodo, TodoStatus,
+        UpdateArea, UpdateNote, UpdateProject, UpdateSettings, UpdateSubTask, UpdateTag,
+        UpdateTodo,
     };
     use sqlx::sqlite::SqlitePoolOptions;
     use sqlx::SqlitePool;
@@ -1998,6 +2136,107 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(links, 0);
+    }
+
+    #[tokio::test]
+    async fn duplicate_todo_copies_and_resets() {
+        let pool = memory_pool().await;
+        let tag = create_tag(&pool, CreateTag { name: "urgent".into(), parent_id: None })
+            .await
+            .unwrap();
+
+        let mut input = new_todo("Payer le loyer");
+        input.note = Some("virement mensuel".into());
+        input.priority = Some(crate::models::Priority::High);
+        input.recurrence = Some(crate::models::Recurrence::Monthly);
+        input.scheduled_for = Some("2026-06-01".to_string());
+        input.due_date = Some("2026-06-05".to_string());
+        input.remind_at = Some("2026-06-01T09:00".to_string());
+        input.project_id = Some("proj-1".into());
+        input.someday = false;
+        let source = create(&pool, input).await.unwrap();
+        set_todo_tags(&pool, &source.id, &[tag.id.clone()]).await.unwrap();
+        create_subtask(&pool, CreateSubTask { todo_id: source.id.clone(), text: "Sous-tâche".into() })
+            .await
+            .unwrap();
+        // Coche la sous-tâche : la copie ne doit PAS hériter de son état.
+        let subs = list_subtasks(&pool, &source.id).await.unwrap();
+        update_subtask(&pool, &subs[0].id, UpdateSubTask { done: Some(true), ..Default::default() })
+            .await
+            .unwrap();
+        // La tâche ORIGINALE est terminée : la copie doit rester à faire.
+        let source = update(
+            &pool,
+            &source.id,
+            UpdateTodo { status: Some(crate::models::TodoStatus::Completed), ..Default::default() },
+        )
+        .await
+        .unwrap();
+
+        let copy = duplicate_todo(&pool, &source.id).await.unwrap();
+
+        // Copié : contenu, priorité, règle de récurrence, tags, projet.
+        assert_eq!(copy.text, "Payer le loyer");
+        assert_eq!(copy.note.as_deref(), Some("virement mensuel"));
+        assert!(matches!(copy.priority, crate::models::Priority::High));
+        assert!(matches!(copy.recurrence, crate::models::Recurrence::Monthly));
+        assert_eq!(copy.project_id.as_deref(), Some("proj-1"));
+        assert_eq!(copy.tags.len(), 1);
+        assert_eq!(copy.tags[0].name, "urgent");
+        assert_eq!(copy.sub_tasks.len(), 1);
+        assert!(!copy.sub_tasks[0].done, "la sous-tâche ne doit pas être cochée");
+
+        // Remis à zéro : statut, dates, rappel — un gabarit, pas un clone d'état.
+        assert!(matches!(copy.status, TodoStatus::Pending));
+        assert_eq!(copy.scheduled_for, None);
+        assert_eq!(copy.due_date, None);
+        assert_eq!(copy.remind_at, None);
+
+        // Deux tâches distinctes en base, l'originale reste terminée.
+        assert_eq!(list_all(&pool).await.unwrap().len(), 2);
+        assert!(matches!(get(&pool, &source.id).await.unwrap().unwrap().status, TodoStatus::Completed));
+    }
+
+    #[tokio::test]
+    async fn duplicate_project_copies_all_tasks_including_completed_and_resets_them() {
+        let pool = memory_pool().await;
+        let project = create_project(
+            &pool,
+            CreateProject { name: "Voyage".into(), area_id: None, note: Some("checklist".into()), deadline: None },
+        )
+        .await
+        .unwrap();
+
+        let mut a = new_todo("Réserver l'hôtel");
+        a.project_id = Some(project.id.clone());
+        a.scheduled_for = Some("2026-06-01".to_string());
+        create(&pool, a).await.unwrap();
+
+        let mut b = new_todo("Faire les valises");
+        b.project_id = Some(project.id.clone());
+        let b = create(&pool, b).await.unwrap();
+        // Une tâche déjà terminée : le candidat n°1 à devenir un gabarit.
+        toggle(&pool, &b.id).await.unwrap();
+
+        let copy = duplicate_project(&pool, &project.id).await.unwrap();
+
+        assert_eq!(copy.name, "Voyage (copie)");
+        assert_eq!(copy.note.as_deref(), Some("checklist"));
+        assert!(matches!(copy.status, crate::models::ProjectStatus::Active));
+
+        let all = list_all(&pool).await.unwrap();
+        let copied_tasks: Vec<_> = all.iter().filter(|t| t.project_id.as_deref() == Some(&copy.id)).collect();
+        assert_eq!(copied_tasks.len(), 2, "les deux tâches, y compris la terminée");
+        assert!(
+            copied_tasks.iter().all(|t| matches!(t.status, TodoStatus::Pending)),
+            "toutes remises à faire, même celle qui était terminée",
+        );
+
+        // L'original n'est pas touché.
+        assert_eq!(
+            all.iter().filter(|t| t.project_id.as_deref() == Some(project.id.as_str())).count(),
+            2
+        );
     }
 
     #[tokio::test]

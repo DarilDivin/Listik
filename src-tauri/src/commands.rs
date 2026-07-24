@@ -611,6 +611,38 @@ pub async fn delete_tag(
 }
 
 // ---------------------------------------------------------------------------
+// Duplication (Phase L — « gabarit réutilisable »)
+// ---------------------------------------------------------------------------
+
+#[tauri::command]
+pub async fn duplicate_todo(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    id: String,
+) -> Result<Todo, String> {
+    let todo = db::duplicate_todo(&state.pool, &id)
+        .await
+        .map_err(|e| e.to_string())?;
+    notify_changed(&app);
+    Ok(todo)
+}
+
+#[tauri::command]
+pub async fn duplicate_project(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    id: String,
+) -> Result<Project, String> {
+    let project = db::duplicate_project(&state.pool, &id)
+        .await
+        .map_err(|e| e.to_string())?;
+    notify_projects_changed(&app);
+    // Ses tâches sont nouvelles : les vues de tâches doivent aussi se revalider.
+    notify_changed(&app);
+    Ok(project)
+}
+
+// ---------------------------------------------------------------------------
 // Commandes ordre manuel
 // ---------------------------------------------------------------------------
 

@@ -196,6 +196,8 @@ fn main() {
             commands::set_todo_tags,
             commands::get_orderings,
             commands::set_ordering,
+            commands::duplicate_todo,
+            commands::duplicate_project,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

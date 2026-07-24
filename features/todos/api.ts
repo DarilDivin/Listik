@@ -14,4 +14,6 @@ export const todosApi = {
     invoke<Todo>("update_todo", { id, payload }),
   toggle: (id: string) => invoke<Todo>("toggle_todo", { id }),
   remove: (id: string) => invoke<void>("delete_todo", { id }),
+  /** Copie (texte/tags/sous-tâches) en gabarit réutilisable — statut/dates remis à zéro. */
+  duplicate: (id: string) => invoke<Todo>("duplicate_todo", { id }),
 };

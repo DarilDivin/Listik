@@ -120,6 +120,23 @@ export function useProjectsMutations() {
     }
   };
 
+  /**
+   * Duplique un projet AVEC toutes ses tâches (Phase L) : un projet achevé
+   * est le candidat n°1 à devenir un gabarit. Pas d'undo dédié : supprimer la
+   * copie EST l'undo.
+   */
+  const duplicateProject = async (id: string): Promise<Project> => {
+    try {
+      const copy = await projectsApi.duplicate(id);
+      toast.success("Projet dupliqué");
+      return copy;
+    } catch (error) {
+      toast.error("Erreur lors de la duplication du projet");
+      await revalidate();
+      throw error;
+    }
+  };
+
   return {
     createArea,
     updateArea,
@@ -127,5 +144,6 @@ export function useProjectsMutations() {
     createProject,
     updateProject,
     deleteProject,
+    duplicateProject,
   };
 }

@@ -27,4 +27,6 @@ export const projectsApi = {
   update: (id: string, payload: UpdateProjectInput) =>
     invoke<Project>("update_project", { id, payload }),
   remove: (id: string) => invoke<void>("delete_project", { id }),
+  /** Copie le projet ET toutes ses tâches (même terminées, remises à faire). */
+  duplicate: (id: string) => invoke<Project>("duplicate_project", { id }),
 };

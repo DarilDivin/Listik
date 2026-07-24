@@ -7,6 +7,7 @@ import { cn } from "@/lib/utils";
 import {
   ArrowRight,
   Check,
+  Copy,
   Flag,
   RotateCcw,
   SquarePen,
@@ -20,6 +21,7 @@ import { TodoCheckbox } from "@/components/todo/TodoCheckbox";
 import { TodoMetaLine } from "@/components/todo/TodoMetaLine";
 import { TodoDetailSheet } from "@/components/todo/TodoDetailSheet";
 import { useSelection } from "@/features/todos/selection-context";
+import { useDuplicateTodo } from "@/features/todos/duplicate-context";
 import {
   ContextMenu,
   ContextMenuContent,
@@ -73,6 +75,7 @@ export function TodoItem({
   const editable = Boolean(onUpdate);
   const selection = useSelection();
   const isSelected = selection?.isSelected(todo.id) ?? false;
+  const duplicateTodo = useDuplicateTodo();
 
   const [hovered, setHovered] = useState(false);
   const [detailOpen, setDetailOpen] = useState(false);
@@ -243,6 +246,13 @@ export function TodoItem({
             <ContextMenuItem onSelect={openDetail}>
               <SquarePen />
               Modifier…
+            </ContextMenuItem>
+          )}
+
+          {duplicateTodo && (
+            <ContextMenuItem onSelect={() => duplicateTodo(todo.id)}>
+              <Copy />
+              Dupliquer
             </ContextMenuItem>
           )}
 

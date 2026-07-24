@@ -152,6 +152,8 @@ interface PlannerRailProps {
   onRenameProject: (id: string, name: string) => void;
   onDeleteArea: (id: string) => void;
   onDeleteProject: (id: string) => void;
+  /** Copie le projet ET toutes ses tâches (Phase L, gabarit réutilisable). */
+  onDuplicateProject: (id: string) => void;
   /** Dépôt d'une tâche sur une vue/un projet (mutation, voir `dropIntent`). */
   onDropTodo: (target: RailDropTarget, todoId: string) => void;
 }
@@ -182,6 +184,7 @@ export function PlannerRail({
   onRenameProject,
   onDeleteArea,
   onDeleteProject,
+  onDuplicateProject,
   onDropTodo,
 }: PlannerRailProps) {
   // Domaines dépliés (tous ouverts par défaut : on ne cache pas le travail).
@@ -281,6 +284,9 @@ export function PlannerRail({
             }}
           >
             Renommer…
+          </ContextMenuItem>
+          <ContextMenuItem onSelect={() => onDuplicateProject(project.id)}>
+            Dupliquer
           </ContextMenuItem>
           <ContextMenuItem
             variant="destructive"

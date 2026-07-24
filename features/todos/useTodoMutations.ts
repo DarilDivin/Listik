@@ -352,6 +352,23 @@ export function useTodoMutations() {
     });
   };
 
+  /**
+   * Duplique une tâche (menu contextuel, Phase L) : « gabarit réutilisable » —
+   * texte/tags/sous-tâches copiés, statut/dates remis à zéro (voir
+   * `db::duplicate_todo_tx`). Pas d'undo dédié : supprimer la copie EST
+   * l'undo, même classe que la création.
+   */
+  const duplicateTodo = async (id: string): Promise<Todo> => {
+    try {
+      const copy = await todosApi.duplicate(id);
+      toast.success("Tâche dupliquée");
+      return copy;
+    } catch (error) {
+      toast.error("Erreur lors de la duplication");
+      throw error;
+    }
+  };
+
   return {
     createTodo,
     toggleTodo,
@@ -359,5 +376,6 @@ export function useTodoMutations() {
     updateTodo,
     toggleManyTodos,
     updateManyTodos,
+    duplicateTodo,
   };
 }
