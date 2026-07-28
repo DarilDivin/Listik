@@ -10,27 +10,28 @@ import { todayLocalISODate } from "@/lib/date";
 type TodoUpdater = (todos: Todo[]) => Todo[];
 
 const UNDO_DELAY_MS = 5000;
-// Suppressions différées (id → minuteur), partagé entre tous les appels du
-// hook : la suppression réelle n'est déclenchée qu'après le délai, sauf
-// annulation via le toast. Si l'app se ferme entre-temps, rien n'est perdu
-// côté base — seul le minuteur est perdu, la tâche réapparaîtra au rechargement.
-//
-// Mécanisme DÉLIBÉRÉMENT distinct de l'undo générique ci-dessous : restaurer
-// une tâche VRAIMENT supprimée impliquerait de recréer id/tags/sous-tâches
-// côté serveur, alors que retarder l'écriture est strictement plus simple.
-// Un toast de suppression et un toast d'undo générique peuvent donc coexister
-// brièvement — deux systèmes indépendants, volontairement non unifiés.
-const pendingDeletes = new Map<string, ReturnType<typeof setTimeout>>();
 
 // ---------------------------------------------------------------------------
-// Undo générique par MUTATION INVERSE (toggle, update, actions par lot).
+// Undo générique (Phase O — un seul mécanisme pour toute mutation réversible :
+// suppression, toggle, update, actions par lot). Un seul emplacement actif
+// (décision : undo « à un pas », pas d'historique) : toute nouvelle action
+// réversible ferme le toast en attente et le remplace, quelle que soit sa
+// nature — avant l'unification, la suppression vivait dans son propre système
+// (son propre toast, sa propre Map de minuteurs) et pouvait rester annulable
+// EN MÊME TEMPS qu'un toggle/update venait d'armer le sien : deux toasts
+// « Annuler » actifs, Ctrl+Z ne rejouant que l'un des deux. Un seul emplacement
+// élimine ce cas.
 //
-// Contrairement à la suppression, ces mutations sont déjà committées (backend
-// appelé, `todos:changed` émis) au moment où le toast s'affiche : « annuler »
-// doit donc rejouer une VRAIE seconde mutation restaurant les anciennes
-// valeurs — jamais un `clearTimeout`. Un seul emplacement actif (décision :
-// undo « à un pas », pas d'historique) : toute nouvelle action réversible
-// remplace celle en attente et referme son toast.
+// Les deux NATURES de restauration restent différentes en interne (légitime :
+// ce sont deux opérations différentes), seul le SLOT qui les arme est commun :
+// - suppression : la ligne est retirée du cache tout de suite, mais l'écriture
+//   côté backend est différée de `UNDO_DELAY_MS` — annuler = `clearTimeout` +
+//   réinsertion, sans jamais toucher le serveur. Recréer une tâche VRAIMENT
+//   supprimée impliquerait de reconstruire id/tags/sous-tâches côté serveur ;
+//   retarder l'écriture reste strictement plus simple.
+// - toggle/update : déjà committées (backend appelé, `todos:changed` émis) au
+//   moment où le toast s'affiche — annuler rejoue une VRAIE seconde mutation
+//   restaurant les anciennes valeurs.
 // ---------------------------------------------------------------------------
 
 interface UndoSlot {
@@ -44,8 +45,8 @@ let undoCounter = 0;
 
 /**
  * Rejoue l'undo en attente, s'il y en a un — utilisé par le raccourci
- * Ctrl/Cmd+Z. Ne couvre PAS les suppressions différées (mécanisme séparé,
- * déjà annulables via leur propre toast tant qu'il est affiché).
+ * Ctrl/Cmd+Z. Couvre toute mutation réversible, suppression comprise
+ * (unifiées sur ce même emplacement, Phase O).
  */
 export function triggerPendingUndo(): void {
   const slot = activeUndo;
@@ -231,8 +232,9 @@ export function useTodoMutations() {
 
     patchCaches((todos) => todos.filter((todo) => todo.id !== id));
 
+    let committed = false;
     const commit = async () => {
-      pendingDeletes.delete(id);
+      committed = true;
       try {
         await todosApi.remove(id);
       } catch {
@@ -240,21 +242,48 @@ export function useTodoMutations() {
         await revalidate();
       }
     };
+    const timer = setTimeout(commit, UNDO_DELAY_MS);
 
-    pendingDeletes.set(id, setTimeout(commit, UNDO_DELAY_MS));
+    armUndo("Tâche supprimée", async () => {
+      if (committed) return; // trop tard : le délai s'est déjà écoulé
+      clearTimeout(timer);
+      if (removed) patchCaches((todos) => [removed, ...todos]);
+    });
+  };
 
-    toast("Tâche supprimée", {
-      duration: UNDO_DELAY_MS,
-      action: {
-        label: "Annuler",
-        onClick: () => {
-          const timer = pendingDeletes.get(id);
-          if (!timer) return; // déjà commitée, trop tard pour annuler
-          clearTimeout(timer);
-          pendingDeletes.delete(id);
-          if (removed) patchCaches((todos) => [removed, ...todos]);
-        },
-      },
+  /**
+   * Supprime plusieurs tâches (action par lot) : UN SEUL toast restaure
+   * TOUTES les tâches d'un coup — même principe que `toggleManyTodos`/
+   * `updateManyTodos`, plus la mécanique de délai propre à la suppression.
+   */
+  const deleteManyTodos = async (ids: string[]): Promise<void> => {
+    const all = (cache.get(SWR_KEYS.ALL_TODOS)?.data as Todo[] | undefined) ?? [];
+    const removed = ids
+      .map((id) => all.find((t) => t.id === id))
+      .filter((t): t is Todo => t !== undefined);
+    if (removed.length === 0) return;
+
+    const removedIds = new Set(removed.map((t) => t.id));
+    patchCaches((todos) => todos.filter((t) => !removedIds.has(t.id)));
+
+    let committed = false;
+    const commit = async () => {
+      committed = true;
+      const results = await Promise.allSettled(
+        removed.map((t) => todosApi.remove(t.id)),
+      );
+      if (results.some((r) => r.status === "rejected")) {
+        toast.error("Erreur lors de la suppression");
+        await revalidate();
+      }
+    };
+    const timer = setTimeout(commit, UNDO_DELAY_MS);
+
+    const n = removed.length;
+    armUndo(`${n} tâche${n > 1 ? "s" : ""} supprimée${n > 1 ? "s" : ""}`, async () => {
+      if (committed) return;
+      clearTimeout(timer);
+      patchCaches((todos) => [...removed, ...todos]);
     });
   };
 
@@ -373,6 +402,7 @@ export function useTodoMutations() {
     createTodo,
     toggleTodo,
     deleteTodo,
+    deleteManyTodos,
     updateTodo,
     toggleManyTodos,
     updateManyTodos,

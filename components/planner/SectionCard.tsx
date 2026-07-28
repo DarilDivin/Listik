@@ -1,29 +1,12 @@
 "use client";
 
-import { useState, type ReactNode } from "react";
+import { type ReactNode } from "react";
 import { AnimatePresence, motion } from "motion/react";
-import { ChevronLeft, ChevronRight, SlidersHorizontal } from "lucide-react";
+import { ChevronLeft, ChevronRight } from "lucide-react";
 import { exitTween, revealVariants, spring } from "@/lib/motion";
 import { cn } from "@/lib/utils";
 import { AnimatedNumber } from "@/components/ui/animated-number";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuRadioGroup,
-  DropdownMenuRadioItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
-import {
-  SECTION_STYLE_OPTIONS,
-  SECTION_STYLES,
-  useUIPrefs,
-  type SectionKey,
-} from "@/components/ui-prefs";
+import { SECTION_STYLES_LOCKED, type SectionKey } from "@/components/ui-prefs";
 
 export type SectionTone = "default" | "today" | "danger";
 
@@ -34,7 +17,7 @@ interface SectionCardProps {
   delay?: number;
   className?: string;
   children: ReactNode;
-  /** Active le sélecteur de style d'affichage pour cette section. */
+  /** Détermine la mise en forme verrouillée de cette section (Phase O). */
   sectionKey?: SectionKey;
   /** Cette section est actuellement en mode « portail » (prend toute la colonne). */
   portalActive?: boolean;
@@ -48,8 +31,7 @@ interface SectionCardProps {
  * Groupe temporel de tâches (En retard, Aujourd'hui…) : posé directement sur
  * la page, sans carte ni ombre — séparé du groupe précédent par une simple
  * ligne hairline. L'en-tête encode le moment par un point : rouge (retard),
- * accent (aujourd'hui), neutre (à venir). Si `sectionKey` est fourni, un petit
- * bouton révélé au survol permet de choisir la mise en forme de la section.
+ * accent (aujourd'hui), neutre (à venir).
  *
  * En mode portail, la section GARDE son nœud (même clé React côté page) : elle
  * morphe vers le haut via `layout="position"`, le titre grossit sur place
@@ -68,10 +50,6 @@ export function SectionCard({
   onExitPortal,
   onEnterPortal,
 }: SectionCardProps) {
-  const { sectionStyles, setSectionStyle } = useUIPrefs();
-  const [hovered, setHovered] = useState(false);
-  const [menuOpen, setMenuOpen] = useState(false);
-
   const dotClass =
     tone === "danger"
       ? "bg-destructive"
@@ -86,15 +64,13 @@ export function SectionCard({
         ? "text-foreground"
         : "text-muted-foreground";
 
-  const activeStyle = sectionKey ? sectionStyles[sectionKey] : "list";
-  const options = sectionKey ? SECTION_STYLE_OPTIONS[sectionKey] : [];
+  // Style verrouillé sur « list » pour toutes les sections (Phase O) : la
+  // table reste indexée par section pour que le portail (seul style encore
+  // atteignable en théorie) puisse être réactivé section par section en
+  // Phase S sans changer cette lecture.
+  const activeStyle = sectionKey ? SECTION_STYLES_LOCKED[sectionKey] : "list";
   const isPortalLauncher =
     activeStyle === "portal" && !portalActive && Boolean(onEnterPortal);
-  // Un style non standard reste signalé en permanence : sans repère visible,
-  // une section compressée (Horizon, Loupe…) semble « cassée sans raison ».
-  const styleIsCustom = activeStyle !== "list";
-  const activeStyleLabel =
-    SECTION_STYLES.find((s) => s.id === activeStyle)?.label ?? activeStyle;
 
   return (
     <motion.section
@@ -102,8 +78,6 @@ export function SectionCard({
       initial={{ opacity: 0, y: 12 }}
       animate={{ opacity: 1, y: 0, transition: { ...spring.smooth, delay } }}
       exit={{ opacity: 0, y: 6, transition: exitTween }}
-      onHoverStart={() => setHovered(true)}
-      onHoverEnd={() => setHovered(false)}
       className={cn(
         "border-t border-border/60 pt-6 first:border-t-0 first:pt-0",
         className,
@@ -177,53 +151,6 @@ export function SectionCard({
         <span className="ml-auto font-mono text-[11px] tabular-nums text-muted-foreground/50">
           <AnimatedNumber value={count} />
         </span>
-
-        {sectionKey && !portalActive && (
-          <AnimatePresence>
-            {(hovered || menuOpen || styleIsCustom) && (
-              <motion.span variants={revealVariants} initial="initial" animate="animate" exit="exit">
-
-                <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <DropdownMenuTrigger asChild>
-                        <button
-                          type="button"
-                          aria-label="Mise en forme de la section"
-                          className={cn(
-                            "rounded-md p-1 transition-colors hover:bg-foreground/[0.06] hover:text-foreground data-[state=open]:bg-foreground/[0.06]",
-                            styleIsCustom ? "text-brand" : "text-muted-foreground",
-                          )}
-                        >
-                          <SlidersHorizontal size={13} />
-                        </button>
-                      </DropdownMenuTrigger>
-                    </TooltipTrigger>
-                    <TooltipContent side="left">
-                      {styleIsCustom
-                        ? `Mise en forme : ${activeStyleLabel}`
-                        : "Mise en forme"}
-                    </TooltipContent>
-                  </Tooltip>
-                  <DropdownMenuContent align="end" className="w-44">
-                    <DropdownMenuRadioGroup
-                      value={activeStyle}
-                      onValueChange={(value) =>
-                        setSectionStyle(sectionKey, value as (typeof options)[number])
-                      }
-                    >
-                      {SECTION_STYLES.filter((s) => options.includes(s.id)).map((s) => (
-                        <DropdownMenuRadioItem key={s.id} value={s.id}>
-                          {s.label}
-                        </DropdownMenuRadioItem>
-                      ))}
-                    </DropdownMenuRadioGroup>
-                  </DropdownMenuContent>
-                </DropdownMenu>
-              </motion.span>
-            )}
-          </AnimatePresence>
-        )}
       </h3>
 
       <div>{children}</div>

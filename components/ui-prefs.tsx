@@ -51,6 +51,11 @@ export type SectionStyleId = (typeof SECTION_STYLES)[number]["id"];
  * section qui s'étale sur plusieurs jours/semaines futurs (À venir), la
  * stratigraphie que pour un historique de tâches terminées (Terminées).
  * Horizon/Loupe/Portail sont génériques et proposés partout.
+ *
+ * Débranché (Phase O) : les 5 styles autres que « list » ne sont plus
+ * sélectionnables depuis l'interface (voir `SECTION_STYLES_LOCKED`
+ * ci-dessous, seule table réellement consultée par le rendu). Conservé tel
+ * quel — candidat explicite à une vraie refonte en Phase S.
  */
 export const SECTION_STYLE_OPTIONS: Record<SectionKey, SectionStyleId[]> = {
   overdue: ["list", "horizon", "loupe", "portal"],
@@ -64,7 +69,14 @@ export const SECTION_STYLE_OPTIONS: Record<SectionKey, SectionStyleId[]> = {
   completed: ["list", "horizon", "strata", "loupe", "portal"],
 };
 
-const DEFAULT_SECTION_STYLES: Record<SectionKey, SectionStyleId> = {
+/**
+ * Mise en forme effective de chaque section — verrouillée sur « Liste »
+ * (Phase O) : le sélecteur par section a été retiré, aucune section ne peut
+ * plus résoudre à un autre style. Exportée (au lieu d'un simple littéral)
+ * pour que `SectionCard` continue de dériver son style PAR section, comme
+ * avant — seule la source a changé, plus une préférence, une table figée.
+ */
+export const SECTION_STYLES_LOCKED: Record<SectionKey, SectionStyleId> = {
   overdue: "list",
   today: "list",
   evening: "list",
@@ -78,7 +90,6 @@ const DEFAULT_SECTION_STYLES: Record<SectionKey, SectionStyleId> = {
 
 const ACCENT_KEY = "listik.accent";
 const NAV_KEY = "listik.nav";
-const SECTION_STYLES_KEY = "listik.sectionStyles";
 const OLED_KEY = "listik.oled";
 const DEFAULT_ACCENT: AccentId = "teal";
 const DEFAULT_NAV: NavStyle = "dock";
@@ -88,8 +99,6 @@ interface UIPrefs {
   setAccent: (accent: AccentId) => void;
   nav: NavStyle;
   setNav: (nav: NavStyle) => void;
-  sectionStyles: Record<SectionKey, SectionStyleId>;
-  setSectionStyle: (section: SectionKey, style: SectionStyleId) => void;
   /** « Noir pur » (OLED) : orthogonal au thème clair/sombre, n'a d'effet que
    *  combiné à `.dark` (voir `.dark[data-oled]` dans globals.css). */
   oled: boolean;
@@ -102,40 +111,15 @@ function isAccent(value: string | null): value is AccentId {
   return ACCENTS.some((a) => a.id === value);
 }
 
-function isSectionStyleId(value: unknown): value is SectionStyleId {
-  return SECTION_STYLES.some((s) => s.id === value);
-}
-
-/** Valide et complète un objet stocké (versions futures pourraient ajouter des clés). */
-function parseSectionStyles(raw: string | null): Record<SectionKey, SectionStyleId> {
-  if (!raw) return DEFAULT_SECTION_STYLES;
-  try {
-    const parsed = JSON.parse(raw) as Partial<Record<SectionKey, unknown>>;
-    const result = { ...DEFAULT_SECTION_STYLES };
-    (Object.keys(DEFAULT_SECTION_STYLES) as SectionKey[]).forEach((key) => {
-      const value = parsed[key];
-      if (isSectionStyleId(value) && SECTION_STYLE_OPTIONS[key].includes(value)) {
-        result[key] = value;
-      }
-    });
-    return result;
-  } catch {
-    return DEFAULT_SECTION_STYLES;
-  }
-}
-
 /**
  * Préférences d'interface (frontend uniquement, localStorage) : couleur
- * d'accent, style de navigation, et style d'affichage de chaque section du
- * planner. L'accent est appliqué en posant `data-accent` sur <html> — toutes
- * les surfaces utilisant `var(--brand)` se re-teintent instantanément, y
- * compris la fenêtre quick.
+ * d'accent et style de navigation. L'accent est appliqué en posant
+ * `data-accent` sur <html> — toutes les surfaces utilisant `var(--brand)` se
+ * re-teintent instantanément, y compris la fenêtre quick.
  */
 export function UIPrefsProvider({ children }: { children: ReactNode }) {
   const [accent, setAccentState] = useState<AccentId>(DEFAULT_ACCENT);
   const [nav, setNavState] = useState<NavStyle>(DEFAULT_NAV);
-  const [sectionStyles, setSectionStyles] =
-    useState<Record<SectionKey, SectionStyleId>>(DEFAULT_SECTION_STYLES);
   const [oled, setOledState] = useState(false);
 
   // Lecture au montage (client uniquement — évite tout mismatch SSG).
@@ -144,7 +128,6 @@ export function UIPrefsProvider({ children }: { children: ReactNode }) {
     if (isAccent(storedAccent)) setAccentState(storedAccent);
     const storedNav = localStorage.getItem(NAV_KEY);
     if (storedNav === "dock" || storedNav === "sidebar") setNavState(storedNav);
-    setSectionStyles(parseSectionStyles(localStorage.getItem(SECTION_STYLES_KEY)));
     setOledState(localStorage.getItem(OLED_KEY) === "1");
   }, []);
 
@@ -175,18 +158,8 @@ export function UIPrefsProvider({ children }: { children: ReactNode }) {
     localStorage.setItem(NAV_KEY, next);
   }, []);
 
-  const setSectionStyle = useCallback((section: SectionKey, style: SectionStyleId) => {
-    setSectionStyles((prev) => {
-      const next = { ...prev, [section]: style };
-      localStorage.setItem(SECTION_STYLES_KEY, JSON.stringify(next));
-      return next;
-    });
-  }, []);
-
   return (
-    <UIPrefsContext.Provider
-      value={{ accent, setAccent, nav, setNav, sectionStyles, setSectionStyle, oled, setOled }}
-    >
+    <UIPrefsContext.Provider value={{ accent, setAccent, nav, setNav, oled, setOled }}>
       {children}
     </UIPrefsContext.Provider>
   );
