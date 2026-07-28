@@ -5,10 +5,10 @@ import { usePathname } from "next/navigation";
 import { motion } from "motion/react";
 import {
   CalendarDays,
+  NotebookPen,
   Search,
   Settings,
   Sparkles,
-  StickyNote,
 } from "lucide-react";
 import {
   Tooltip,
@@ -20,7 +20,7 @@ import { cn } from "@/lib/utils";
 
 const NAV = [
   { href: "/", label: "Planificateur", icon: CalendarDays },
-  { href: "/notes", label: "Notes", icon: StickyNote },
+  { href: "/journal", label: "Journal", icon: NotebookPen },
   { href: "/assistant", label: "Assistant", icon: Sparkles },
   { href: "/settings", label: "Réglages", icon: Settings },
 ];

@@ -1,9 +1,9 @@
 use crate::db::{self, AppState};
 use crate::models::{
-    AiAgentResponse, AiChatMessage, AiParsedTask, AiSource, Area, CreateArea, CreateNote,
-    CreateProject, CreateSubTask, CreateTag, CreateTodo, Note, Project, Settings,
-    SidecarAgentResponse, SubTask, Tag, Todo, UpdateArea, UpdateNote, UpdateProject, UpdateSettings,
-    UpdateSubTask, UpdateTag, UpdateTodo,
+    AiAgentResponse, AiChatMessage, AiParsedTask, AiSource, Area, CreateArea, CreateJournalEntry,
+    CreateNote, CreateProject, CreateSubTask, CreateTag, CreateTodo, JournalEntry, Note, Project,
+    Settings, SidecarAgentResponse, SubTask, Tag, Todo, UpdateArea, UpdateJournalEntry, UpdateNote,
+    UpdateProject, UpdateSettings, UpdateSubTask, UpdateTag, UpdateTodo,
 };
 use tauri::{AppHandle, Emitter, Manager, State, WebviewUrl, WebviewWindowBuilder};
 
@@ -174,6 +174,93 @@ pub async fn delete_note(
         .map_err(|e| e.to_string())?;
     notify_notes_changed(&app);
     Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// Commandes Journal (Phase P)
+// ---------------------------------------------------------------------------
+
+/// Événement diffusé après une mutation de bloc Journal (synchro multi-vues).
+pub const JOURNAL_CHANGED: &str = "journal:changed";
+
+fn notify_journal_changed(app: &AppHandle) {
+    if let Err(e) = app.emit(JOURNAL_CHANGED, ()) {
+        eprintln!("⚠️ Émission '{JOURNAL_CHANGED}' échouée: {e}");
+    }
+}
+
+#[tauri::command]
+pub async fn list_journal_entries_for_day(
+    state: State<'_, AppState>,
+    day: String,
+) -> Result<Vec<JournalEntry>, String> {
+    db::list_journal_entries_for_day(&state.pool, &day)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn list_upcoming_journal_entries(
+    state: State<'_, AppState>,
+    after_day: String,
+) -> Result<Vec<JournalEntry>, String> {
+    db::list_upcoming_journal_entries(&state.pool, &after_day)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn create_journal_entry(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    payload: CreateJournalEntry,
+) -> Result<JournalEntry, String> {
+    let entry = db::create_journal_entry(&state.pool, payload)
+        .await
+        .map_err(|e| e.to_string())?;
+    notify_journal_changed(&app);
+    Ok(entry)
+}
+
+#[tauri::command]
+pub async fn update_journal_entry(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    id: String,
+    payload: UpdateJournalEntry,
+) -> Result<JournalEntry, String> {
+    let entry = db::update_journal_entry(&state.pool, &id, payload)
+        .await
+        .map_err(|e| e.to_string())?;
+    notify_journal_changed(&app);
+    Ok(entry)
+}
+
+#[tauri::command]
+pub async fn delete_journal_entry(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    id: String,
+) -> Result<(), String> {
+    db::delete_journal_entry(&state.pool, &id)
+        .await
+        .map_err(|e| e.to_string())?;
+    notify_journal_changed(&app);
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn set_journal_entry_tags(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    id: String,
+    tag_ids: Vec<String>,
+) -> Result<JournalEntry, String> {
+    let entry = db::set_journal_entry_tags(&state.pool, &id, &tag_ids)
+        .await
+        .map_err(|e| e.to_string())?;
+    notify_journal_changed(&app);
+    Ok(entry)
 }
 
 // ---------------------------------------------------------------------------

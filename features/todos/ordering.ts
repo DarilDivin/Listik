@@ -20,6 +20,9 @@ export function orderingContextOf(section: SectionKey): string | null {
     case "anytime":
     case "someday":
       return section;
+    // "routines" (Phase Q) : pas d'ordre manuel, même choix que "evening"/
+    // "overdue" — sous-section dérivée, trop petite et trop mouvante (elle se
+    // reconstruit chaque jour) pour justifier une position mémorisée.
     default:
       return null;
   }

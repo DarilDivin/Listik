@@ -160,7 +160,7 @@ interface PlannerRailProps {
 
 /**
  * Navigation du Planificateur : les vues GTD (Boîte de réception, Aujourd'hui,
- * À venir, Quand je peux, Un jour, Journal) puis l'arbre Domaines → Projets —
+ * À venir, Quand je peux, Un jour, Historique) puis l'arbre Domaines → Projets —
  * les repères d'un habitué de Things.
  *
  * Vit DANS la page Planificateur, pas dans le shell : il fonctionne ainsi à
@@ -312,7 +312,7 @@ export function PlannerRail({
           {PLANNER_VIEWS.map((view, i) => {
             const { icon: Icon, filled } = VIEW_ICON[view.id];
             const active = selection.kind === "view" && selection.view === view.id;
-            // Le Journal grossit indéfiniment : son compteur serait du bruit.
+            // L'Historique grossit indéfiniment : son compteur serait du bruit.
             const count = view.id === "journal" ? 0 : counts[view.id];
 
             return (
@@ -329,7 +329,7 @@ export function PlannerRail({
                   active={active}
                   onClick={() => onSelect({ kind: "view", view: view.id })}
                   label={view.label}
-                  // Le Journal refuse le dépôt : terminer est un geste (la
+                  // L'Historique refuse le dépôt : terminer est un geste (la
                   // coche), pas un glissement.
                   dropTodo={
                     view.id === "journal"

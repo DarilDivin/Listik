@@ -26,6 +26,7 @@ export type NavStyle = "dock" | "sidebar";
 export type SectionKey =
   | "overdue"
   | "today"
+  | "routines"
   | "evening"
   | "tomorrow"
   | "upcoming"
@@ -60,6 +61,7 @@ export type SectionStyleId = (typeof SECTION_STYLES)[number]["id"];
 export const SECTION_STYLE_OPTIONS: Record<SectionKey, SectionStyleId[]> = {
   overdue: ["list", "horizon", "loupe", "portal"],
   today: ["list", "horizon", "loupe", "portal"],
+  routines: ["list", "horizon", "loupe", "portal"],
   evening: ["list", "horizon", "loupe", "portal"],
   tomorrow: ["list", "horizon", "loupe", "portal"],
   upcoming: ["list", "horizon", "zoom", "loupe", "portal"],
@@ -79,6 +81,7 @@ export const SECTION_STYLE_OPTIONS: Record<SectionKey, SectionStyleId[]> = {
 export const SECTION_STYLES_LOCKED: Record<SectionKey, SectionStyleId> = {
   overdue: "list",
   today: "list",
+  routines: "list",
   evening: "list",
   tomorrow: "list",
   upcoming: "list",

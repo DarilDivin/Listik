@@ -2,6 +2,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import type { CreateTagInput, Tag, UpdateTagInput } from "./types";
 import type { Todo } from "@/features/todos/types";
+import type { JournalEntry } from "@/features/journal/types";
 
 /** Émis par le backend après toute mutation de tag. */
 export const TAGS_CHANGED = "tags:changed";
@@ -16,4 +17,7 @@ export const tagsApi = {
   /** Remplace l'intégralité des tags d'une tâche. */
   setForTodo: (id: string, tagIds: string[]) =>
     invoke<Todo>("set_todo_tags", { id, tagIds }),
+  /** Remplace l'intégralité des tags d'un bloc Journal. */
+  setForJournalEntry: (id: string, tagIds: string[]) =>
+    invoke<JournalEntry>("set_journal_entry_tags", { id, tagIds }),
 };

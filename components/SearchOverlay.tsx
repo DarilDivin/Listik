@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { FolderOpen, Hash, Layers, ListTodo, StickyNote } from "lucide-react";
+import { FolderOpen, Hash, Layers, ListTodo } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -29,11 +29,17 @@ const DEBOUNCE_MS = 250;
  * Un résultat de la palette, uniformisé par TYPE. Union locale plutôt qu'une
  * extension d'`AiSource` : ce type appartient au contrat du sidecar, pas à
  * l'affichage de la palette. Les deux sources sont disjointes par
- * construction (sémantique → tâche/note ; lexicale → projet/domaine/tag) —
- * aucun risque de doublon entre elles.
+ * construction (sémantique → tâche ; lexicale → projet/domaine/tag) — aucun
+ * risque de doublon entre elles.
+ *
+ * Les notes (Phase C) ont disparu de la palette avec le reste du module
+ * (Phase P, remplacé par le Journal) — le sidecar peut encore renvoyer des
+ * résultats sémantiques `type: "note"` (index vectoriel des anciennes notes,
+ * jamais purgé), filtrés silencieusement plus bas plutôt que ré-affichés vers
+ * une surface retirée de la navigation.
  */
 type QuickFindItem = {
-  kind: "project" | "area" | "tag" | "task" | "note";
+  kind: "project" | "area" | "tag" | "task";
   id: string;
   label: string;
 };
@@ -43,7 +49,6 @@ const ICON = {
   area: Layers,
   tag: Hash,
   task: ListTodo,
-  note: StickyNote,
 } as const;
 
 const GROUP_LABEL: Record<QuickFindItem["kind"], string> = {
@@ -51,12 +56,11 @@ const GROUP_LABEL: Record<QuickFindItem["kind"], string> = {
   area: "Domaines",
   tag: "Tags",
   task: "Tâches",
-  note: "Notes",
 };
 
 // Ordre façon Things : correspondances lexicales instantanées d'abord
 // (déterministes), puis les résultats sémantiques qui arrivent après le débounce.
-const GROUP_ORDER: QuickFindItem["kind"][] = ["project", "area", "tag", "task", "note"];
+const GROUP_ORDER: QuickFindItem["kind"][] = ["project", "area", "tag", "task"];
 
 interface SearchOverlayProps {
   open: boolean;
@@ -64,10 +68,10 @@ interface SearchOverlayProps {
 }
 
 /**
- * Palette de recherche (Ctrl+K), globale à l'app shell — tâches, notes
- * (sémantique, via le sidecar), projets/domaines/tags (lexical, local,
- * insensible aux diacritiques). `shouldFilter={false}` : on maîtrise
- * nous-mêmes tout le classement, cmdk ne refiltre pas par sous-chaîne.
+ * Palette de recherche (Ctrl+K), globale à l'app shell — tâches (sémantique,
+ * via le sidecar), projets/domaines/tags (lexical, local, insensible aux
+ * diacritiques). `shouldFilter={false}` : on maîtrise nous-mêmes tout le
+ * classement, cmdk ne refiltre pas par sous-chaîne.
  */
 export function SearchOverlay({ open, onOpenChange: setOpen }: SearchOverlayProps) {
   const [query, setQuery] = useState("");
@@ -125,11 +129,13 @@ export function SearchOverlay({ open, onOpenChange: setOpen }: SearchOverlayProp
 
   const semanticItems = useMemo<QuickFindItem[]>(
     () =>
-      semanticResults.map((r) => ({
-        kind: r.type as "task" | "note",
-        id: r.id,
-        label: r.text.split("\n")[0],
-      })),
+      semanticResults
+        .filter((r) => r.type === "task")
+        .map((r) => ({
+          kind: "task" as const,
+          id: r.id,
+          label: r.text.split("\n")[0],
+        })),
     [semanticResults],
   );
 
@@ -155,9 +161,6 @@ export function SearchOverlay({ open, onOpenChange: setOpen }: SearchOverlayProp
   const handleSelect = (item: QuickFindItem) => {
     setOpen(false);
     switch (item.kind) {
-      case "note":
-        router.push(`/notes?id=${item.id}`);
-        break;
       case "project":
         router.push(`/?project=${item.id}`);
         break;
@@ -184,7 +187,7 @@ export function SearchOverlay({ open, onOpenChange: setOpen }: SearchOverlayProp
         </DialogHeader>
         <Command shouldFilter={false} className="bg-transparent">
           <CommandInput
-            placeholder="Rechercher tâches, projets, tags, notes…"
+            placeholder="Rechercher tâches, projets, tags…"
             value={query}
             onValueChange={setQuery}
           />

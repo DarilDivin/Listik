@@ -119,6 +119,45 @@ describe("groupTodosByDate", () => {
     expect(groups.tomorrow.map((t) => t.id)).toEqual(["demain-soir"]);
   });
 
+  // --- Routines (Phase Q) : sous-section dérivée du seau Aujourd'hui ---
+
+  it("récurrente planifiée aujourd'hui → Routines, pas Aujourd'hui générique", () => {
+    const groups = group([
+      todo({ id: "habitude", scheduled_for: TODAY, recurrence: "daily" }),
+      todo({ id: "ponctuelle", scheduled_for: TODAY }),
+      // Récurrente mais planifiée demain : reste dans Demain, pas Routines
+      // (Routines n'existe que pour AUJOURD'HUI).
+      todo({ id: "demain-recurrente", scheduled_for: TOMORROW, recurrence: "weekly" }),
+    ]);
+
+    expect(groups.routines.map((t) => t.id)).toEqual(["habitude"]);
+    expect(groups.today.map((t) => t.id)).toEqual(["ponctuelle"]);
+    expect(groups.tomorrow.map((t) => t.id)).toEqual(["demain-recurrente"]);
+  });
+
+  it("récurrente marquée « Ce soir » → reste dans Ce soir, pas Routines", () => {
+    const groups = group([
+      todo({
+        id: "habitude-du-soir",
+        scheduled_for: TODAY,
+        recurrence: "daily",
+        this_evening: true,
+      }),
+    ]);
+
+    expect(groups.evening.map((t) => t.id)).toEqual(["habitude-du-soir"]);
+    expect(groups.routines).toHaveLength(0);
+  });
+
+  it("récurrente avec échéance atteinte aujourd'hui → Routines (même règle que les échéances)", () => {
+    const groups = group([
+      todo({ id: "habitude-echue", due_date: TODAY, recurrence: "daily" }),
+    ]);
+
+    expect(groups.routines.map((t) => t.id)).toEqual(["habitude-echue"]);
+    expect(groups.today).toHaveLength(0);
+  });
+
   // --- Échéances (Phase I) : une deadline qui arrive force la visibilité ---
 
   it("échéance atteinte aujourd'hui → remonte dans Aujourd'hui, même sans planification", () => {
@@ -216,15 +255,16 @@ describe("projets & domaines (filtres directs, pas des groupes GTD)", () => {
 });
 
 describe("countForView", () => {
-  it("additionne les groupes d'une vue (Aujourd'hui = retard + jour + soir)", () => {
+  it("additionne les groupes d'une vue (Aujourd'hui = retard + jour + routines + soir)", () => {
     const groups = group([
       todo({ id: "late", scheduled_for: "2026-06-10" }),
       todo({ id: "today", scheduled_for: TODAY }),
+      todo({ id: "habitude", scheduled_for: TODAY, recurrence: "daily" }),
       todo({ id: "soir", scheduled_for: TODAY, this_evening: true }),
       todo({ id: "brut" }),
     ]);
 
-    expect(countForView(groups, "today")).toBe(3);
+    expect(countForView(groups, "today")).toBe(4);
     expect(countForView(groups, "inbox")).toBe(1);
     expect(countForView(groups, "journal")).toBe(0);
   });

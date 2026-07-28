@@ -6,7 +6,7 @@ import { getCurrentWindow, LogicalSize } from "@tauri-apps/api/window";
 import Omnibar from "@/components/Omnibar";
 import { useTodosSync } from "@/features/todos/useTodosSync";
 import { useTodoMutations } from "@/features/todos/useTodoMutations";
-import { useNotesMutations } from "@/features/notes/useNotesMutations";
+import { useJournalMutations } from "@/features/journal/useJournalMutations";
 import { useProjects } from "@/hooks/useProjects";
 import { useTags } from "@/hooks/useTags";
 import { todayLocalISODate, toLocalISODate } from "@/lib/date";
@@ -37,7 +37,7 @@ function isOverlayOpen() {
 export default function QuickPage() {
   useTodosSync();
   const { createTodo } = useTodoMutations();
-  const { createNote } = useNotesMutations();
+  const { createEntry: createJournalEntry } = useJournalMutations();
   const { projects, createProject } = useProjects();
   const { resolveTagNames, setTodoTags } = useTags();
   // Noms des projets actifs pour l'autocomplétion `#` — vient de la table
@@ -203,12 +203,15 @@ export default function QuickPage() {
     [createTodo, createProject, projects, resolveTagNames, setTodoTags, hide],
   );
 
+  // `/note` crée un bloc de Journal pour AUJOURD'HUI — pas de sélecteur de
+  // date depuis la capture rapide (Phase P) : celui-là n'existe que dans
+  // l'éditeur complet du Journal (navigation par jour).
   const handleSubmitNote = useCallback(
     async (text: string) => {
-      await createNote({ content: text });
+      await createJournalEntry({ target_day: todayLocalISODate(), content: text });
       hide();
     },
-    [createNote, hide],
+    [createJournalEntry, hide],
   );
 
   return (

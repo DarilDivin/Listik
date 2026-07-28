@@ -87,6 +87,17 @@ export const useTags = () => {
     }
   };
 
+  /** Remplace l'intégralité des tags d'un bloc Journal. */
+  const setJournalEntryTags = async (entryId: string, tagIds: string[]) => {
+    try {
+      await tagsApi.setForJournalEntry(entryId, tagIds);
+    } catch (error) {
+      toast.error("Erreur lors de la modification des tags");
+      await mutate((key) => typeof key === "string" && key.startsWith("journal"));
+      throw error;
+    }
+  };
+
   return {
     tags,
     loading,
@@ -94,6 +105,7 @@ export const useTags = () => {
     updateTag,
     deleteTag,
     setTodoTags,
+    setJournalEntryTags,
     resolveTagNames,
   };
 };

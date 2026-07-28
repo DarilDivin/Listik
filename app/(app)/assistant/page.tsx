@@ -10,9 +10,10 @@ import Omnibar from "@/components/Omnibar";
 import { Badge } from "@/components/ui/badge";
 import { spring } from "@/lib/motion";
 import { usePlannerTodos } from "@/hooks/usePlannerTodos";
-import { useNotesMutations } from "@/features/notes/useNotesMutations";
+import { useJournalMutations } from "@/features/journal/useJournalMutations";
 import { aiAgent, type AiChatMessage, type AiSource } from "@/features/omnibar/agent";
 import type { SmartTaskData } from "@/features/todos/useTaskMode";
+import { todayLocalISODate } from "@/lib/date";
 
 interface Turn {
   id: string;
@@ -47,7 +48,7 @@ function buildHistory(turns: Turn[]): AiChatMessage[] {
 
 export default function AssistantPage() {
   const { createTodoFromSmart, updateTodo, deleteTodo, lists } = usePlannerTodos();
-  const { createNote } = useNotesMutations();
+  const { createEntry: createJournalEntry } = useJournalMutations();
 
   const [turns, setTurns] = useState<Turn[]>([]);
   const [pending, setPending] = useState(false);
@@ -109,9 +110,11 @@ export default function AssistantPage() {
     toast.success("Tâche créée");
   };
 
+  // Même repointage que dans le Planificateur et Alt+Q (Phase P) : /note crée
+  // un bloc de Journal pour aujourd'hui, pas une note classique.
   const handleCreateNote = async (text: string) => {
-    await createNote({ content: text });
-    toast.success("Note créée");
+    await createJournalEntry({ target_day: todayLocalISODate(), content: text });
+    toast.success("Bloc ajouté au Journal");
   };
 
   return (

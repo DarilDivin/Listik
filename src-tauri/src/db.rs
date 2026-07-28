@@ -1,7 +1,8 @@
 use crate::models::{
-    Area, CreateArea, CreateNote, CreateProject, CreateSubTask, CreateTag, CreateTodo, Note,
-    Project, Recurrence, Settings, SubTask, Tag, Todo, TodoStatus, UpdateArea, UpdateNote,
-    UpdateProject, UpdateSettings, UpdateSubTask, UpdateTag, UpdateTodo,
+    Area, CreateArea, CreateJournalEntry, CreateNote, CreateProject, CreateSubTask, CreateTag,
+    CreateTodo, JournalEntry, Note, Project, Recurrence, Settings, SubTask, Tag, Todo, TodoStatus,
+    UpdateArea, UpdateJournalEntry, UpdateNote, UpdateProject, UpdateSettings, UpdateSubTask,
+    UpdateTag, UpdateTodo,
 };
 use sqlx::sqlite::{SqliteConnectOptions, SqlitePoolOptions};
 use sqlx::{QueryBuilder, Sqlite, SqlitePool};
@@ -895,6 +896,187 @@ pub async fn search_notes(pool: &SqlitePool, query: &str) -> Result<Vec<Note>, s
 }
 
 // ---------------------------------------------------------------------------
+// Journal (Phase P) : blocs horodatés, remplace les Notes
+// ---------------------------------------------------------------------------
+
+const JOURNAL_ENTRY_COLUMNS: &str =
+    "id, target_day, written_at, content, created_at, updated_at";
+
+/// Peuple les tags de chaque bloc — même mécanique que `attach_relations`
+/// pour les tâches (une requête par bloc, volumes personnels négligeables).
+async fn attach_journal_relations(
+    pool: &SqlitePool,
+    mut entries: Vec<JournalEntry>,
+) -> Result<Vec<JournalEntry>, sqlx::Error> {
+    for entry in &mut entries {
+        entry.tags = list_journal_entry_tags(pool, &entry.id).await?;
+    }
+    Ok(entries)
+}
+
+/// Blocs d'une page-jour, triés par heure d'écriture.
+pub async fn list_journal_entries_for_day(
+    pool: &SqlitePool,
+    day: &str,
+) -> Result<Vec<JournalEntry>, sqlx::Error> {
+    let query = format!(
+        "SELECT {JOURNAL_ENTRY_COLUMNS} FROM journal_entries WHERE target_day = ? \
+         ORDER BY written_at ASC"
+    );
+    let entries = sqlx::query_as::<_, JournalEntry>(&query)
+        .bind(day)
+        .fetch_all(pool)
+        .await?;
+    attach_journal_relations(pool, entries).await
+}
+
+/// Blocs écrits en avance : `target_day` strictement après `after_day`.
+pub async fn list_upcoming_journal_entries(
+    pool: &SqlitePool,
+    after_day: &str,
+) -> Result<Vec<JournalEntry>, sqlx::Error> {
+    let query = format!(
+        "SELECT {JOURNAL_ENTRY_COLUMNS} FROM journal_entries WHERE target_day > ? \
+         ORDER BY target_day ASC, written_at ASC"
+    );
+    let entries = sqlx::query_as::<_, JournalEntry>(&query)
+        .bind(after_day)
+        .fetch_all(pool)
+        .await?;
+    attach_journal_relations(pool, entries).await
+}
+
+pub async fn get_journal_entry(
+    pool: &SqlitePool,
+    id: &str,
+) -> Result<Option<JournalEntry>, sqlx::Error> {
+    let query = format!("SELECT {JOURNAL_ENTRY_COLUMNS} FROM journal_entries WHERE id = ?");
+    let entry = sqlx::query_as::<_, JournalEntry>(&query)
+        .bind(id)
+        .fetch_optional(pool)
+        .await?;
+    match entry {
+        Some(mut e) => {
+            e.tags = list_journal_entry_tags(pool, &e.id).await?;
+            Ok(Some(e))
+        }
+        None => Ok(None),
+    }
+}
+
+pub async fn create_journal_entry(
+    pool: &SqlitePool,
+    input: CreateJournalEntry,
+) -> Result<JournalEntry, sqlx::Error> {
+    let now = now_iso();
+    let entry = JournalEntry {
+        id: Uuid::new_v4().to_string(),
+        target_day: input.target_day,
+        written_at: now.clone(),
+        content: input.content,
+        created_at: now.clone(),
+        updated_at: now,
+        tags: Vec::new(),
+    };
+
+    sqlx::query(
+        "INSERT INTO journal_entries (id, target_day, written_at, content, created_at, updated_at) \
+         VALUES (?, ?, ?, ?, ?, ?)",
+    )
+    .bind(&entry.id)
+    .bind(&entry.target_day)
+    .bind(&entry.written_at)
+    .bind(&entry.content)
+    .bind(&entry.created_at)
+    .bind(&entry.updated_at)
+    .execute(pool)
+    .await?;
+
+    Ok(entry)
+}
+
+pub async fn update_journal_entry(
+    pool: &SqlitePool,
+    id: &str,
+    input: UpdateJournalEntry,
+) -> Result<JournalEntry, sqlx::Error> {
+    let now = now_iso();
+
+    let mut qb: QueryBuilder<Sqlite> = QueryBuilder::new("UPDATE journal_entries SET ");
+    let mut sep = qb.separated(", ");
+
+    if let Some(target_day) = input.target_day {
+        sep.push("target_day = ").push_bind_unseparated(target_day);
+    }
+    if let Some(content) = input.content {
+        sep.push("content = ").push_bind_unseparated(content);
+    }
+    sep.push("updated_at = ").push_bind_unseparated(now);
+    qb.push(" WHERE id = ").push_bind(id);
+    qb.build().execute(pool).await?;
+
+    get_journal_entry(pool, id)
+        .await?
+        .ok_or(sqlx::Error::RowNotFound)
+}
+
+pub async fn delete_journal_entry(pool: &SqlitePool, id: &str) -> Result<(), sqlx::Error> {
+    sqlx::query("DELETE FROM journal_entry_tags WHERE entry_id = ?")
+        .bind(id)
+        .execute(pool)
+        .await?;
+    sqlx::query("DELETE FROM journal_entries WHERE id = ?")
+        .bind(id)
+        .execute(pool)
+        .await?;
+    Ok(())
+}
+
+/// Tags d'un bloc, triés par nom — même requête que `list_todo_tags`.
+pub async fn list_journal_entry_tags(
+    pool: &SqlitePool,
+    entry_id: &str,
+) -> Result<Vec<Tag>, sqlx::Error> {
+    sqlx::query_as::<_, Tag>(
+        "SELECT t.id, t.name, t.parent_id, t.created_at FROM tags t \
+         JOIN journal_entry_tags jt ON jt.tag_id = t.id \
+         WHERE jt.entry_id = ? ORDER BY t.name COLLATE NOCASE ASC",
+    )
+    .bind(entry_id)
+    .fetch_all(pool)
+    .await
+}
+
+/// Remplace l'intégralité des tags d'un bloc (replace-all) — même sémantique
+/// que `set_todo_tags`.
+pub async fn set_journal_entry_tags(
+    pool: &SqlitePool,
+    entry_id: &str,
+    tag_ids: &[String],
+) -> Result<JournalEntry, sqlx::Error> {
+    let mut tx = pool.begin().await?;
+
+    sqlx::query("DELETE FROM journal_entry_tags WHERE entry_id = ?")
+        .bind(entry_id)
+        .execute(&mut *tx)
+        .await?;
+
+    for tag_id in tag_ids {
+        sqlx::query("INSERT OR IGNORE INTO journal_entry_tags (entry_id, tag_id) VALUES (?, ?)")
+            .bind(entry_id)
+            .bind(tag_id)
+            .execute(&mut *tx)
+            .await?;
+    }
+
+    tx.commit().await?;
+
+    get_journal_entry(pool, entry_id)
+        .await?
+        .ok_or(sqlx::Error::RowNotFound)
+}
+
+// ---------------------------------------------------------------------------
 // Domaines (Areas) — grands piliers regroupant des projets
 // ---------------------------------------------------------------------------
 
@@ -1292,6 +1474,10 @@ pub async fn delete_tag(pool: &SqlitePool, id: &str) -> Result<(), sqlx::Error> 
     // n'existe plus et on ne saurait plus lesquelles ré-indexer.
     flag_tagged_todos_need_embedding(pool, id).await?;
     sqlx::query("DELETE FROM task_tags WHERE tag_id = ?")
+        .bind(id)
+        .execute(pool)
+        .await?;
+    sqlx::query("DELETE FROM journal_entry_tags WHERE tag_id = ?")
         .bind(id)
         .execute(pool)
         .await?;

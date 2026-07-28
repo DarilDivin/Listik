@@ -11,12 +11,13 @@ import { useProjects } from "@/hooks/useProjects";
 import { useTags } from "@/hooks/useTags";
 import { TagFilterProvider } from "@/features/tags/tag-filter";
 import { DuplicateTodoProvider } from "@/features/todos/duplicate-context";
-import { useNotesMutations } from "@/features/notes/useNotesMutations";
+import { useJournalMutations } from "@/features/journal/useJournalMutations";
 import Omnibar from "@/components/Omnibar";
 import { EmptyState } from "@/components/todo/EmptyState";
 import { ListFilter } from "@/components/todo/ListFilter";
 import { AreaView } from "@/components/planner/AreaView";
 import { HeroDay } from "@/components/planner/HeroDay";
+import { JournalWidget } from "@/components/planner/JournalWidget";
 import { PlannerRail } from "@/components/planner/PlannerRail";
 import { ProjectView } from "@/components/planner/ProjectView";
 import { SectionBody } from "@/components/planner/SectionBody";
@@ -65,6 +66,10 @@ const SECTION_META: Record<
 > = {
   overdue: { label: "En retard", tone: "danger", overdue: true },
   today: { label: "Aujourd'hui", tone: "today", dateImplied: true },
+  // tone "default" (pas "today") : aujourd'hui/ce soir portent déjà le halo
+  // d'accent — un 3e anneau dans la même colonne diluerait le signal « c'est
+  // maintenant » plutôt que de le renforcer.
+  routines: { label: "Routines", tone: "default", dateImplied: true },
   evening: { label: "Ce soir", tone: "today", dateImplied: true },
   tomorrow: { label: "Demain", tone: "default", dateImplied: true },
   upcoming: { label: "À venir", tone: "default" },
@@ -97,7 +102,7 @@ const EMPTY_COPY: Record<PlannerView, { title: string; subtitle: string }> = {
     subtitle: "Rangez ici ce que vous ferez un jour, sans vous engager.",
   },
   journal: {
-    title: "Journal vide",
+    title: "Historique vide",
     subtitle: "Vos tâches terminées s'archiveront ici.",
   },
 };
@@ -165,7 +170,7 @@ function PlannerPageContent() {
     updateManyTodos,
     duplicateTodo,
   } = usePlannerTodos();
-  const { createNote } = useNotesMutations();
+  const { createEntry: createJournalEntry } = useJournalMutations();
   const {
     areas,
     projects,
@@ -578,9 +583,11 @@ function PlannerPageContent() {
     await createTodoFromSmart(taskData, captureOptions());
   };
 
-  const handleCreateNote = async (text: string) => {
-    await createNote({ content: text });
-    toast.success("Note créée");
+  // `/note` (Omnibar) crée désormais un bloc de Journal pour AUJOURD'HUI —
+  // pas de sélecteur de date depuis la capture rapide (Phase P).
+  const handleCreateJournalEntry = async (text: string) => {
+    await createJournalEntry({ target_day: todayISO, content: text });
+    toast.success("Bloc ajouté au Journal");
   };
 
   if (loading) {
@@ -815,6 +822,14 @@ function PlannerPageContent() {
                         />
                       )}
                     </AnimatePresence>
+
+                    {/* Widget Journal (Phase Q) : uniquement sur Aujourd'hui,
+                        masqué en portail comme le hero/le filtre. */}
+                    {currentView === "today" && !portalSection && (
+                      <div className="mt-6">
+                        <JournalWidget />
+                      </div>
+                    )}
                   </motion.div>
                 </LayoutGroup>
               )
@@ -849,7 +864,7 @@ function PlannerPageContent() {
             <Omnibar
               defaultMode="task"
               onSubmit={handleCreateTodo}
-              onSubmitNote={handleCreateNote}
+              onSubmitNote={handleCreateJournalEntry}
               placeholder="Capturer une tâche…"
               lists={projectNames}
             />

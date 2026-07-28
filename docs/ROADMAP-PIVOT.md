@@ -64,10 +64,19 @@ cohérent ; la vue À venir n'affiche plus de lignes fantômes.
 
 ---
 
-## PHASE P — Journal (remplace Notes)
+## PHASE P — Journal (remplace Notes) ✅ FAITE (cœur), éditeur v1 simplifié
 
 **Objectif** : remplacer le module Notes (Phase C, `docs/ROADMAP.md`) par un Journal quotidien
 personnalisable, avec mécanique de note écrite en avance pour une date future.
+
+**Décision d'implémentation (2026-07-28)** : la « décision technique ouverte » du point 5
+ci-dessous a été tranchée en différant le choix de lib WYSIWYG-markdown — l'éditeur v1 est un
+simple `<textarea>` en auto-save au blur (même pattern que l'ancien `NoteEditor`), le rendu au
+repos passe par `react-markdown` (déjà une dépendance). Raison : une page-jour est un FIL de N
+blocs, monter un éditeur riche (Tiptap/ProseMirror) par bloc aurait été lourd pour un gain non
+prouvé avant usage réel ; monter l'éditeur riche uniquement sur le bloc en focus reste possible
+plus tard sans changer le modèle de données. Amélioration explicitement différée, pas oubliée —
+prochaine étape naturelle si le besoin se confirme à l'usage.
 
 1. **Libérer le nom** : l'ancienne vue Planificateur « Journal » (Terminées, Phase F/M) devient
    **« Historique »** dans le rail (`PlannerRail`, `SECTION_META`) — collision de nom avec le
@@ -109,7 +118,7 @@ jour.
 
 ---
 
-## PHASE Q — Accueil (Aujourd'hui + Routines + widget Journal)
+## PHASE Q — Accueil (Aujourd'hui + Routines + widget Journal) ✅ FAITE
 
 **Dépend de P** (le widget a besoin que le Journal existe). La vue d'accueil reste
 « Aujourd'hui » (déjà l'accueil actuel, `app/(app)/page.tsx:209`) — pas de refonte structurelle.
@@ -117,19 +126,39 @@ jour.
 1. **Sous-section « Routines »** : regroupement **dérivé** dans `features/todos/grouping.ts`
    (`recurrence !== "none"` parmi les tâches déjà dans le seau `today`) — zéro nouvelle
    entité/table, cohérent avec le principe Phase E (état GTD dérivé, pas stocké). Rendu comme
-   sous-section distincte, sur le même principe que « Ce soir ».
+   sous-section distincte, sur le même principe que « Ce soir ». Tonalité `default` (pas
+   `today`) pour éviter d'empiler un 3e halo d'accent dans la même colonne.
 2. **Widget Journal** : composant affichant les blocs de la page du jour (via `useJournal`) +
    champ d'ajout rapide, intégré dans `app/(app)/page.tsx` (vue `today`), sans navigation. Un
    ajout ici crée une entrée `journal_entries` avec `target_day = written_at = aujourd'hui`.
+   `useJournal` accepte un 2e argument `withUpcoming` (défaut `true`) — le widget passe `false`
+   pour éviter un appel IPC « À venir » qu'il n'affiche jamais.
 3. **Design** : s'inscrit dans le langage existant (contenu à plat, hairlines, `--brand`) — pas
-   de nouveau système visuel pour cette vue.
+   de nouveau système visuel pour cette vue. Confirmé : le widget réutilise `JournalEntryRow`/
+   `JournalComposer` de la page complète, aucun nouveau renderer.
 
 **Tester** : une tâche récurrente planifiée aujourd'hui apparaît dans « Routines », pas dans le
 groupe « Aujourd'hui » générique ; le widget Journal affiche les blocs déjà écrits aujourd'hui et
-permet d'en ajouter un sans quitter l'accueil.
+permet d'en ajouter un sans quitter l'accueil. **Vérifié** : `tsc --noEmit`, 120 tests (dont 3
+nouveaux tests Routines), lint, et vérification structurelle en navigateur (rendu du widget,
+saisie dans le composer, navigation « Ouvrir » → `/journal`).
 
-**Fichiers clés** : `features/todos/grouping.ts`, `app/(app)/page.tsx`, `components/planner/`
-(nouveau widget Journal).
+**Deux points de comportement à observer en usage réel** (fidèles au libellé de la spec
+ci-dessus, pas des bugs d'implémentation — mais à surveiller) :
+- Une routine manquée hier tombe dans « En retard » le lendemain (comme toute tâche planifiée en
+  retard), pas dans « Routines » — la sous-section ne montre que les récurrentes planifiées
+  *aujourd'hui*. À rediscuter si ça gêne à l'usage : faudrait-il que « Routines » absorbe aussi
+  les récurrentes en retard ?
+- Cocher une tâche de Routines saute la pause de 900 ms (`LINGER_MS`) qui existe pour les autres
+  sections, car une récurrente reprogrammée quitte immédiatement le seau au lieu de rester
+  affichée en `completed` un instant — comportement pré-existant pour toute tâche récurrente
+  (pas introduit par cette phase), juste plus visible maintenant que Routines les regroupe.
+- Pas d'ordre manuel dans Routines (`orderingContextOf` renvoie `null`, même choix que
+  « Ce soir »/« En retard ») — décision assumée, commentée dans `features/todos/ordering.ts`.
+
+**Fichiers clés** : `features/todos/grouping.ts`, `app/(app)/page.tsx`, `components/planner/
+JournalWidget.tsx` (nouveau), `hooks/useJournal.ts`, `components/ui-prefs.tsx`,
+`features/todos/ordering.ts`.
 
 ---
 

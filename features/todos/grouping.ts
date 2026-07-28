@@ -10,6 +10,7 @@ import type { Todo } from "./types";
 export type DateGroupKey =
   | "overdue"
   | "today"
+  | "routines"
   | "evening"
   | "tomorrow"
   | "upcoming"
@@ -21,8 +22,15 @@ export type DateGroupKey =
 export interface TodoGroups {
   /** Planifiées avant aujourd'hui et non terminées. */
   overdue: Todo[];
-  /** Planifiées aujourd'hui (hors « Ce soir »). */
+  /** Planifiées aujourd'hui, non récurrentes (hors « Ce soir »/« Routines »). */
   today: Todo[];
+  /**
+   * Planifiées aujourd'hui ET récurrentes (Phase Q) — sous-section dérivée du
+   * seau « Aujourd'hui », zéro nouvel état stocké (même principe que « Ce
+   * soir » : un sous-ensemble déduit d'un champ déjà présent). N'inclut PAS
+   * les récurrentes marquées « Ce soir », qui restent dans `evening`.
+   */
+  routines: Todo[];
   /** Planifiées aujourd'hui et marquées « Ce soir ». */
   evening: Todo[];
   tomorrow: Todo[];
@@ -34,7 +42,7 @@ export interface TodoGroups {
   anytime: Todo[];
   /** Rangées explicitement à « Un jour ». */
   someday: Todo[];
-  /** Terminées (tous horizons confondus) — alimente le Journal. */
+  /** Terminées (tous horizons confondus) — alimente la vue Historique. */
   completed: Todo[];
 }
 
@@ -53,7 +61,10 @@ export const PLANNER_VIEWS: { id: PlannerView; label: string }[] = [
   { id: "upcoming", label: "À venir" },
   { id: "anytime", label: "Quand je peux" },
   { id: "someday", label: "Un jour" },
-  { id: "journal", label: "Journal" },
+  // Libellé "Historique" (Phase P) — id interne "journal" volontairement
+  // inchangé (collision de nom avec le nouveau module Journal, pas de
+  // changement de comportement sous-jacent).
+  { id: "journal", label: "Historique" },
 ];
 
 /**
@@ -70,7 +81,7 @@ export type PlannerSelection =
 /** Groupes composant chaque vue, dans l'ordre d'affichage. */
 export const VIEW_SECTIONS: Record<PlannerView, DateGroupKey[]> = {
   inbox: ["inbox"],
-  today: ["overdue", "today", "evening"],
+  today: ["overdue", "today", "routines", "evening"],
   upcoming: ["tomorrow", "upcoming"],
   anytime: ["anytime"],
   someday: ["someday"],
@@ -108,6 +119,7 @@ export function groupTodosByDate(
   const groups: TodoGroups = {
     overdue: [],
     today: [],
+    routines: [],
     evening: [],
     tomorrow: [],
     upcoming: [],
@@ -134,19 +146,23 @@ export function groupTodosByDate(
 
     const date = todo.scheduled_for;
 
+    // Sous-répartition du seau « Aujourd'hui » (hors « Ce soir », géré à
+    // part) : récurrente → Routines (Phase Q, sous-section dérivée), sinon
+    // Aujourd'hui générique.
+    const todayBucket = todo.recurrence !== "none" ? groups.routines : groups.today;
+
     // Échéance atteinte → la tâche REMONTE, quelle que soit sa planification
     // (nulle ou future) : une deadline qui arrive force la visibilité, comme
     // dans Things. Dépassée = « En retard » (l'en-tête honnête, cohérent avec
-    // le badge J+n) ; atteinte aujourd'hui = « Aujourd'hui », en respectant le
-    // découpage « Ce soir » si la tâche y était rangée.
+    // le badge J+n) ; atteinte aujourd'hui = « Aujourd'hui »/« Routines », en
+    // respectant le découpage « Ce soir » si la tâche y était rangée.
     if (todo.due_date && todo.due_date <= today) {
       if (todo.due_date < today) {
         groups.overdue.push(todo);
       } else {
-        (todo.this_evening && date === today
-          ? groups.evening
-          : groups.today
-        ).push(todo);
+        (todo.this_evening && date === today ? groups.evening : todayBucket).push(
+          todo,
+        );
       }
       continue;
     }
@@ -157,7 +173,7 @@ export function groupTodosByDate(
       groups.overdue.push(todo);
     } else if (date === today) {
       // « Ce soir » n'a de sens que pour la journée en cours.
-      (todo.this_evening ? groups.evening : groups.today).push(todo);
+      (todo.this_evening ? groups.evening : todayBucket).push(todo);
     } else if (date === tomorrow) {
       groups.tomorrow.push(todo);
     } else {

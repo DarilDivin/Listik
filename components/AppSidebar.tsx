@@ -7,10 +7,10 @@ import useSWR from "swr";
 import { motion } from "motion/react";
 import {
   CalendarDays,
+  NotebookPen,
   Search,
   Settings,
   Sparkles,
-  StickyNote,
 } from "lucide-react";
 import {
   Sidebar,
@@ -35,7 +35,7 @@ import { spring } from "@/lib/motion";
 
 const NAV = [
   { href: "/", label: "Planificateur", icon: CalendarDays },
-  { href: "/notes", label: "Notes", icon: StickyNote },
+  { href: "/journal", label: "Journal", icon: NotebookPen },
   { href: "/assistant", label: "Assistant", icon: Sparkles },
   { href: "/settings", label: "Réglages", icon: Settings },
 ];
