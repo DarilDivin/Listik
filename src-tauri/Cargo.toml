@@ -37,7 +37,7 @@ sqlx = { version = "0.8", default-features = false, features = [
 # Génération des types TypeScript depuis les structures Rust (source de vérité)
 ts-rs = "10"
 
-# Client HTTP pour parler au sidecar Python (healthcheck, ai_ping, ai_parse)
+# Client HTTP pour l'IA : Groq direct (ai_parse) et serveur MCP local (ai_agent_claude)
 reqwest = { version = "0.12", features = ["json"] }
 
 # Serveur MCP in-process (exposé en HTTP loopback) pour l'agent CLI (Phase R)
@@ -45,3 +45,8 @@ axum = "0.8"
 
 [target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
 tauri-plugin-global-shortcut = "2"
+
+[dev-dependencies]
+# Mock IPC (tauri::test) pour vérifier la frontière invoke() -> #[tauri::command]
+# sans dépendre d'une vraie fenêtre native.
+tauri = { version = "2.7.0", features = ["tray-icon", "test"] }

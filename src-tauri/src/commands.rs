@@ -970,6 +970,58 @@ mod tests {
         assert!(prompt.contains("et demain ?"));
     }
 
+    /// Vérifie la frontière `invoke("ai_parse", { text })` -> `fn ai_parse(state:
+    /// State<AppState>, text: String)` via le VRAI dispatch IPC de Tauri
+    /// (`tauri::test`), pas un appel direct de fonction Rust qui contournerait
+    /// la désérialisation des arguments. Sans clé Groq configurée (DB en
+    /// mémoire fraîche), la commande doit atteindre son erreur métier
+    /// (« Aucune clé Groq configurée ») — pas une erreur de désérialisation
+    /// d'arguments, qui prouverait que `state` (1er paramètre, injecté par
+    /// Tauri) et `text` (2e paramètre, envoyé par le frontend) sont bien
+    /// distingués correctement.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn invoke_ai_parse_desemballe_lardgument_text_correctement() {
+        let options = sqlx::sqlite::SqliteConnectOptions::new()
+            .filename(":memory:")
+            .create_if_missing(true);
+        let pool = sqlx::sqlite::SqlitePoolOptions::new()
+            .max_connections(1)
+            .connect_with(options)
+            .await
+            .unwrap();
+        sqlx::migrate!("./migrations").run(&pool).await.unwrap();
+
+        let app = tauri::test::mock_builder()
+            .invoke_handler(tauri::generate_handler![ai_parse])
+            .manage(AppState { pool, mcp_port: None })
+            .build(tauri::test::mock_context(tauri::test::noop_assets()))
+            .expect("échec construction app de test");
+        let webview = tauri::WebviewWindowBuilder::new(&app, "main", Default::default())
+            .build()
+            .expect("échec construction webview de test");
+
+        let response = tauri::test::get_ipc_response(
+            &webview,
+            tauri::webview::InvokeRequest {
+                cmd: "ai_parse".into(),
+                callback: tauri::ipc::CallbackFn(0),
+                error: tauri::ipc::CallbackFn(1),
+                url: "http://tauri.localhost".parse().unwrap(),
+                body: serde_json::json!({ "text": "acheter du pain demain" }).into(),
+                headers: Default::default(),
+                invoke_key: tauri::test::INVOKE_KEY.to_string(),
+            },
+        );
+
+        let err = response.expect_err("sans clé Groq configurée, ai_parse doit échouer");
+        let message = err.as_str().unwrap_or_default();
+        assert!(
+            message.contains("clé Groq"),
+            "attendu l'erreur métier « clé Groq manquante », reçu autre chose \
+             (signe possible d'une désérialisation d'arguments ratée) : {message}"
+        );
+    }
+
     #[test]
     fn ai_parse_system_prompt_decrit_le_format_attendu() {
         let prompt = ai_parse_system_prompt();
