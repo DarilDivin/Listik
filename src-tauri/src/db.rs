@@ -663,6 +663,7 @@ pub async fn todos_needing_embedding(
 const DIGEST_ENABLED_KEY: &str = "daily_digest_enabled";
 const DIGEST_TIME_KEY: &str = "daily_digest_time";
 const DIGEST_LAST_SENT_KEY: &str = "daily_digest_last_sent";
+const GROQ_API_KEY_KEY: &str = "groq_api_key";
 
 async fn get_setting(pool: &SqlitePool, key: &str) -> Result<Option<String>, sqlx::Error> {
     let row: Option<(String,)> = sqlx::query_as("SELECT value FROM settings WHERE key = ?")
@@ -693,6 +694,11 @@ pub async fn get_settings(pool: &SqlitePool) -> Result<Settings, sqlx::Error> {
     if let Some(v) = get_setting(pool, DIGEST_TIME_KEY).await? {
         s.daily_digest_time = v;
     }
+    if let Some(v) = get_setting(pool, GROQ_API_KEY_KEY).await? {
+        if !v.is_empty() {
+            s.groq_api_key = Some(v);
+        }
+    }
     Ok(s)
 }
 
@@ -706,6 +712,9 @@ pub async fn update_settings(
     }
     if let Some(time) = input.daily_digest_time {
         set_setting(pool, DIGEST_TIME_KEY, &time).await?;
+    }
+    if let Some(key) = input.groq_api_key {
+        set_setting(pool, GROQ_API_KEY_KEY, &key).await?;
     }
     get_settings(pool).await
 }
@@ -1799,12 +1808,14 @@ mod tests {
         let defaults = get_settings(&pool).await.unwrap();
         assert!(!defaults.daily_digest_enabled);
         assert_eq!(defaults.daily_digest_time, "08:00");
+        assert_eq!(defaults.groq_api_key, None);
 
         let updated = update_settings(
             &pool,
             UpdateSettings {
                 daily_digest_enabled: Some(true),
                 daily_digest_time: Some("07:30".to_string()),
+                ..Default::default()
             },
         )
         .await
@@ -1827,6 +1838,32 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn groq_api_key_persists_and_can_be_cleared() {
+        let pool = memory_pool().await;
+
+        let with_key = update_settings(
+            &pool,
+            UpdateSettings { groq_api_key: Some("gsk_test123".to_string()), ..Default::default() },
+        )
+        .await
+        .unwrap();
+        assert_eq!(with_key.groq_api_key.as_deref(), Some("gsk_test123"));
+
+        // Absent => inchangé.
+        let untouched = update_settings(&pool, UpdateSettings::default()).await.unwrap();
+        assert_eq!(untouched.groq_api_key.as_deref(), Some("gsk_test123"));
+
+        // Chaîne vide => efface.
+        let cleared = update_settings(
+            &pool,
+            UpdateSettings { groq_api_key: Some(String::new()), ..Default::default() },
+        )
+        .await
+        .unwrap();
+        assert_eq!(cleared.groq_api_key, None);
+    }
+
+    #[tokio::test]
     async fn digest_fires_once_per_day_after_configured_time() {
         let pool = memory_pool().await;
         let mut input = new_todo("Tâche du jour");
@@ -1838,6 +1875,7 @@ mod tests {
             UpdateSettings {
                 daily_digest_enabled: Some(true),
                 daily_digest_time: Some("08:00".to_string()),
+                ..Default::default()
             },
         )
         .await

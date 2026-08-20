@@ -11,4 +11,10 @@ daily_digest_enabled: boolean,
 /**
  * Heure d'envoi du résumé, format « HH:MM » (heure locale).
  */
-daily_digest_time: string, };
+daily_digest_time: string, 
+/**
+ * Clé API Groq pour la correction IA à la capture (`ai_parse`). `None`
+ * tant que l'utilisateur ne l'a pas renseignée dans les Réglages —
+ * la capture continue de fonctionner (parsing local uniquement).
+ */
+groq_api_key: string | null, };

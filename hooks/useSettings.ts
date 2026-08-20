@@ -11,6 +11,7 @@ import { SWR_KEYS } from "@/lib/swr-config";
 const FALLBACK: Settings = {
   daily_digest_enabled: false,
   daily_digest_time: "08:00",
+  groq_api_key: null,
 };
 
 /**

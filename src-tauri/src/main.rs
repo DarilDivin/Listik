@@ -193,7 +193,6 @@ fn main() {
             commands::show_main_window,
             commands::get_settings,
             commands::update_settings,
-            commands::ai_ping,
             commands::ai_parse,
             commands::ai_agent,
             commands::ai_agent_claude,

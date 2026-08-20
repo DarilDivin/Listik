@@ -9,6 +9,10 @@ pub struct Settings {
     pub daily_digest_enabled: bool,
     /// Heure d'envoi du résumé, format « HH:MM » (heure locale).
     pub daily_digest_time: String,
+    /// Clé API Groq pour la correction IA à la capture (`ai_parse`). `None`
+    /// tant que l'utilisateur ne l'a pas renseignée dans les Réglages —
+    /// la capture continue de fonctionner (parsing local uniquement).
+    pub groq_api_key: Option<String>,
 }
 
 impl Default for Settings {
@@ -16,6 +20,7 @@ impl Default for Settings {
         Self {
             daily_digest_enabled: false,
             daily_digest_time: "08:00".to_string(),
+            groq_api_key: None,
         }
     }
 }
@@ -27,4 +32,8 @@ pub struct UpdateSettings {
     pub daily_digest_enabled: Option<bool>,
     #[serde(default)]
     pub daily_digest_time: Option<String>,
+    /// Présent (même vide) => écrit ; absent => inchangé. Une chaîne vide
+    /// efface la clé (case « Effacer » côté UI).
+    #[serde(default)]
+    pub groq_api_key: Option<String>,
 }

@@ -316,43 +316,136 @@ pub async fn show_main_window(app: AppHandle) -> Result<(), String> {
 }
 
 // ---------------------------------------------------------------------------
-// Commandes IA (sidecar Python) — D0 : juste un ping de santé.
+// Correction IA à la capture (Phase R2) — appel direct Rust → Groq, plus de
+// sidecar Python. Best-effort : sans clé configurée ou en cas d'erreur
+// réseau, l'appelant (features/todos/aiParse.ts) retombe silencieusement
+// sur le parsing local (regex/chrono-node) — jamais bloquant pour l'UI.
 // ---------------------------------------------------------------------------
 
-#[tauri::command]
-pub async fn ai_ping() -> Result<String, String> {
-    let url = format!("http://127.0.0.1:{}/health", crate::sidecar::SIDECAR_PORT);
-    let resp = reqwest::get(&url).await.map_err(|e| e.to_string())?;
-    resp.text().await.map_err(|e| e.to_string())
+const GROQ_CHAT_URL: &str = "https://api.groq.com/openai/v1/chat/completions";
+// `llama-3.3-70b-versatile` (modèle du sidecar Python d'origine) n'existe
+// plus au catalogue Groq (vérifié via /v1/models le 2026-08-21) — remplacé
+// par un modèle actuellement servi, rapide et qui respecte `response_format:
+// json_object`.
+const GROQ_MODEL: &str = "openai/gpt-oss-20b";
+
+/// Même prompt que l'ancien `sidecar/main.py` (`build_system_prompt`), migré
+/// tel quel : le contrat de sortie (JSON strict, champs, règles de priorité)
+/// ne change pas, seul le transport change.
+fn ai_parse_system_prompt() -> String {
+    let today = chrono::Local::now().format("%Y-%m-%d").to_string();
+    format!(
+        r#"Tu extrais les informations d'une tâche à faire, écrite en langage naturel français, et tu réponds UNIQUEMENT avec un objet JSON (aucun texte autour), au format :
+{{"text": string, "note": string|null, "due_date": string|null (YYYY-MM-DD), "priority": "low"|"normal"|"high", "list": string|null}}
+
+- "text" : la tâche débarrassée de la date, du tag #liste et de la note "// ...".
+- "note" : ce qui suit "//", sinon null.
+- "due_date" : date ISO déduite du texte (aujourd'hui = {today}), sinon null.
+- "list" : le mot après un tag #, sinon null.
+- "priority" :
+  - "high" si urgence explicite ("urgent", "important", "!!", "asap")
+  - "normal" si NÉGATION d'urgence ("pas urgent", "rien d'urgent") — ne pas se laisser
+    piéger par la seule présence du mot "urgent"
+  - "low" si "plus tard", "quand possible", "pas pressé"
+  - "normal" sinon
+
+Exemples :
+Texte : "appeler maman demain, pas urgent #famille // penser à son anniversaire"
+JSON : {{"text": "appeler maman", "note": "penser à son anniversaire", "due_date": "2026-07-03", "priority": "normal", "list": "famille"}}
+
+Texte : "finir le rapport vendredi urgent"
+JSON : {{"text": "finir le rapport", "note": null, "due_date": "2026-07-04", "priority": "high", "list": null}}
+
+Texte : "ranger le garage un jour, pas pressé"
+JSON : {{"text": "ranger le garage", "note": null, "due_date": null, "priority": "low", "list": null}}
+"#
+    )
 }
 
 #[derive(serde::Serialize)]
-struct ParseRequest<'a> {
-    text: &'a str,
+struct GroqMessage<'a> {
+    role: &'a str,
+    content: &'a str,
 }
 
-/// Demande au sidecar d'extraire une tâche structurée depuis du texte libre.
-/// Timeout court : en cas d'indisponibilité (pas de clé API, sidecar down...),
-/// l'appelant doit pouvoir retomber sur le parsing local sans bloquer l'UI.
+#[derive(serde::Serialize)]
+struct GroqResponseFormat {
+    #[serde(rename = "type")]
+    kind: &'static str,
+}
+
+#[derive(serde::Serialize)]
+struct GroqChatRequest<'a> {
+    model: &'a str,
+    messages: Vec<GroqMessage<'a>>,
+    response_format: GroqResponseFormat,
+    temperature: f32,
+}
+
+#[derive(serde::Deserialize)]
+struct GroqChatResponse {
+    choices: Vec<GroqChoice>,
+}
+
+#[derive(serde::Deserialize)]
+struct GroqChoice {
+    message: GroqResponseMessage,
+}
+
+#[derive(serde::Deserialize)]
+struct GroqResponseMessage {
+    content: String,
+}
+
+/// Extrait une tâche structurée depuis du texte libre via l'API Groq
+/// (compatible OpenAI). Nécessite une clé configurée dans les Réglages.
 #[tauri::command]
-pub async fn ai_parse(text: String) -> Result<AiParsedTask, String> {
-    let url = format!("http://127.0.0.1:{}/parse", crate::sidecar::SIDECAR_PORT);
+pub async fn ai_parse(state: State<'_, AppState>, text: String) -> Result<AiParsedTask, String> {
+    let settings = db::get_settings(&state.pool).await.map_err(|e| e.to_string())?;
+    let api_key = settings
+        .groq_api_key
+        .ok_or_else(|| "Aucune clé Groq configurée (Réglages → IA)".to_string())?;
+
     let client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(8))
         .build()
         .map_err(|e| e.to_string())?;
 
+    let system_prompt = ai_parse_system_prompt();
+    let body = GroqChatRequest {
+        model: GROQ_MODEL,
+        messages: vec![
+            GroqMessage { role: "system", content: &system_prompt },
+            GroqMessage { role: "user", content: &text },
+        ],
+        response_format: GroqResponseFormat { kind: "json_object" },
+        temperature: 0.0,
+    };
+
     let resp = client
-        .post(&url)
-        .json(&ParseRequest { text: &text })
+        .post(GROQ_CHAT_URL)
+        .bearer_auth(&api_key)
+        .json(&body)
         .send()
         .await
         .map_err(|e| e.to_string())?;
 
     if !resp.status().is_success() {
-        return Err(format!("Sidecar /parse a répondu {}", resp.status()));
+        let status = resp.status();
+        let detail = resp.text().await.unwrap_or_default();
+        return Err(format!("Groq a répondu {status} : {detail}"));
     }
-    resp.json::<AiParsedTask>().await.map_err(|e| e.to_string())
+
+    let parsed: GroqChatResponse = resp.json().await.map_err(|e| e.to_string())?;
+    let raw = parsed
+        .choices
+        .into_iter()
+        .next()
+        .map(|c| c.message.content)
+        .ok_or_else(|| "Réponse Groq vide".to_string())?;
+
+    serde_json::from_str::<AiParsedTask>(&raw)
+        .map_err(|e| format!("JSON invalide reçu de Groq : {e}"))
 }
 
 #[derive(serde::Serialize)]
@@ -875,5 +968,22 @@ mod tests {
         let prompt = agent_prompt("et demain ?", &history);
         assert!(prompt.contains("preparer la reunio"));
         assert!(prompt.contains("et demain ?"));
+    }
+
+    #[test]
+    fn ai_parse_system_prompt_decrit_le_format_attendu() {
+        let prompt = ai_parse_system_prompt();
+        assert!(prompt.contains("\"text\""));
+        assert!(prompt.contains("due_date"));
+        assert!(prompt.contains(&chrono::Local::now().format("%Y-%m-%d").to_string()));
+    }
+
+    #[test]
+    fn groq_chat_response_desanitize_le_contenu_du_premier_choix() {
+        let raw = r#"{"choices":[{"message":{"content":"{\"text\":\"acheter du pain\",\"note\":null,\"due_date\":null,\"priority\":\"normal\",\"list\":null}"}}]}"#;
+        let parsed: GroqChatResponse = serde_json::from_str(raw).unwrap();
+        let content = parsed.choices.into_iter().next().unwrap().message.content;
+        let task: AiParsedTask = serde_json::from_str(&content).unwrap();
+        assert_eq!(task.text, "acheter du pain");
     }
 }

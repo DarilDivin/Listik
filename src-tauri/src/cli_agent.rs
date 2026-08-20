@@ -555,23 +555,42 @@ pub fn spawn_mcp_server(executor: Arc<dyn ToolExecutor>) -> Result<u16, String> 
         // (IOCP sous Windows) ne le sert jamais — la connexion reste ouverte
         // sans qu'aucun octet ne circule. Bug réel, constaté par un `curl`
         // qui restait pendu indéfiniment sur `/health` malgré un port bindé.
-        match std::net::TcpListener::bind(&addr).and_then(|std_listener| {
+        let bound = std::net::TcpListener::bind(&addr).and_then(|std_listener| {
             std_listener.set_nonblocking(true)?;
+            Ok(std_listener)
+        });
+        let Ok(std_listener) = bound else {
+            port += 1;
+            if port > MCP_PORT_RANGE_START + 20 {
+                return Err("plus de ports libres pour le serveur MCP".to_string());
+            }
+            continue;
+        };
+
+        // `TcpListener::from_std` doit enregistrer le socket auprès du
+        // reactor tokio — `setup()` de Tauri tourne sur un thread qui n'a
+        // *aucun* runtime tokio ambiant, d'où « there is no reactor
+        // running » en lançant la vraie app (jamais vu en test : les tests
+        // tournent déjà dans un runtime). `block_on` fait entrer le runtime
+        // géré par Tauri (même `RUNTIME` que `spawn` juste après) le temps
+        // de la conversion.
+        let listener = match tauri::async_runtime::block_on(async {
             TcpListener::from_std(std_listener)
         }) {
-            Ok(listener) => {
-                tauri::async_runtime::spawn(async move {
-                    let _ = axum::serve(listener, build_app(executor)).await;
-                });
-                return Ok(port);
-            }
+            Ok(l) => l,
             Err(_) => {
                 port += 1;
                 if port > MCP_PORT_RANGE_START + 20 {
                     return Err("plus de ports libres pour le serveur MCP".to_string());
                 }
+                continue;
             }
-        }
+        };
+
+        tauri::async_runtime::spawn(async move {
+            let _ = axum::serve(listener, build_app(executor)).await;
+        });
+        return Ok(port);
     }
 }
 

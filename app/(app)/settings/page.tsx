@@ -11,12 +11,14 @@ import {
   Navigation,
   Paintbrush,
   Palette,
+  Sparkles,
   Zap,
 } from "lucide-react";
 import { useSettings } from "@/hooks/useSettings";
 import { ThemeSetting } from "@/components/ThemeSetting";
 import { AccentPicker } from "@/components/settings/AccentPicker";
 import { NavSetting } from "@/components/settings/NavSetting";
+import { GroqApiKeySetting } from "@/components/settings/GroqApiKeySetting";
 import { Switch } from "@/components/ui/switch";
 import { Spinner } from "@/components/ui/spinner";
 import { TimePicker } from "@/components/ui/time-picker";
@@ -142,7 +144,19 @@ export default function SettingsPage() {
             </SettingsRow>
           </SettingsGroup>
 
-          <SettingsGroup title="Données" index={3}>
+          <SettingsGroup title="IA" index={3}>
+            <SettingsRow
+              label="Clé API Groq"
+              description="Correction du texte à la capture (dates, priorité, projet). Sans clé, l'analyse locale continue de fonctionner."
+              icon={Sparkles}
+              iconClassName="bg-amber-500/8 text-amber-600 dark:text-amber-400"
+              stacked
+            >
+              <GroqApiKeySetting />
+            </SettingsRow>
+          </SettingsGroup>
+
+          <SettingsGroup title="Données" index={4}>
             <SettingsRow
               label="Sauvegarder mes données"
               description="Exporte toutes tes tâches et notes dans un fichier JSON."
@@ -156,7 +170,7 @@ export default function SettingsPage() {
             </SettingsRow>
           </SettingsGroup>
 
-          <SettingsGroup title="Prévu" index={4}>
+          <SettingsGroup title="Prévu" index={5}>
             <SettingsRow
               label="Listes & projets"
               description="Renommer, réordonner et colorer tes listes."
@@ -177,7 +191,7 @@ export default function SettingsPage() {
             </SettingsRow>
           </SettingsGroup>
 
-          <SettingsGroup title="À propos" index={5}>
+          <SettingsGroup title="À propos" index={6}>
             <SettingsRow
               label="Listik"
               description="Gestionnaire de tâches, épuré."
