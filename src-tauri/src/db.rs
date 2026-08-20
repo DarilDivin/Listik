@@ -12,6 +12,8 @@ use uuid::Uuid;
 /// État partagé exposé aux commandes Tauri.
 pub struct AppState {
     pub pool: SqlitePool,
+    /// Port du serveur MCP in-process (Phase R), posé au démarrage.
+    pub mcp_port: Option<u16>,
 }
 
 const SELECT_COLUMNS: &str =

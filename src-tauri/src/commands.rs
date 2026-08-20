@@ -482,6 +482,57 @@ pub async fn ai_search(query: String, k: u32) -> Result<Vec<AiSource>, String> {
 }
 
 // ---------------------------------------------------------------------------
+// Agent par CLI (Phase R) — Claude Code connecté à notre serveur MCP.
+// ---------------------------------------------------------------------------
+
+/// Un tour d'agent via le CLI Claude (`claude -p`), qui écrit LUI-MÊME dans
+/// la base en passant par le serveur MCP in-process (port présent dans
+/// `AppState`). `history` (derniers échanges) est préfixé au prompt car le
+/// CLI tourne sans session persistance (`--no-session-persistence`) : il faut
+/// lui rappeler le fil pour résoudre « et demain ? » etc.
+#[tauri::command]
+pub async fn ai_agent_claude(
+    state: State<'_, AppState>,
+    text: String,
+    history: Vec<AiChatMessage>,
+) -> Result<String, String> {
+    use crate::cli_agent::AgentProvider;
+
+    let port = state
+        .mcp_port
+        .ok_or_else(|| "Le serveur MCP n'a pas démarré".to_string())?;
+    let provider = crate::cli_agent::ClaudeProvider::resolve()?;
+
+    let prompt = agent_prompt(&text, &history);
+    let timeout = std::time::Duration::from_secs(240);
+    provider.run(&prompt, port, timeout).await
+}
+
+/// Assemble le prompt : historique (question/réponse) puis la nouvelle
+/// demande, avec une phrase de cadrage rappelant l'existence des outils.
+fn agent_prompt(text: &str, history: &[AiChatMessage]) -> String {
+    let mut lines = Vec::new();
+    if !history.is_empty() {
+        lines.push("Historique de la conversation :".to_string());
+        for msg in history {
+            let who = match msg.role.as_str() {
+                "user" => "Utilisateur",
+                _ => "Assistant",
+            };
+            lines.push(format!("{who} : {}", msg.content));
+        }
+        lines.push("".to_string());
+    }
+    lines.push(format!(
+        "Nouvelle demande : {text}\n\n\
+         Tu es l'assistant de Listik. Utilise les outils MCP pour lire ou \
+         modifier la base avant de répondre ; si une action est ambigüe, pose \
+         une question au lieu d'inventer."
+    ));
+    lines.join("\n")
+}
+
+// ---------------------------------------------------------------------------
 // Sauvegarde (export JSON complet)
 // ---------------------------------------------------------------------------
 
@@ -799,4 +850,27 @@ pub async fn delete_subtask(
         .map_err(|e| e.to_string())?;
     notify_changed(&app);
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn agent_prompt_contient_demande_et_cadrage() {
+        let prompt = agent_prompt("ajoute une tache", &[]);
+        assert!(prompt.contains("ajoute une tache"));
+        assert!(prompt.contains("outils MCP"), "le cadrage doit mentionner les outils");
+    }
+
+    #[test]
+    fn agent_prompt_reprend_l_historique() {
+        let history = vec![
+            AiChatMessage { role: "user".into(), content: "preparer la reunio".into() },
+            AiChatMessage { role: "assistant".into(), content: "c'est note".into() },
+        ];
+        let prompt = agent_prompt("et demain ?", &history);
+        assert!(prompt.contains("preparer la reunio"));
+        assert!(prompt.contains("et demain ?"));
+    }
 }

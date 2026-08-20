@@ -2,6 +2,10 @@
 
 > **Évolution ergonomie Things 3** (Domaines/Projets, Inbox, tags, dates avancées,
 > réordonnancement, undo, etc.) → voir [`ROADMAP-THINGS.md`](./ROADMAP-THINGS.md).
+>
+> **Pivot post-Things** (nettoyage, Journal en remplacement des Notes, accueil Aujourd'hui +
+> Routines, IA via CLI d'abonnement en remplacement du sidecar, refonte UI/UX différée) → voir
+> [`ROADMAP-PIVOT.md`](./ROADMAP-PIVOT.md).
 
 ## Contexte
 

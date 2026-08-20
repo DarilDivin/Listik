@@ -168,46 +168,84 @@ JournalWidget.tsx` (nouveau), `hooks/useJournal.ts`, `components/ui-prefs.tsx`,
 `/ask`/`/agent`) par un agent CLI (abonnement Claude/Gemini) orchestré depuis Rust, outillé via
 MCP sur les commandes existantes. **Indépendant** des phases O-Q, peut avancer en parallèle.
 
-1. **Débranchement du RAG** : `sidecar/` (Python, `fastembed`, `sqlite-vec`, `/index`/`/search`/
-   `/ask`/`/agent`) n'est plus spawné par l'app en production — retiré du `setup()` Tauri
-   (`src-tauri/src/sidecar.rs`). Code et venv conservés dans le repo, lançable manuellement
-   (`python sidecar/main.py`) pour continuer à l'étudier.
-2. **Le `/parse` (correction Groq à la capture) migre en appel direct Rust → Groq** (`reqwest`,
-   API OpenAI-compatible), sans passer par le sidecar Python — permet de ne **plus jamais**
-   spawner de process Python en usage normal, tout en gardant Groq pour la capture instantanée.
-   Décision technique qui résout concrètement « capture garde Groq » + « sidecar débranché ».
-3. **Nouveau module Rust** (`src-tauri/src/cli_agent.rs` ou équivalent) : spawn du CLI choisi en
-   mode non-interactif (`claude -p`, `gemini -p` ou équivalent), configuration MCP passée au
-   process.
-4. **Serveur MCP côté Rust** exposant les commandes existantes comme outils : lister/créer/
-   modifier/supprimer tâches, lister/créer entrées de journal, recherche lexicale (réutilise
-   `features/search/lexical.ts` côté outil si exposé, ou l'équivalent Rust). Le CLI-agent décide
-   lui-même quels outils appeler et dans quel ordre — pas de recherche vectorielle.
-5. **Abstraction provider** : interface Rust (trait) permettant plusieurs CLI interchangeables.
-   Implémentations de départ : **Claude Code CLI** (seul confirmé installé,
-   `claude.exe` v2.1.218) et **Gemini CLI/Antigravity**. Prévus mais différés : **OpenCode**,
-   **Ollama local**.
-6. **Réglage** (Settings) pour choisir le provider actif.
-7. **Frontend** : nouvelle commande `ai_agent` (remplace l'appel `/agent` du sidecar) branchée
-   sur le mode Question de l'Omnibar et la section Assistant — même façade utilisateur, moteur
-   différent.
+### Décisions verrouillées (2026-08-09, session de revue)
+
+La revue a tranché le sort des fonctionnalités « RAG » : elles sont **préservées**, mais
+réparties sur les deux mécanismes dont elles dépendent vraiment :
+
+1. **Assistant (conversation) → récupération « par l'agent »**, sans base vectorielle : Claude
+   Code fait lui-même la recherche sémantique **dans son contexte**, en enquêtant (outils
+   lister/filtrer + `search_entries` + lecture). La compétence « trouver par le sens » est
+   portée par le LLM, pas par un embedding. Le `answer_question`/`create_note` du sidecar
+   disparaît (outils journal à la place).
+2. **Ctrl+K (Quick Find) → Classe embedding local en Rust (option C validée)** : on **garde
+   la recherche sémantique** (« magasin » → « supermarché »), mais le calcul d'embedding passe
+   de `fastembed`-Python à un module **Rust** (`fastembed-rs`/`ort`, même modèle
+   `multilingual-MiniLM-L12-v2`, déjà présent sur la machine). Fin de `sqlite-vec` : cosinus
+   brut (produit scalaire) sur une table SQLite — brute force, négligeable < 10 000 × 384.
+   Aucun `python.exe`, aucune API.
+3. **« Sources » de l'Assistant conservées** : reconstruites côté Rust à partir des **outils
+   réellement appelés par le CLI pendant le tour** (id + texte des entrées touchées), remontées
+   dans `AiAgentResponse` — la façade `assistant/page.tsx` reste intacte.
+
+### Runbook (R0→R6, chacune livrable et testée seule)
+
+- **R0 — Spike « spawn CLI + MCP »** : preuve que `claude -p` s'exécute bien en sous-processus
+  depuis Rust (`tokio::process`), capture stdout/stderr + format JSON, chemin `--mcp-config`,
+  comportement quand le CLI manque, durée de démarrage. Critère : `claude -p "bonjour"` répond
+  dans un exemple Rust isolé et le process est tué à la fin (pas d'orphelin).
+- **R1 — Débrancher Python du runtime** : retirer de `main.rs` `sidecar::spawn()`,
+  `SidecarState`/`kill` et `vectorizer.rs` (`needs_embedding`/`pending_deindex` inertes). Le
+  dossier `sidecar/` reste dans le repo, lançable manuellement (`python sidecar/main.py`)
+  comme **labo pédagogique** (IA/RAG), jamais comme service aux runtime.
+- **R2 — Capture directe Rust → Groq** : `ai_parse` devient un POST `reqwest` vers
+  `https://api.groq.com/openai/v1/chat/completions` (API OpenAI-compatible, même modèle et
+  prompt système), clé stockée dans Réglages (jamais en dur dans le repo). Timeout 8 s,
+  fallback parsing local inchangé. Critère : Alt+Q crée une tâche **sans aucun `python.exe`
+  actif** (`Get-CimInstance`).
+- **R3 — Retriever sémantique Rust (Ctrl+K)** : `src-tauri/src/embeddings.rs` + migration
+  (table `todo_embeddings`), embedding au moment de l'écriture (create/update) via
+  `fastembed-rs` ; commande `semantic_search(query, k)` (même forme que l'ancienne `ai_search`
+  → `SearchOverlay.tsx` **inchangée**, seul le fond change). Critère : Ctrl+K retrouve
+  « magasin » → « supermarché », hors ligne, sans sidecar.
+- **R4 — Serveur MCP + agent** : `src-tauri/src/cli_agent.rs` ; serveur MCP Rust (stdio,
+  JSON-RPC, crate `rmcp` ; repli si dépendance non conforme) exposant `list_todos` (filtres
+  date/statut/rattachement), `create_todo`, `update_todo`, `delete_todo`,
+  `list_journal_entries_for_day`, `create_journal_entry`, `search_entries` (lexical, porté de
+  `features/search/lexical.ts`). Chaque mutation → `db::*` + `notify_changed` (l'UI se
+  rafraîchit comme un clic manuel). Nouvelle impl `ai_agent` : spawn `claude -p` + fichier
+  temporaire `--mcp-config`, prompt système (règles d'usage, « jamais d'action au hasard » :
+  réponse `not_found` si ambigu), relais du `history`, **collecte des outils appelés →
+  `sources`**, désérialisation → `AiAgentResponse`.
+- **R5 — Abstraction provider + Réglage** : trait `AgentProvider { kind, args de spawn,
+  mcp-config, timeout }` ; implémentations `Claude` (défaut, `claude.exe` v2.1.218 confirmé) →
+  `Gemini`/Antigravity. Réglage « Agent IA » (provider actif). Prévus plus tard : **OpenCode**,
+  **Ollama local**.
+- **R6 — Robustesse Windows** : timeout par tour (ex. 60 s) + bouton « Arrêter » côté UI
+  (`assistant/page.tsx`) qui coupe l'arbre de process du CLI en cours (Job Object / taskkill
+  /T — la leçon [[windows-process-cleanup]] : vérifier les orphelins `claude.exe`/`python.exe`
+  avec `Get-CimInstance` avant relance) ; kill des agents en cours dans le `RunEvent::Exit`.
 
 **Risques identifiés (assumés)** :
-- Latence : chaque tour de l'Assistant implique un démarrage de process (1-3s+) et
-  potentiellement plusieurs appels d'outils enchaînés — acceptable pour une conversation, pas
-  pour la capture (raison du split avec Groq).
+- Latence : chaque tour implique un démarrage de process (1-3 s+) et potentiellement plusieurs
+  appels d'outils enchaînés — acceptable pour une conversation, pas pour la capture (raison du
+  split Groq direct, R2).
 - Support MCP variable selon le CLI (solide chez Claude Code et Gemini CLI, incertain pour
-  OpenCode/futurs providers) — architecture pensée pour tolérer un provider qui ne le supporte
-  pas encore.
+  OpenCode/futurs) — design tolère un provider qui ne parle pas MCP (chat simple).
 - Conditions d'utilisation des abonnements grand public pour un usage automatisé par une app
   tierce : zone grise, **risque assumé** par l'utilisateur, usage strictement personnel/local.
+- Recherche « par l'agent » dégradée sur les très gros contextes : atténuée par `search_entries`
+  lexicale d'abord, puis lecture ciblée.
 
-**Tester** : reprise des scénarios D2/D4 de `docs/ROADMAP.md` (« qu'est-ce que j'ai cette
-semaine ? », « ajoute une tâche », « note : idée… ») mais via le CLI choisi plutôt que Groq ;
-`/parse` à la capture continue de fonctionner sans que le sidecar Python soit lancé.
+**Tester (acceptation)** : rejouer D2/D4 de `docs/ROADMAP.md` avec Claude (« qu'est-ce que j'ai
+cette semaine ? », « ajoute une tâche », « note : idée… », « supprime la tâche des impôts »)
+avec sources affichées ; Alt+Q continue de créer sans sidecar Python actif ; Ctrl+K retrouve
+« magasin » → la tâche « supermarché » hors ligne.
 
-**Fichiers clés** : `src-tauri/src/sidecar.rs` (retrait du spawn), `src-tauri/src/cli_agent.rs`
-(nouveau), `src-tauri/src/commands.rs`, `sidecar/` (conservé, non spawné).
+**Fichiers clés** : `src-tauri/src/cli_agent.rs` (nouveau), `src-tauri/src/embeddings.rs`
+(nouveau), migration `todo_embeddings`, `src-tauri/src/main.rs` (retrait du spawn sidecar),
+`src-tauri/src/commands.rs` (`ai_parse` Groq direct, `ai_agent` CLI+MCP, `semantic_search`),
+`sidecar/` (conservé, non spawné, labo pédagogique), Réglages → « Agent IA ».
 
 ---
 
@@ -239,8 +277,9 @@ O-R livrées.
 2. **P** : Journal complet (jour, blocs horodatés, entrée future visible en « À venir », tags,
    `/note`) ; Notes retiré de la navigation.
 3. **Q** : Routines séparées dans Aujourd'hui ; widget Journal fonctionnel sur l'accueil.
-4. **R** : Assistant répondant via CLI ; capture toujours instantanée via Groq ; sidecar Python
-   non spawné en usage normal.
+4. **R** : Assistant répondant via CLI (sources affichées, issues des outils appelés) ; capture
+   toujours instantanée via Groq direct (aucun `python.exe` actif) ; Ctrl+K sémantique local Rust
+   (embeddings) sans sidecar.
 5. **S** : à définir à l'attaque de la phase.
 
 **Principe directeur** (repris des chantiers précédents) : une phase n'est entamée qu'une fois la

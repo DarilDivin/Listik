@@ -1,11 +1,13 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod cli_agent;
 mod commands;
 mod db;
 mod models;
 mod reminders;
 mod sidecar;
-mod vectorizer;
+
+use std::sync::Arc;
 
 use commands::{show_main_window, toggle_quick_window};
 use db::AppState;
@@ -37,17 +39,29 @@ fn main() {
                 Err(e) => eprintln!("⚠️ Réconciliation listes → projets échouée: {e}"),
             }
 
-            app.manage(AppState { pool });
+            // --- Serveur MCP in-process (Phase R) ---
+            // Claude Code (et autres clients) s'y connecte par HTTP sur le
+            // loopback. R4 : de vrais outils (todos/notes/journal) sur le pool
+            // partagé, qui émettent les mêmes événements que les commandes.
+            let executor: Arc<dyn cli_agent::ToolExecutor> = Arc::new(cli_agent::DbExecutor::new(
+                pool.clone(),
+                Some(app.handle().clone()),
+            ));
+            let mcp_port = match cli_agent::spawn_mcp_server(executor) {
+                Ok(port) => {
+                    println!("🛰️  Serveur MCP Listik : http://127.0.0.1:{port}/mcp");
+                    Some(port)
+                }
+                Err(e) => {
+                    eprintln!("⚠️ Impossible de démarrer le serveur MCP : {e}");
+                    None
+                }
+            };
+
+            app.manage(AppState { pool: pool.clone(), mcp_port });
 
             // --- Planificateur de rappels (notifications en arrière-plan) ---
             reminders::spawn_scheduler(app.handle().clone());
-
-            // --- Sidecar Python (IA) ---
-            app.manage(sidecar::SidecarState::empty());
-            sidecar::spawn(app.handle().clone());
-
-            // --- Pipeline d'indexation asynchrone (tâches/notes → sidecar) ---
-            vectorizer::spawn_indexer(app.handle().clone());
 
             // --- Menu du tray ---
             // Menu natif du tray : en-tête + groupes séparés (le style est géré
@@ -182,6 +196,7 @@ fn main() {
             commands::ai_ping,
             commands::ai_parse,
             commands::ai_agent,
+            commands::ai_agent_claude,
             commands::ai_search,
             commands::export_backup,
             commands::create_subtask,
@@ -208,8 +223,8 @@ fn main() {
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
         .run(|app_handle, event| {
-            if let tauri::RunEvent::Exit = event {
-                sidecar::kill(app_handle);
-            }
+            // Pas de process Python à tuer : l'IA est soit en Rust (R2-R4), soit
+            // lancée à la demande par cli_agent (tuée explicitement par le code).
+            let _ = app_handle;
         });
 }
