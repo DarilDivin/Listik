@@ -504,7 +504,10 @@ pub async fn ai_agent_claude(
     let provider = crate::cli_agent::ClaudeProvider::resolve()?;
 
     let prompt = agent_prompt(&text, &history);
-    let timeout = std::time::Duration::from_secs(240);
+    // R0 vérifié en conditions réelles : un tour focalisé prend ~12s. 240s
+    // datait d'avant le correctif `set_nonblocking` (le serveur ne répondait
+    // jamais) — un vrai blocage laisserait l'Assistant pendu 4 minutes.
+    let timeout = std::time::Duration::from_secs(60);
     provider.run(&prompt, port, timeout).await
 }
 

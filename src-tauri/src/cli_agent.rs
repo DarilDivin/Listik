@@ -458,6 +458,7 @@ pub async fn handle_message(
         return None; // parse trouble : on ignore
     };
     let params = msg.get("params").cloned().unwrap_or(Value::Null);
+    eprintln!("[mcp] <- {method} (id={id})");
 
     // Les notifications n'ont pas d'id → jamais de réponse.
     if id.is_null() {
@@ -507,9 +508,15 @@ async fn handle_http(
     body: axum::body::Bytes,
 ) -> Response {
     let raw = String::from_utf8_lossy(&body).to_string();
+    // Spec MCP Streamable HTTP : une entrée qui ne contient que des
+    // notifications (pas d'id, donc pas de réponse) doit recevoir 202
+    // Accepted — un 204 (utilisé avant ce correctif) fait échouer la
+    // négociation chez certains clients stricts, qui abandonnent alors
+    // silencieusement la connexion au serveur (constaté : `notifications/
+    // initialized` en 204 => le CLI ne voit ensuite plus aucun outil).
     let mut resp = match handle_message(executor.as_ref(), &raw).await {
         Some(reply) => (StatusCode::OK, reply).into_response(),
-        None => StatusCode::NO_CONTENT.into_response(),
+        None => StatusCode::ACCEPTED.into_response(),
     };
     if resp.status() == StatusCode::OK {
         resp.headers_mut().insert(
@@ -542,8 +549,16 @@ pub fn spawn_mcp_server(executor: Arc<dyn ToolExecutor>) -> Result<u16, String> 
     let mut port = MCP_PORT_RANGE_START;
     loop {
         let addr = SocketAddr::from(([127, 0, 0, 1], port));
-        let std_listener = std::net::TcpListener::bind(&addr).map_err(|e| e.to_string())?;
-        match TcpListener::from_std(std_listener) {
+        // `TcpListener::from_std` exige un socket déjà en mode non-bloquant :
+        // sans `set_nonblocking(true)`, le listener converti accepte bien la
+        // poignée de main TCP côté OS mais la boucle d'accept async de tokio
+        // (IOCP sous Windows) ne le sert jamais — la connexion reste ouverte
+        // sans qu'aucun octet ne circule. Bug réel, constaté par un `curl`
+        // qui restait pendu indéfiniment sur `/health` malgré un port bindé.
+        match std::net::TcpListener::bind(&addr).and_then(|std_listener| {
+            std_listener.set_nonblocking(true)?;
+            TcpListener::from_std(std_listener)
+        }) {
             Ok(listener) => {
                 tauri::async_runtime::spawn(async move {
                     let _ = axum::serve(listener, build_app(executor)).await;
@@ -625,6 +640,14 @@ pub async fn run_claude_turn(
         .arg("--strict-mcp-config")
         .arg("--mcp-config")
         .arg(&mcp_config.path)
+        // Sans ça, le CLI headless REFUSE l'appel de nos outils MCP (pas de
+        // TTY pour approuver) — constaté en test manuel : `tools/list` passe,
+        // `tools/call` échoue avec « permission refusée ». `--strict-mcp-config`
+        // limite déjà les SERVEURS à `listik` seul ; ce préfixe autorise tous
+        // ses outils sans lister chaque nom un par un.
+        .arg("--allowedTools")
+        .arg("mcp__listik")
+        .stdin(std::process::Stdio::null())
         .kill_on_drop(true); // le child meurt si notre process meurt
 
     let Ok(child) = cmd.stdout(std::process::Stdio::piped())
@@ -660,16 +683,11 @@ fn extract_json_result(stdout: &[u8]) -> Result<String, String> {
         }
         return Err(format!("erreur du CLI : {}", v));
     }
-    let text = v["message"]["content"]
-        .as_array()
-        .map(|contents| {
-            contents
-                .iter()
-                .filter_map(|c| c["text"].as_str())
-                .collect::<Vec<_>>()
-                .join("\n")
-        })
-        .unwrap_or_default();
+    // `--output-format json` (`claude -p`) met le texte final dans un champ
+    // `result` de premier niveau — PAS dans `message.content[]` (ça, c'est la
+    // forme `stream-json`). Constaté sur de vrais appels : `{"is_error":false,
+    // …,"result":"texte…", …}`, aucune clé `message` du tout.
+    let text = v["result"].as_str().unwrap_or_default().to_string();
     if text.trim().is_empty() {
         // Aucune itération texte (ex. réponse vide)…
         return Err("le CLI n'a rien retourné".to_string());
@@ -897,6 +915,27 @@ mod tests {
         assert_eq!(answer, "[fake] audite ma base");
     }
 
+    /// Régression : le texte final vit dans `result` (premier niveau), pas
+    /// dans `message.content[]` — bug réel constaté en test manuel (un vrai
+    /// tour réussi remontait quand même « le CLI n'a rien retourné »).
+    /// Blob raccourci mais authentique, capturé sur un vrai `claude -p
+    /// --output-format json`.
+    #[test]
+    fn extract_json_result_lit_le_champ_result() {
+        let stdout = r#"{"is_error":false,"duration_api_ms":31944,"num_turns":7,
+            "stop_reason":"end_turn","session_id":"afbdec3d","subtype":"success",
+            "api_error_status":null,"result":"Bonjour, voici la reponse."}"#
+        .as_bytes();
+        assert_eq!(extract_json_result(stdout).unwrap(), "Bonjour, voici la reponse.");
+    }
+
+    #[test]
+    fn extract_json_result_remonte_lerreur_api() {
+        let stdout = r#"{"is_error":true,"api_error_message":"quota depasse","result":""}"#.as_bytes();
+        let err = extract_json_result(stdout).unwrap_err();
+        assert!(err.contains("quota depasse"), "erreur inattendue : {err}");
+    }
+
     #[test]
     fn mote_claude_resout_le_binaire_sans_crasher() {
         // Ne requiert PAS le binaire : teste la surface `resolve()` dans les
@@ -910,11 +949,101 @@ mod tests {
         }
     }
 
+    /// Vérification du critère d'acceptation R0 (jamais exécutée pour de vrai
+    /// jusqu'ici : les 14 tests protocole ci-dessus tapent `EchoExecutor`/pools
+    /// en mémoire, jamais le VRAI binaire `claude`). Coûte un appel API réel
+    /// (abonnement) et du réseau → ignorée par défaut.
+    /// `cargo test cli_agent::tests::vrai_round_trip -- --ignored --nocapture`
+    #[tokio::test(flavor = "multi_thread")]
+    #[ignore = "appelle le vrai binaire claude (réseau + abonnement)"]
+    async fn vrai_round_trip_claude_appelle_list_todos_via_mcp() {
+        let pool = mem_pool().await;
+        let executor = std::sync::Arc::new(DbExecutor::new(pool.clone(), None)) as Arc<dyn ToolExecutor>;
+        executor
+            .call(
+                "create_todo",
+                json!({ "text": "acheter des kiwis violets" }),
+            )
+            .await
+            .unwrap();
+
+        let port = spawn_mcp_server(executor).expect("le serveur MCP doit démarrer");
+        let provider = ClaudeProvider::resolve().expect("binaire claude introuvable");
+
+        let answer = provider
+            .run(
+                "Utilise l'outil list_todos pour lister mes tâches en attente, \
+                 puis cite le texte exact de chacune dans ta réponse.",
+                port,
+                std::time::Duration::from_secs(60),
+            )
+            .await
+            .expect("le tour d'agent a échoué");
+
+        assert!(
+            answer.to_lowercase().contains("kiwis violets"),
+            "la réponse ne cite pas la tâche seedée (l'outil MCP n'a probablement pas été \
+             appelé) : {answer}"
+        );
+    }
+
+    /// Le test ci-dessus ne couvre qu'un outil de LECTURE (`list_todos`).
+    /// `--allowedTools "mcp__listik"` (préfixe serveur) doit aussi couvrir
+    /// les MUTATIONS (`create_todo`) — sinon l'Assistant refuserait en
+    /// silence toute écriture en prod alors que la lecture marche. Vérifié
+    /// sur l'état réel de la base, pas seulement le texte de la réponse.
+    #[tokio::test(flavor = "multi_thread")]
+    #[ignore = "appelle le vrai binaire claude (réseau + abonnement)"]
+    async fn vrai_round_trip_claude_peut_creer_une_tache_via_mcp() {
+        let pool = mem_pool().await;
+        let executor = std::sync::Arc::new(DbExecutor::new(pool.clone(), None)) as Arc<dyn ToolExecutor>;
+
+        let port = spawn_mcp_server(executor).expect("le serveur MCP doit démarrer");
+        let provider = ClaudeProvider::resolve().expect("binaire claude introuvable");
+
+        provider
+            .run(
+                "Utilise l'outil create_todo pour créer une tâche avec le texte \
+                 exact : tester la permission mutation mcp",
+                port,
+                std::time::Duration::from_secs(60),
+            )
+            .await
+            .expect("le tour d'agent a échoué");
+
+        let todos = crate::db::list_all(&pool).await.unwrap();
+        assert!(
+            todos.iter().any(|t| t.text == "tester la permission mutation mcp"),
+            "la tâche n'a pas été créée en base — la mutation a probablement été refusée : {:?}",
+            todos.iter().map(|t| &t.text).collect::<Vec<_>>()
+        );
+    }
+
     #[tokio::test(flavor = "multi_thread")]
     async fn serveur_repond_health() {
         let port = start_server().await;
         let body = http_body(port, "GET", "/health", "").await.unwrap();
         assert!(body.contains(r#"{"ok":true}"#), "réponse inattendue : {body}");
+    }
+
+    /// Régression : `bind` échouait avec `?` au lieu de faire avancer la
+    /// boucle → un port déjà occupé faisait échouer tout le démarrage au
+    /// lieu d'essayer le suivant.
+    #[test]
+    fn spawn_mcp_server_essaie_le_port_suivant_si_le_premier_est_pris() {
+        let _rt = tokio::runtime::Runtime::new().unwrap();
+        let _guard = _rt.enter();
+
+        let occupied = std::net::TcpListener::bind((
+            "127.0.0.1",
+            MCP_PORT_RANGE_START,
+        ))
+        .unwrap();
+
+        let port = spawn_mcp_server(Arc::new(EchoExecutor) as Arc<dyn ToolExecutor>).unwrap();
+
+        assert_ne!(port, MCP_PORT_RANGE_START, "aurait dû sauter le port occupé");
+        drop(occupied);
     }
 
     #[tokio::test(flavor = "multi_thread")]
@@ -981,5 +1110,46 @@ mod tests {
         text.split_once("\r\n\r\n")
             .map(|(_, b)| b.to_string())
             .ok_or(text)
+    }
+
+    /// Envoie une requête HTTP brute et renvoie le code de statut.
+    async fn http_status(port: u16, method: &str, path: &str, body: &str) -> u16 {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+        let mut client = tokio::net::TcpStream::connect(("127.0.0.1", port)).await.unwrap();
+        let request = format!(
+            "{method} {path} HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+            body.len()
+        );
+        client.write_all(request.as_bytes()).await.unwrap();
+        let mut raw = Vec::new();
+        client.read_to_end(&mut raw).await.unwrap();
+        let text = String::from_utf8_lossy(&raw).to_string();
+        text.lines()
+            .next()
+            .and_then(|line| line.split_whitespace().nth(1))
+            .and_then(|code| code.parse().ok())
+            .unwrap_or(0)
+    }
+
+    /// Régression : une entrée qui ne contient qu'une notification (pas
+    /// d'id → pas de réponse JSON-RPC) doit recevoir 202 Accepted, le code
+    /// attendu par la spec MCP Streamable HTTP. Un 204 (comportement avant
+    /// ce correctif) a fait échouer silencieusement le handshake avec le
+    /// vrai CLI `claude` : `notifications/initialized` recevait 204, le
+    /// client abandonnait la connexion, et aucun outil `listik` n'était
+    /// plus jamais visible ensuite (constaté en test manuel, pas seulement
+    /// théorique).
+    #[tokio::test(flavor = "multi_thread")]
+    async fn notification_recoit_202_accepted_pas_204() {
+        let port = start_server().await;
+        let status = http_status(
+            port,
+            "POST",
+            "/mcp",
+            r#"{"jsonrpc":"2.0","method":"notifications/initialized","params":{}}"#,
+        )
+        .await;
+        assert_eq!(status, 202, "une notification doit recevoir 202 Accepted");
     }
 }
