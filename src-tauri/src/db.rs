@@ -591,12 +591,16 @@ pub async fn delete_subtask(pool: &SqlitePool, id: &str) -> Result<(), sqlx::Err
 }
 
 // ---------------------------------------------------------------------------
-// Synchronisation vectorielle (D3) : items à (dés)indexer côté sidecar.
-// Lu/écrit par `vectorizer.rs` (tâche de fond, calquée sur le planificateur
-// de rappels ci-dessus).
+// Bookkeeping embeddings (héritage D3) : le pipeline sidecar Python qui
+// consommait ce flag (`vectorizer.rs`) a été retiré (Phase R). Le flag
+// `needs_embedding`/la file `pending_deindex` (posée par `queue_deindex` sur
+// suppression) et le texte combiné construit ici sont GARDÉS : c'est
+// exactement ce que R3 (embeddings locaux en Rust, `fastembed-rs`) réutilisera
+// pour savoir quoi (ré)indexer. Seule la moitié « lecture pour le sidecar »
+// (endpoints `/index`/`/deindex` côté Python) a disparu avec lui.
 // ---------------------------------------------------------------------------
 
-/// Tâche ou note prête à être envoyée au sidecar (`POST /index`).
+/// Tâche ou note prête à être (ré)indexée.
 pub struct EmbeddingItem {
     pub id: String,
     pub kind: &'static str, // "task" ou "note"
@@ -615,23 +619,6 @@ async fn queue_deindex(pool: &SqlitePool, id: &str, kind: &str) -> Result<(), sq
     .bind(now_iso())
     .execute(pool)
     .await?;
-    Ok(())
-}
-
-/// Suppressions en attente de répercussion (`POST /deindex`).
-pub async fn pending_deindex(pool: &SqlitePool, limit: i64) -> Result<Vec<(String, String)>, sqlx::Error> {
-    sqlx::query_as("SELECT id, type FROM pending_deindex LIMIT ?")
-        .bind(limit)
-        .fetch_all(pool)
-        .await
-}
-
-/// Retire une suppression de la file une fois répercutée avec succès.
-pub async fn clear_pending_deindex(pool: &SqlitePool, id: &str) -> Result<(), sqlx::Error> {
-    sqlx::query("DELETE FROM pending_deindex WHERE id = ?")
-        .bind(id)
-        .execute(pool)
-        .await?;
     Ok(())
 }
 
@@ -667,44 +654,6 @@ pub async fn todos_needing_embedding(
         items.push(EmbeddingItem { id, kind: "task", text: combined });
     }
     Ok(items)
-}
-
-/// Redescend le drapeau une fois l'indexation confirmée par le sidecar.
-pub async fn mark_todo_embedded(pool: &SqlitePool, id: &str) -> Result<(), sqlx::Error> {
-    sqlx::query("UPDATE todos SET needs_embedding = 0 WHERE id = ?")
-        .bind(id)
-        .execute(pool)
-        .await?;
-    Ok(())
-}
-
-/// Notes à (ré)indexer. Texte envoyé = titre + contenu.
-pub async fn notes_needing_embedding(
-    pool: &SqlitePool,
-    limit: i64,
-) -> Result<Vec<EmbeddingItem>, sqlx::Error> {
-    let rows: Vec<(String, String, String)> =
-        sqlx::query_as("SELECT id, title, content FROM notes WHERE needs_embedding = 1 LIMIT ?")
-            .bind(limit)
-            .fetch_all(pool)
-            .await?;
-
-    Ok(rows
-        .into_iter()
-        .map(|(id, title, content)| {
-            let text = if title.is_empty() { content } else { format!("{title}\n{content}") };
-            EmbeddingItem { id, kind: "note", text }
-        })
-        .collect())
-}
-
-/// Redescend le drapeau une fois l'indexation confirmée par le sidecar.
-pub async fn mark_note_embedded(pool: &SqlitePool, id: &str) -> Result<(), sqlx::Error> {
-    sqlx::query("UPDATE notes SET needs_embedding = 0 WHERE id = ?")
-        .bind(id)
-        .execute(pool)
-        .await?;
-    Ok(())
 }
 
 // ---------------------------------------------------------------------------
