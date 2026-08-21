@@ -1,9 +1,9 @@
 use crate::db::{self, AppState};
 use crate::models::{
-    AiChatMessage, AiParsedTask, AiSource, Area, CreateArea, CreateJournalEntry, CreateNote,
-    CreateProject, CreateSubTask, CreateTag, CreateTodo, JournalEntry, Note, Project, Settings,
-    SubTask, Tag, Todo, UpdateArea, UpdateJournalEntry, UpdateNote, UpdateProject, UpdateSettings,
-    UpdateSubTask, UpdateTag, UpdateTodo,
+    AiChatMessage, AiParsedTask, Area, CreateArea, CreateJournalEntry, CreateNote, CreateProject,
+    CreateSubTask, CreateTag, CreateTodo, JournalEntry, Note, Project, Settings, SubTask, Tag,
+    Todo, UpdateArea, UpdateJournalEntry, UpdateNote, UpdateProject, UpdateSettings, UpdateSubTask,
+    UpdateTag, UpdateTodo,
 };
 use tauri::{AppHandle, Emitter, Manager, State, WebviewUrl, WebviewWindowBuilder};
 
@@ -454,34 +454,10 @@ pub async fn ai_parse(state: State<'_, AppState>, text: String) -> Result<AiPars
 // `SidecarAgentResponse`/`AiNoteDraft` restent dans `models/ai.rs` (coût nul,
 // pas de raison de les faire disparaître dans cette passe).
 
-#[derive(serde::Serialize)]
-struct SearchRequest<'a> {
-    query: &'a str,
-    k: u32,
-}
-
-/// Recherche sémantique directe (sans passer par l'agent conversationnel) :
-/// relaie tel quel vers le `/search` du sidecar (D2).
-#[tauri::command]
-pub async fn ai_search(query: String, k: u32) -> Result<Vec<AiSource>, String> {
-    let url = format!("http://127.0.0.1:{}/search", crate::sidecar::SIDECAR_PORT);
-    let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(8))
-        .build()
-        .map_err(|e| e.to_string())?;
-
-    let resp = client
-        .post(&url)
-        .json(&SearchRequest { query: &query, k })
-        .send()
-        .await
-        .map_err(|e| e.to_string())?;
-
-    if !resp.status().is_success() {
-        return Err(format!("Sidecar /search a répondu {}", resp.status()));
-    }
-    resp.json::<Vec<AiSource>>().await.map_err(|e| e.to_string())
-}
+// `ai_search` (recherche sémantique Ctrl+K via le sidecar) retirée avec la
+// Phase R : le vecteur/embeddings a été mis de côté (voir ROADMAP-PIVOT.md,
+// R3 dépriorisé), Ctrl+K reste en recherche lexicale locale
+// (features/search/lexical.ts, SearchOverlay.tsx).
 
 // ---------------------------------------------------------------------------
 // Agent par CLI (Phase R) — Claude Code connecté à notre serveur MCP.

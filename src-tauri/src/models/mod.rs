@@ -9,7 +9,7 @@ pub mod subtask;
 pub mod tag;
 pub mod task;
 
-pub use ai::{AiAgentResponse, AiChatMessage, AiParsedTask, AiSource, SidecarAgentResponse};
+pub use ai::{AiChatMessage, AiParsedTask};
 pub use area::{Area, CreateArea, UpdateArea};
 pub use journal_entry::{CreateJournalEntry, JournalEntry, UpdateJournalEntry};
 pub use note::{CreateNote, Note, UpdateNote};

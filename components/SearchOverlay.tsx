@@ -17,26 +17,18 @@ import {
   CommandItem,
   CommandList,
 } from "@/components/ui/command";
-import { aiSearch } from "@/features/search/api";
 import { lexicalMatch } from "@/features/search/lexical";
+import { usePlannerTodos } from "@/hooks/usePlannerTodos";
 import { useProjects } from "@/hooks/useProjects";
 import { useTags } from "@/hooks/useTags";
-import type { AiSource } from "@/features/todos/generated/AiSource";
-
-const DEBOUNCE_MS = 250;
 
 /**
- * Un résultat de la palette, uniformisé par TYPE. Union locale plutôt qu'une
- * extension d'`AiSource` : ce type appartient au contrat du sidecar, pas à
- * l'affichage de la palette. Les deux sources sont disjointes par
- * construction (sémantique → tâche ; lexicale → projet/domaine/tag) — aucun
- * risque de doublon entre elles.
+ * Un résultat de la palette, uniformisé par TYPE. Tout est lexical (Phase R :
+ * la recherche sémantique par embeddings a été mise de côté — pas le vrai
+ * besoin derrière le pivot post-sidecar, voir docs/ROADMAP-PIVOT.md).
  *
  * Les notes (Phase C) ont disparu de la palette avec le reste du module
- * (Phase P, remplacé par le Journal) — le sidecar peut encore renvoyer des
- * résultats sémantiques `type: "note"` (index vectoriel des anciennes notes,
- * jamais purgé), filtrés silencieusement plus bas plutôt que ré-affichés vers
- * une surface retirée de la navigation.
+ * (Phase P, remplacé par le Journal) — jamais réintroduites ici.
  */
 type QuickFindItem = {
   kind: "project" | "area" | "tag" | "task";
@@ -58,8 +50,6 @@ const GROUP_LABEL: Record<QuickFindItem["kind"], string> = {
   task: "Tâches",
 };
 
-// Ordre façon Things : correspondances lexicales instantanées d'abord
-// (déterministes), puis les résultats sémantiques qui arrivent après le débounce.
 const GROUP_ORDER: QuickFindItem["kind"][] = ["project", "area", "tag", "task"];
 
 interface SearchOverlayProps {
@@ -68,17 +58,17 @@ interface SearchOverlayProps {
 }
 
 /**
- * Palette de recherche (Ctrl+K), globale à l'app shell — tâches (sémantique,
- * via le sidecar), projets/domaines/tags (lexical, local, insensible aux
- * diacritiques). `shouldFilter={false}` : on maîtrise nous-mêmes tout le
- * classement, cmdk ne refiltre pas par sous-chaîne.
+ * Palette de recherche (Ctrl+K), globale à l'app shell — tâches, projets,
+ * domaines, tags, tout en lexical local (insensible aux diacritiques).
+ * `shouldFilter={false}` : on maîtrise nous-mêmes tout le classement, cmdk ne
+ * refiltre pas par sous-chaîne.
  */
 export function SearchOverlay({ open, onOpenChange: setOpen }: SearchOverlayProps) {
   const [query, setQuery] = useState("");
-  const [semanticResults, setSemanticResults] = useState<AiSource[]>([]);
   const router = useRouter();
   const { projects, areas } = useProjects();
   const { tags } = useTags();
+  const { todos } = usePlannerTodos();
 
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
@@ -91,29 +81,15 @@ export function SearchOverlay({ open, onOpenChange: setOpen }: SearchOverlayProp
     return () => document.removeEventListener("keydown", onKeyDown);
   }, [open, setOpen]);
 
-  // Sémantique (sidecar) : débattue, peut échouer si le sidecar est indisponible.
-  useEffect(() => {
-    if (!open) return;
-    if (!query.trim()) {
-      setSemanticResults([]);
-      return;
-    }
-    const timer = setTimeout(() => {
-      aiSearch(query.trim(), 8)
-        .then(setSemanticResults)
-        .catch((e) => {
-          console.error("ai_search:", e);
-          setSemanticResults([]);
-        });
-    }, DEBOUNCE_MS);
-    return () => clearTimeout(timer);
-  }, [query, open]);
-
-  // Lexicale (locale) : synchrone à chaque frappe, pas de débounce nécessaire
-  // pour un simple filtre en mémoire sur quelques dizaines d'éléments.
+  // Synchrone à chaque frappe, pas de débounce nécessaire pour un simple
+  // filtre en mémoire sur quelques dizaines/centaines d'éléments. Tâches
+  // limitées aux non-terminées : on cherche « où aller », pas l'historique.
   const lexicalResults = useMemo<QuickFindItem[]>(() => {
     if (!query.trim()) return [];
     const activeProjects = projects.filter((p) => p.status === "active");
+    const openTodos = todos
+      .filter((t) => t.status === "pending")
+      .map((t) => ({ id: t.id, name: t.text }));
     return [
       ...lexicalMatch(activeProjects, query).map(
         (p): QuickFindItem => ({ kind: "project", id: p.id, label: p.name }),
@@ -124,38 +100,25 @@ export function SearchOverlay({ open, onOpenChange: setOpen }: SearchOverlayProp
       ...lexicalMatch(tags, query).map(
         (t): QuickFindItem => ({ kind: "tag", id: t.id, label: t.name }),
       ),
+      ...lexicalMatch(openTodos, query).map(
+        (t): QuickFindItem => ({ kind: "task", id: t.id, label: t.name }),
+      ),
     ];
-  }, [query, projects, areas, tags]);
-
-  const semanticItems = useMemo<QuickFindItem[]>(
-    () =>
-      semanticResults
-        .filter((r) => r.type === "task")
-        .map((r) => ({
-          kind: "task" as const,
-          id: r.id,
-          label: r.text.split("\n")[0],
-        })),
-    [semanticResults],
-  );
+  }, [query, projects, areas, tags, todos]);
 
   const grouped = useMemo(() => {
-    const all = [...lexicalResults, ...semanticItems];
     return GROUP_ORDER.map((kind) => ({
       kind,
       label: GROUP_LABEL[kind],
-      items: all.filter((i) => i.kind === kind),
+      items: lexicalResults.filter((i) => i.kind === kind),
     })).filter((g) => g.items.length > 0);
-  }, [lexicalResults, semanticItems]);
+  }, [lexicalResults]);
 
   const hasAnyResult = grouped.length > 0;
 
   // Remise à zéro à la fermeture, pour repartir propre à la prochaine ouverture.
   useEffect(() => {
-    if (!open) {
-      setQuery("");
-      setSemanticResults([]);
-    }
+    if (!open) setQuery("");
   }, [open]);
 
   const handleSelect = (item: QuickFindItem) => {

@@ -5,7 +5,6 @@ mod commands;
 mod db;
 mod models;
 mod reminders;
-mod sidecar;
 
 use std::sync::Arc;
 
@@ -195,7 +194,6 @@ fn main() {
             commands::update_settings,
             commands::ai_parse,
             commands::ai_agent_run,
-            commands::ai_search,
             commands::export_backup,
             commands::create_subtask,
             commands::update_subtask,
