@@ -1,9 +1,9 @@
 use crate::db::{self, AppState};
 use crate::models::{
-    AiAgentResponse, AiChatMessage, AiParsedTask, AiSource, Area, CreateArea, CreateJournalEntry,
-    CreateNote, CreateProject, CreateSubTask, CreateTag, CreateTodo, JournalEntry, Note, Project,
-    Settings, SidecarAgentResponse, SubTask, Tag, Todo, UpdateArea, UpdateJournalEntry, UpdateNote,
-    UpdateProject, UpdateSettings, UpdateSubTask, UpdateTag, UpdateTodo,
+    AiChatMessage, AiParsedTask, AiSource, Area, CreateArea, CreateJournalEntry, CreateNote,
+    CreateProject, CreateSubTask, CreateTag, CreateTodo, JournalEntry, Note, Project, Settings,
+    SubTask, Tag, Todo, UpdateArea, UpdateJournalEntry, UpdateNote, UpdateProject, UpdateSettings,
+    UpdateSubTask, UpdateTag, UpdateTodo,
 };
 use tauri::{AppHandle, Emitter, Manager, State, WebviewUrl, WebviewWindowBuilder};
 
@@ -448,102 +448,11 @@ pub async fn ai_parse(state: State<'_, AppState>, text: String) -> Result<AiPars
         .map_err(|e| format!("JSON invalide reçu de Groq : {e}"))
 }
 
-#[derive(serde::Serialize)]
-struct AgentRequest<'a> {
-    text: &'a str,
-    history: &'a [AiChatMessage],
-}
-
-/// Un tour d'agent : le sidecar (LLM) choisit un outil ; Rust exécute les
-/// mutations (propriétaire de SQLite) en réutilisant ses commandes existantes,
-/// et renvoie le message + sources à afficher. `answer_question` est déjà
-/// résolu côté sidecar (RAG), il n'y a rien à exécuter ici. `history` : les
-/// derniers échanges (question/réponse), pour que le LLM résolve les
-/// références au contexte ("et demain ?") — voir docs/APPRENTISSAGE.md.
-#[tauri::command]
-pub async fn ai_agent(
-    app: AppHandle,
-    state: State<'_, AppState>,
-    text: String,
-    history: Vec<AiChatMessage>,
-) -> Result<AiAgentResponse, String> {
-    let url = format!("http://127.0.0.1:{}/agent", crate::sidecar::SIDECAR_PORT);
-    let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(20))
-        .build()
-        .map_err(|e| e.to_string())?;
-
-    let resp = client
-        .post(&url)
-        .json(&AgentRequest { text: &text, history: &history })
-        .send()
-        .await
-        .map_err(|e| e.to_string())?;
-
-    if !resp.status().is_success() {
-        return Err(format!("Sidecar /agent a répondu {}", resp.status()));
-    }
-    let agent: SidecarAgentResponse = resp.json().await.map_err(|e| e.to_string())?;
-
-    match agent.tool.as_str() {
-        "create_task" => {
-            if let Some(task) = agent.task {
-                let today = chrono::Local::now().format("%Y-%m-%d").to_string();
-                let payload = CreateTodo {
-                    text: task.text,
-                    note: task.note,
-                    list: task.list,
-                    priority: Some(task.priority),
-                    recurrence: None,
-                    recur_interval: 1,
-                    recur_weekday: None,
-                    recur_setpos: None,
-                    recur_mode: crate::models::RecurMode::Fixed,
-                    // La date extraite par l'IA est un « quand » (planification),
-                    // pas une échéance : celle-ci ne se pose que dans le détail.
-                    scheduled_for: Some(task.due_date.unwrap_or(today)),
-                    due_date: None,
-                    remind_at: None,
-                    project_id: None,
-                    area_id: None,
-                    heading_id: None,
-                    this_evening: false,
-                    someday: false,
-                };
-                db::create(&state.pool, payload)
-                    .await
-                    .map_err(|e| e.to_string())?;
-                notify_changed(&app);
-            }
-        }
-        "create_note" => {
-            if let Some(note) = agent.note {
-                let payload = CreateNote {
-                    title: Some(note.title),
-                    content: Some(note.content),
-                };
-                db::create_note(&state.pool, payload)
-                    .await
-                    .map_err(|e| e.to_string())?;
-                notify_notes_changed(&app);
-            }
-        }
-        // update_task / delete_task : la tâche est déjà résolue (task_id) par
-        // le sidecar, mais PAS exécutée ici — c'est le frontend qui appelle
-        // updateTodo/deleteTodo (mêmes mutations que l'UI manuelle, undo
-        // compris pour la suppression). answer_question / not_found : rien à
-        // exécuter, déjà résolu par le sidecar.
-        _ => {}
-    }
-
-    Ok(AiAgentResponse {
-        message: agent.message,
-        tool: agent.tool,
-        sources: agent.sources,
-        task_id: agent.task_id,
-        task_update: agent.update,
-    })
-}
+// L'ancienne commande `ai_agent` (sidecar Python, function-calling) a été
+// retirée avec la Phase R : plus aucun appelant frontend (rebranché sur
+// `ai_agent_run`, qui laisse l'agent exécuter lui-même via MCP). Les types
+// `SidecarAgentResponse`/`AiNoteDraft` restent dans `models/ai.rs` (coût nul,
+// pas de raison de les faire disparaître dans cette passe).
 
 #[derive(serde::Serialize)]
 struct SearchRequest<'a> {
@@ -584,7 +493,7 @@ pub async fn ai_search(query: String, k: u32) -> Result<Vec<AiSource>, String> {
 /// CLI tourne sans session persistance (`--no-session-persistence`) : il faut
 /// lui rappeler le fil pour résoudre « et demain ? » etc.
 #[tauri::command]
-pub async fn ai_agent_claude(
+pub async fn ai_agent_run(
     state: State<'_, AppState>,
     text: String,
     history: Vec<AiChatMessage>,
@@ -594,12 +503,17 @@ pub async fn ai_agent_claude(
     let port = state
         .mcp_port
         .ok_or_else(|| "Le serveur MCP n'a pas démarré".to_string())?;
-    let provider = crate::cli_agent::ClaudeProvider::resolve()?;
+    let settings = db::get_settings(&state.pool).await.map_err(|e| e.to_string())?;
+    let provider: Box<dyn AgentProvider> = match settings.ai_provider.as_str() {
+        "opencode" => Box::new(crate::cli_agent::OpenCodeProvider::resolve()?),
+        _ => Box::new(crate::cli_agent::ClaudeProvider::resolve()?),
+    };
 
     let prompt = agent_prompt(&text, &history);
-    // R0 vérifié en conditions réelles : un tour focalisé prend ~12s. 240s
-    // datait d'avant le correctif `set_nonblocking` (le serveur ne répondait
-    // jamais) — un vrai blocage laisserait l'Assistant pendu 4 minutes.
+    // R0 vérifié en conditions réelles : un tour focalisé prend ~12-18s selon
+    // le provider. 240s datait d'avant le correctif `set_nonblocking` (le
+    // serveur ne répondait jamais) — un vrai blocage laisserait l'Assistant
+    // pendu 4 minutes.
     let timeout = std::time::Duration::from_secs(60);
     provider.run(&prompt, port, timeout).await
 }
@@ -1022,12 +936,143 @@ mod tests {
         );
     }
 
+    /// Même vérification de frontière, pour `ai_agent_run` (state + text +
+    /// history, trois paramètres au lieu de deux) : `mcp_port: None` fait
+    /// échouer la commande tôt, avant tout appel réseau/CLI payant, tout en
+    /// prouvant que les trois arguments sont bien désérialisés/injectés.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn invoke_ai_agent_run_desemballe_text_et_history_correctement() {
+        let options = sqlx::sqlite::SqliteConnectOptions::new()
+            .filename(":memory:")
+            .create_if_missing(true);
+        let pool = sqlx::sqlite::SqlitePoolOptions::new()
+            .max_connections(1)
+            .connect_with(options)
+            .await
+            .unwrap();
+        sqlx::migrate!("./migrations").run(&pool).await.unwrap();
+
+        let app = tauri::test::mock_builder()
+            .invoke_handler(tauri::generate_handler![ai_agent_run])
+            .manage(AppState { pool, mcp_port: None })
+            .build(tauri::test::mock_context(tauri::test::noop_assets()))
+            .expect("échec construction app de test");
+        let webview = tauri::WebviewWindowBuilder::new(&app, "main", Default::default())
+            .build()
+            .expect("échec construction webview de test");
+
+        let response = tauri::test::get_ipc_response(
+            &webview,
+            tauri::webview::InvokeRequest {
+                cmd: "ai_agent_run".into(),
+                callback: tauri::ipc::CallbackFn(0),
+                error: tauri::ipc::CallbackFn(1),
+                url: "http://tauri.localhost".parse().unwrap(),
+                body: serde_json::json!({
+                    "text": "et demain ?",
+                    "history": [{ "role": "user", "content": "prepare la reunion" }]
+                })
+                .into(),
+                headers: Default::default(),
+                invoke_key: tauri::test::INVOKE_KEY.to_string(),
+            },
+        );
+
+        let err = response.expect_err("sans serveur MCP démarré, ai_agent_run doit échouer");
+        let message = err.as_str().unwrap_or_default();
+        assert!(
+            message.contains("MCP"),
+            "attendu l'erreur métier « serveur MCP pas démarré », reçu autre chose \
+             (signe possible d'une désérialisation d'arguments ratée) : {message}"
+        );
+    }
+
     #[test]
     fn ai_parse_system_prompt_decrit_le_format_attendu() {
         let prompt = ai_parse_system_prompt();
         assert!(prompt.contains("\"text\""));
         assert!(prompt.contains("due_date"));
         assert!(prompt.contains(&chrono::Local::now().format("%Y-%m-%d").to_string()));
+    }
+
+    /// Bout-en-bout, une seule fois (coût réseau réel) : le morceau qui
+    /// n'était vérifié nulle part ailleurs — que `ai_agent_run`, appelé via
+    /// le VRAI dispatch IPC (pas un appel direct de fonction), lit bien
+    /// `ai_provider` dans les Réglages et route vers le bon `AgentProvider`,
+    /// avec un vrai serveur MCP qui répond. `#[test]` (pas `#[tokio::test]`) :
+    /// `spawn_mcp_server` panique s'il est appelé depuis un contexte async
+    /// déjà actif (voir cli_agent.rs) ; `get_ipc_response` n'est pas async,
+    /// donc ce mélange sync/async fonctionne sans ce piège.
+    #[test]
+    #[ignore = "appelle le vrai binaire claude (réseau + abonnement)"]
+    fn invoke_ai_agent_run_lit_le_provider_en_reglages_et_execute_pour_de_vrai() {
+        use crate::cli_agent::{DbExecutor, ToolExecutor};
+
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let _guard = rt.enter();
+
+        let pool = rt.block_on(async {
+            let options = sqlx::sqlite::SqliteConnectOptions::new()
+                .filename(":memory:")
+                .create_if_missing(true);
+            let pool = sqlx::sqlite::SqlitePoolOptions::new()
+                .max_connections(1)
+                .connect_with(options)
+                .await
+                .unwrap();
+            sqlx::migrate!("./migrations").run(&pool).await.unwrap();
+            db::update_settings(
+                &pool,
+                crate::models::UpdateSettings {
+                    ai_provider: Some("claude".to_string()),
+                    ..Default::default()
+                },
+            )
+            .await
+            .unwrap();
+            pool
+        });
+
+        let executor =
+            std::sync::Arc::new(DbExecutor::new(pool.clone(), None)) as std::sync::Arc<dyn ToolExecutor>;
+        rt.block_on(executor.call("create_todo", serde_json::json!({ "text": "acheter des kiwis violets" })))
+            .unwrap();
+        let port = crate::cli_agent::spawn_mcp_server(executor).expect("le serveur MCP doit démarrer");
+
+        let app = tauri::test::mock_builder()
+            .invoke_handler(tauri::generate_handler![ai_agent_run])
+            .manage(AppState { pool, mcp_port: Some(port) })
+            .build(tauri::test::mock_context(tauri::test::noop_assets()))
+            .expect("échec construction app de test");
+        let webview = tauri::WebviewWindowBuilder::new(&app, "main", Default::default())
+            .build()
+            .expect("échec construction webview de test");
+
+        let response = tauri::test::get_ipc_response(
+            &webview,
+            tauri::webview::InvokeRequest {
+                cmd: "ai_agent_run".into(),
+                callback: tauri::ipc::CallbackFn(0),
+                error: tauri::ipc::CallbackFn(1),
+                url: "http://tauri.localhost".parse().unwrap(),
+                body: serde_json::json!({
+                    "text": "Utilise l'outil list_todos pour lister mes tâches en attente, \
+                             puis cite le texte exact de chacune.",
+                    "history": []
+                })
+                .into(),
+                headers: Default::default(),
+                invoke_key: tauri::test::INVOKE_KEY.to_string(),
+            },
+        );
+
+        let body = response.expect("le tour d'agent a échoué");
+        let answer = body.deserialize::<String>().unwrap();
+        assert!(
+            answer.to_lowercase().contains("kiwis violets"),
+            "la réponse (via invoke() complet, provider lu en Réglages) ne cite pas la tâche \
+             seedée : {answer}"
+        );
     }
 
     #[test]

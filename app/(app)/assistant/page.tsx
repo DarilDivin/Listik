@@ -5,13 +5,12 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { toast } from "sonner";
 import { motion } from "motion/react";
-import { Sparkles, ListTodo, StickyNote, Trash2 } from "lucide-react";
+import { Sparkles } from "lucide-react";
 import Omnibar from "@/components/Omnibar";
-import { Badge } from "@/components/ui/badge";
 import { spring } from "@/lib/motion";
 import { usePlannerTodos } from "@/hooks/usePlannerTodos";
 import { useJournalMutations } from "@/features/journal/useJournalMutations";
-import { aiAgent, type AiChatMessage, type AiSource } from "@/features/omnibar/agent";
+import { aiAgent, type AiChatMessage } from "@/features/omnibar/agent";
 import type { SmartTaskData } from "@/features/todos/useTaskMode";
 import { todayLocalISODate } from "@/lib/date";
 
@@ -19,17 +18,8 @@ interface Turn {
   id: string;
   question: string;
   answer?: string;
-  tool?: string;
-  sources?: AiSource[];
   error?: boolean;
 }
-
-const TOOL_LABEL: Record<string, { icon: typeof ListTodo; text: string }> = {
-  create_task: { icon: ListTodo, text: "Tâche créée" },
-  create_note: { icon: StickyNote, text: "Note enregistrée" },
-  update_task: { icon: ListTodo, text: "Tâche modifiée" },
-  delete_task: { icon: Trash2, text: "Tâche supprimée" },
-};
 
 // Un LLM est sans état : on lui renvoie les derniers échanges à chaque appel
 // pour qu'il résolve les références au contexte ("et demain ?"). Plafonné
@@ -47,7 +37,7 @@ function buildHistory(turns: Turn[]): AiChatMessage[] {
 }
 
 export default function AssistantPage() {
-  const { createTodoFromSmart, updateTodo, deleteTodo, lists } = usePlannerTodos();
+  const { createTodoFromSmart, lists } = usePlannerTodos();
   const { createEntry: createJournalEntry } = useJournalMutations();
 
   const [turns, setTurns] = useState<Turn[]>([]);
@@ -67,35 +57,25 @@ export default function AssistantPage() {
     setPending(true);
     scrollToBottom();
     try {
+      // Le CLI exécute lui-même les mutations via le serveur MCP local (les
+      // mêmes événements todos:changed/journal:changed que l'UI manuelle
+      // en ressortent, donc les listes se revalident toutes seules) — rien
+      // à rejouer côté frontend, contrairement à l'ancien circuit sidecar.
       const res = await aiAgent(text, history);
 
-      // L'agent ne fait que RÉSOUDRE (quelle tâche + quels changements) ;
-      // l'exécution passe par les mêmes mutations que l'UI manuelle — annuler
-      // une suppression fonctionne donc aussi pour une suppression par l'agent.
-      if (res.tool === "update_task" && res.task_id && res.task_update) {
-        const u = res.task_update;
-        await updateTodo(res.task_id, {
-          text: u.text ?? undefined,
-          status: u.status ?? undefined,
-          priority: u.priority ?? undefined,
-          due_date: u.due_date ?? undefined,
-          scheduled_for: u.due_date ?? undefined,
-        });
-      } else if (res.tool === "delete_task" && res.task_id) {
-        await deleteTodo(res.task_id);
-      }
-
       setTurns((prev) =>
-        prev.map((t) =>
-          t.id === id ? { ...t, answer: res.message, tool: res.tool, sources: res.sources } : t,
-        ),
+        prev.map((t) => (t.id === id ? { ...t, answer: res.message } : t)),
       );
     } catch (e) {
-      console.error("ai_agent:", e);
+      console.error("ai_agent_claude:", e);
       setTurns((prev) =>
         prev.map((t) =>
           t.id === id
-            ? { ...t, error: true, answer: "L'assistant est indisponible (sidecar ou clé API ?)." }
+            ? {
+                ...t,
+                error: true,
+                answer: "L'assistant est indisponible (CLI introuvable, ou délai dépassé).",
+              }
             : t,
         ),
       );
@@ -211,7 +191,6 @@ function EmptyAssistant({ onAsk }: { onAsk: (text: string) => void }) {
 }
 
 function ConversationTurn({ turn }: { turn: Turn }) {
-  const toolMeta = turn.tool ? TOOL_LABEL[turn.tool] : undefined;
   return (
     <div className="flex flex-col gap-3">
       <motion.p
@@ -230,22 +209,6 @@ function ConversationTurn({ turn }: { turn: Turn }) {
           transition={spring.smooth}
           className="flex flex-col gap-2"
         >
-          {toolMeta && (
-            <motion.span
-              initial={{ opacity: 0, scale: 0.85 }}
-              animate={{ opacity: 1, scale: 1 }}
-              transition={spring.bouncy}
-              className="w-max"
-            >
-              <Badge
-                variant="secondary"
-                className="gap-1.5 rounded-full text-[11px] font-medium text-muted-foreground"
-              >
-                <toolMeta.icon size={12} />
-                {toolMeta.text}
-              </Badge>
-            </motion.span>
-          )}
           <div
             className={`note-markdown text-[15px] leading-relaxed ${
               turn.error ? "text-destructive" : "text-foreground"
@@ -253,24 +216,8 @@ function ConversationTurn({ turn }: { turn: Turn }) {
           >
             <ReactMarkdown remarkPlugins={[remarkGfm]}>{turn.answer}</ReactMarkdown>
           </div>
-          {turn.sources && turn.sources.length > 0 && <Sources sources={turn.sources} />}
         </motion.div>
       )}
-    </div>
-  );
-}
-
-function Sources({ sources }: { sources: AiSource[] }) {
-  return (
-    <div className="mt-1 flex flex-col gap-1 border-l border-border/50 pl-3">
-      <span className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground/60">
-        Sources
-      </span>
-      {sources.slice(0, 3).map((s) => (
-        <span key={s.id} className="truncate text-xs text-muted-foreground">
-          {s.type === "note" ? "📝" : "✓"} {s.text.split("\n")[0]}
-        </span>
-      ))}
     </div>
   );
 }

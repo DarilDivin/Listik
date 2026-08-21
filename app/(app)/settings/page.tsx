@@ -4,6 +4,7 @@ import { useState } from "react";
 import { toast } from "sonner";
 import {
   Bell,
+  Bot,
   Download,
   Info,
   Keyboard,
@@ -19,6 +20,7 @@ import { ThemeSetting } from "@/components/ThemeSetting";
 import { AccentPicker } from "@/components/settings/AccentPicker";
 import { NavSetting } from "@/components/settings/NavSetting";
 import { GroqApiKeySetting } from "@/components/settings/GroqApiKeySetting";
+import { AiProviderSetting } from "@/components/settings/AiProviderSetting";
 import { Switch } from "@/components/ui/switch";
 import { Spinner } from "@/components/ui/spinner";
 import { TimePicker } from "@/components/ui/time-picker";
@@ -145,6 +147,15 @@ export default function SettingsPage() {
           </SettingsGroup>
 
           <SettingsGroup title="IA" index={3}>
+            <SettingsRow
+              label="Agent de l'Assistant"
+              description="Le CLI qui répond dans l'Assistant (mode Question) — doit être installé sur cette machine."
+              icon={Bot}
+              iconClassName="bg-indigo-500/8 text-indigo-600 dark:text-indigo-400"
+              stacked
+            >
+              <AiProviderSetting />
+            </SettingsRow>
             <SettingsRow
               label="Clé API Groq"
               description="Correction du texte à la capture (dates, priorité, projet). Sans clé, l'analyse locale continue de fonctionner."

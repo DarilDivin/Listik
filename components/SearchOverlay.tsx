@@ -21,7 +21,7 @@ import { aiSearch } from "@/features/search/api";
 import { lexicalMatch } from "@/features/search/lexical";
 import { useProjects } from "@/hooks/useProjects";
 import { useTags } from "@/hooks/useTags";
-import type { AiSource } from "@/features/omnibar/agent";
+import type { AiSource } from "@/features/todos/generated/AiSource";
 
 const DEBOUNCE_MS = 250;
 

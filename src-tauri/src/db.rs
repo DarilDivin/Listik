@@ -664,6 +664,7 @@ const DIGEST_ENABLED_KEY: &str = "daily_digest_enabled";
 const DIGEST_TIME_KEY: &str = "daily_digest_time";
 const DIGEST_LAST_SENT_KEY: &str = "daily_digest_last_sent";
 const GROQ_API_KEY_KEY: &str = "groq_api_key";
+const AI_PROVIDER_KEY: &str = "ai_provider";
 
 async fn get_setting(pool: &SqlitePool, key: &str) -> Result<Option<String>, sqlx::Error> {
     let row: Option<(String,)> = sqlx::query_as("SELECT value FROM settings WHERE key = ?")
@@ -699,6 +700,9 @@ pub async fn get_settings(pool: &SqlitePool) -> Result<Settings, sqlx::Error> {
             s.groq_api_key = Some(v);
         }
     }
+    if let Some(v) = get_setting(pool, AI_PROVIDER_KEY).await? {
+        s.ai_provider = v;
+    }
     Ok(s)
 }
 
@@ -715,6 +719,9 @@ pub async fn update_settings(
     }
     if let Some(key) = input.groq_api_key {
         set_setting(pool, GROQ_API_KEY_KEY, &key).await?;
+    }
+    if let Some(provider) = input.ai_provider {
+        set_setting(pool, AI_PROVIDER_KEY, &provider).await?;
     }
     get_settings(pool).await
 }
@@ -1861,6 +1868,25 @@ mod tests {
         .await
         .unwrap();
         assert_eq!(cleared.groq_api_key, None);
+    }
+
+    #[tokio::test]
+    async fn ai_provider_defaults_to_claude_and_persists() {
+        let pool = memory_pool().await;
+
+        assert_eq!(get_settings(&pool).await.unwrap().ai_provider, "claude");
+
+        let updated = update_settings(
+            &pool,
+            UpdateSettings { ai_provider: Some("opencode".to_string()), ..Default::default() },
+        )
+        .await
+        .unwrap();
+        assert_eq!(updated.ai_provider, "opencode");
+
+        // Absent => inchangé.
+        let untouched = update_settings(&pool, UpdateSettings::default()).await.unwrap();
+        assert_eq!(untouched.ai_provider, "opencode");
     }
 
     #[tokio::test]

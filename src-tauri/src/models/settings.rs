@@ -13,6 +13,9 @@ pub struct Settings {
     /// tant que l'utilisateur ne l'a pas renseignée dans les Réglages —
     /// la capture continue de fonctionner (parsing local uniquement).
     pub groq_api_key: Option<String>,
+    /// CLI d'agent utilisé par l'Assistant (mode Question) : "claude" ou
+    /// "opencode" aujourd'hui, d'autres plus tard (Gemini/Antigravity).
+    pub ai_provider: String,
 }
 
 impl Default for Settings {
@@ -21,6 +24,7 @@ impl Default for Settings {
             daily_digest_enabled: false,
             daily_digest_time: "08:00".to_string(),
             groq_api_key: None,
+            ai_provider: "claude".to_string(),
         }
     }
 }
@@ -36,4 +40,6 @@ pub struct UpdateSettings {
     /// efface la clé (case « Effacer » côté UI).
     #[serde(default)]
     pub groq_api_key: Option<String>,
+    #[serde(default)]
+    pub ai_provider: Option<String>,
 }

@@ -17,4 +17,9 @@ daily_digest_time: string,
  * tant que l'utilisateur ne l'a pas renseignée dans les Réglages —
  * la capture continue de fonctionner (parsing local uniquement).
  */
-groq_api_key: string | null, };
+groq_api_key: string | null, 
+/**
+ * CLI d'agent utilisé par l'Assistant (mode Question) : "claude" ou
+ * "opencode" aujourd'hui, d'autres plus tard (Gemini/Antigravity).
+ */
+ai_provider: string, };

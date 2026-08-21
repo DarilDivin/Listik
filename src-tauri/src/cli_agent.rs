@@ -773,6 +773,164 @@ impl AgentProvider for ClaudeProvider {
     }
 }
 
+// ---------------------------------------------------------------------------
+// Fournisseur OpenCode (`opencode run … --dir … --format json`). Contrairement
+// à Claude Code (--mcp-config = un fichier, une exécution), OpenCode enregistre
+// ses serveurs MCP dans un opencode.jsonc (config globale OU projet, la config
+// projet a priorité) — on écrit un dossier temporaire jetable avec son propre
+// opencode.jsonc pointant sur notre serveur, jamais touché au fichier global de
+// l'utilisateur. Vérifié en conditions réelles (round-trip lecture + le CLI
+// appelle bien l'outil, pas juste le décrit).
+// ---------------------------------------------------------------------------
+
+/// Dossier projet jetable contenant le `opencode.jsonc` d'un tour.
+pub struct OpenCodeProjectDir {
+    pub path: PathBuf,
+}
+
+impl OpenCodeProjectDir {
+    pub fn write(port: u16) -> Result<Self, String> {
+        let dir = std::env::temp_dir().join(format!("listik-opencode-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+        let cfg = json!({
+            "$schema": "https://opencode.ai/config.json",
+            "mcp": {
+                "listik": {
+                    "type": "remote",
+                    "url": format!("http://127.0.0.1:{port}/mcp"),
+                    "enabled": true
+                }
+            }
+        });
+        std::fs::write(dir.join("opencode.jsonc"), serde_json::to_string_pretty(&cfg).unwrap())
+            .map_err(|e| e.to_string())?;
+        Ok(Self { path: dir })
+    }
+}
+
+/// Trouve le binaire `opencode` sur cette machine (wrapper npm `.cmd` sous
+/// Windows — la résolution PATH+PATHEXT de `Command` le gère nativement,
+/// pas besoin de passer par `cmd /c`).
+pub fn resolve_opencode_binary() -> Option<PathBuf> {
+    // `Command::new` (CreateProcess direct, sans passer par un shell) résout
+    // automatiquement `.exe` par nom nu, mais PAS `.cmd`/`.bat` — contrairement
+    // à Claude Code (un vrai `claude.exe`), OpenCode s'installe via npm comme
+    // un wrapper `.cmd` (confirmé sur cette machine : bare "opencode" échoue
+    // avec NotFound, "opencode.cmd" fonctionne).
+    #[cfg(windows)]
+    let candidates = ["opencode.cmd", "opencode.exe", "opencode"];
+    #[cfg(not(windows))]
+    let candidates = ["opencode"];
+
+    candidates.into_iter().map(PathBuf::from).find(|p| {
+        std::process::Command::new(p)
+            .arg("--version")
+            .output()
+            .map(|o| o.status.success())
+            .unwrap_or(false)
+    })
+}
+
+/// Un tour `opencode run`. `--format json` produit un flux NDJSON (une ligne
+/// = un événement `step_start`/`tool_use`/`text`/`step_finish`) — pas un
+/// blob JSON unique comme Claude. Le texte final est la concaténation des
+/// événements `type: "text"`, dans l'ordre.
+pub async fn run_opencode_turn(
+    binary: &Path,
+    prompt: &str,
+    project_dir: &Path,
+    timeout: std::time::Duration,
+) -> Result<String, String> {
+    let mut cmd = tokio::process::Command::new(binary);
+    cmd.arg("run")
+        .arg(prompt)
+        .arg("--dir")
+        .arg(project_dir)
+        .arg("--format")
+        .arg("json")
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .kill_on_drop(true);
+
+    let Ok(child) = cmd.spawn() else {
+        return Err("impossible de lancer le CLI OpenCode".to_string());
+    };
+
+    let output = tokio::time::timeout(timeout, child.wait_with_output())
+        .await
+        .map_err(|_| format!("tour interrompu (délai {:.0?} dépassé)", timeout))?
+        .map_err(|e| e.to_string())?;
+
+    if !output.status.success() {
+        return Err(format!(
+            "le CLI OpenCode a échoué ({}): {}",
+            output.status,
+            String::from_utf8_lossy(&output.stderr).chars().take(200).collect::<String>()
+        ));
+    }
+    extract_opencode_text(&output.stdout)
+}
+
+/// Concatène le texte de tous les événements `type: "text"` du flux NDJSON.
+fn extract_opencode_text(stdout: &[u8]) -> Result<String, String> {
+    let mut parts = Vec::new();
+    for line in String::from_utf8_lossy(stdout).lines() {
+        let line = line.trim();
+        if line.is_empty() {
+            continue;
+        }
+        let Ok(v) = serde_json::from_str::<Value>(line) else { continue };
+        if v["type"] == "text" {
+            if let Some(t) = v["part"]["text"].as_str() {
+                parts.push(t.to_string());
+            }
+        }
+    }
+    if parts.is_empty() {
+        return Err("le CLI n'a rien retourné".to_string());
+    }
+    Ok(parts.join("\n"))
+}
+
+pub struct OpenCodeProvider {
+    binary: PathBuf,
+}
+
+impl OpenCodeProvider {
+    pub fn new(binary: PathBuf) -> Self {
+        Self { binary }
+    }
+
+    /// Résout le binaire `opencode` sur cette machine, sinon une erreur claire.
+    pub fn resolve() -> Result<Self, String> {
+        resolve_opencode_binary()
+            .map(Self::new)
+            .ok_or_else(|| "binaire `opencode` introuvable (OpenCode est-il installé ?)".to_string())
+    }
+}
+
+impl AgentProvider for OpenCodeProvider {
+    fn name(&self) -> &str {
+        "opencode"
+    }
+
+    fn run<'a>(
+        &'a self,
+        prompt: &'a str,
+        mcp_port: u16,
+        timeout: std::time::Duration,
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<String, String>> + Send + 'a>>
+    {
+        Box::pin(async move {
+            let project = OpenCodeProjectDir::write(mcp_port)?;
+            let res = run_opencode_turn(&self.binary, prompt, &project.path, timeout).await;
+            let _ = std::fs::remove_dir_all(&project.path);
+            res
+        })
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -972,31 +1130,42 @@ mod tests {
     /// jusqu'ici : les 14 tests protocole ci-dessus tapent `EchoExecutor`/pools
     /// en mémoire, jamais le VRAI binaire `claude`). Coûte un appel API réel
     /// (abonnement) et du réseau → ignorée par défaut.
+    ///
+    /// `#[test]` + runtime manuel (PAS `#[tokio::test]`) : reproduit la vraie
+    /// forme d'appel de production (`setup()` de Tauri, synchrone, hors de
+    /// tout contexte async actif). Appeler `spawn_mcp_server` depuis un
+    /// `#[tokio::test]` déjà actif panique parfois (« cannot start a runtime
+    /// from within a runtime », non déterministe selon le thread qui exécute
+    /// le poll) — constaté en écrivant le test OpenCode ci-dessous, qui
+    /// partage le même appel. Pas un bug de prod (le vrai `pnpm tauri dev`
+    /// l'a confirmé), juste la mauvaise forme de test.
     /// `cargo test cli_agent::tests::vrai_round_trip -- --ignored --nocapture`
-    #[tokio::test(flavor = "multi_thread")]
+    #[test]
     #[ignore = "appelle le vrai binaire claude (réseau + abonnement)"]
-    async fn vrai_round_trip_claude_appelle_list_todos_via_mcp() {
-        let pool = mem_pool().await;
-        let executor = std::sync::Arc::new(DbExecutor::new(pool.clone(), None)) as Arc<dyn ToolExecutor>;
-        executor
-            .call(
-                "create_todo",
-                json!({ "text": "acheter des kiwis violets" }),
-            )
-            .await
-            .unwrap();
+    fn vrai_round_trip_claude_appelle_list_todos_via_mcp() {
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let _guard = rt.enter();
+
+        let executor = rt.block_on(async {
+            let pool = mem_pool().await;
+            let executor = std::sync::Arc::new(DbExecutor::new(pool, None)) as Arc<dyn ToolExecutor>;
+            executor
+                .call("create_todo", json!({ "text": "acheter des kiwis violets" }))
+                .await
+                .unwrap();
+            executor
+        });
 
         let port = spawn_mcp_server(executor).expect("le serveur MCP doit démarrer");
         let provider = ClaudeProvider::resolve().expect("binaire claude introuvable");
 
-        let answer = provider
-            .run(
+        let answer = rt
+            .block_on(provider.run(
                 "Utilise l'outil list_todos pour lister mes tâches en attente, \
                  puis cite le texte exact de chacune dans ta réponse.",
                 port,
                 std::time::Duration::from_secs(60),
-            )
-            .await
+            ))
             .expect("le tour d'agent a échoué");
 
         assert!(
@@ -1011,31 +1180,96 @@ mod tests {
     /// les MUTATIONS (`create_todo`) — sinon l'Assistant refuserait en
     /// silence toute écriture en prod alors que la lecture marche. Vérifié
     /// sur l'état réel de la base, pas seulement le texte de la réponse.
-    #[tokio::test(flavor = "multi_thread")]
+    #[test]
     #[ignore = "appelle le vrai binaire claude (réseau + abonnement)"]
-    async fn vrai_round_trip_claude_peut_creer_une_tache_via_mcp() {
-        let pool = mem_pool().await;
+    fn vrai_round_trip_claude_peut_creer_une_tache_via_mcp() {
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let _guard = rt.enter();
+
+        let pool = rt.block_on(mem_pool());
         let executor = std::sync::Arc::new(DbExecutor::new(pool.clone(), None)) as Arc<dyn ToolExecutor>;
 
         let port = spawn_mcp_server(executor).expect("le serveur MCP doit démarrer");
         let provider = ClaudeProvider::resolve().expect("binaire claude introuvable");
 
-        provider
-            .run(
-                "Utilise l'outil create_todo pour créer une tâche avec le texte \
-                 exact : tester la permission mutation mcp",
-                port,
-                std::time::Duration::from_secs(60),
-            )
-            .await
-            .expect("le tour d'agent a échoué");
+        rt.block_on(provider.run(
+            "Utilise l'outil create_todo pour créer une tâche avec le texte \
+             exact : tester la permission mutation mcp",
+            port,
+            std::time::Duration::from_secs(60),
+        ))
+        .expect("le tour d'agent a échoué");
 
-        let todos = crate::db::list_all(&pool).await.unwrap();
+        let todos = rt.block_on(crate::db::list_all(&pool)).unwrap();
         assert!(
             todos.iter().any(|t| t.text == "tester la permission mutation mcp"),
             "la tâche n'a pas été créée en base — la mutation a probablement été refusée : {:?}",
             todos.iter().map(|t| &t.text).collect::<Vec<_>>()
         );
+    }
+
+    /// Miroir du round-trip Claude ci-dessus, pour OpenCode : vérifié en
+    /// conditions réelles avant d'écrire ce test (le CLI ne fait pas que
+    /// décrire les outils dispos, il faut un prompt explicite pour qu'il
+    /// appelle vraiment `listik_list_todos` plutôt que de le paraphraser).
+    #[test]
+    #[ignore = "appelle le vrai binaire opencode (réseau + abonnement)"]
+    fn vrai_round_trip_opencode_appelle_list_todos_via_mcp() {
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let _guard = rt.enter();
+
+        let executor = rt.block_on(async {
+            let pool = mem_pool().await;
+            let executor = std::sync::Arc::new(DbExecutor::new(pool, None)) as Arc<dyn ToolExecutor>;
+            executor
+                .call("create_todo", json!({ "text": "acheter des kiwis violets" }))
+                .await
+                .unwrap();
+            executor
+        });
+
+        let port = spawn_mcp_server(executor).expect("le serveur MCP doit démarrer");
+        let provider = OpenCodeProvider::resolve().expect("binaire opencode introuvable");
+
+        let answer = rt
+            .block_on(provider.run(
+                "Appelle maintenant l'outil listik_list_todos (tool call réel, pas une \
+                 description), puis cite le texte exact des tâches retournées.",
+                port,
+                std::time::Duration::from_secs(60),
+            ))
+            .expect("le tour d'agent a échoué");
+
+        assert!(
+            answer.to_lowercase().contains("kiwis violets"),
+            "la réponse ne cite pas la tâche seedée (l'outil MCP n'a probablement pas été \
+             appelé) : {answer}"
+        );
+    }
+
+    #[test]
+    fn resolution_opencode_ne_crashe_pas_sans_le_binaire() {
+        match OpenCodeProvider::resolve() {
+            Ok(p) => assert_eq!(p.name(), "opencode"),
+            Err(e) => assert!(e.contains("opencode"), "erreur peu claire : {e}"),
+        }
+    }
+
+    #[test]
+    fn extract_opencode_text_concatene_les_evenements_text() {
+        let stdout = concat!(
+            r#"{"type":"step_start","part":{}}"#,
+            "\n",
+            r#"{"type":"tool_use","part":{"text":"ignore-moi"}}"#,
+            "\n",
+            r#"{"type":"text","part":{"text":"premiere partie"}}"#,
+            "\n",
+            r#"{"type":"text","part":{"text":"deuxieme partie"}}"#,
+            "\n",
+        )
+        .as_bytes();
+        let text = extract_opencode_text(stdout).unwrap();
+        assert_eq!(text, "premiere partie\ndeuxieme partie");
     }
 
     #[tokio::test(flavor = "multi_thread")]

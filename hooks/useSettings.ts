@@ -12,6 +12,7 @@ const FALLBACK: Settings = {
   daily_digest_enabled: false,
   daily_digest_time: "08:00",
   groq_api_key: null,
+  ai_provider: "claude",
 };
 
 /**

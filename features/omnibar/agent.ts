@@ -1,18 +1,24 @@
-// Appel de l'agent IA (mode Question / section Assistant). Le LLM choisit un
-// outil ; Rust exécute les mutations et renvoie le message + les sources.
+// Appel de l'agent IA (mode Question / section Assistant) : un CLI installé
+// sur la machine (Claude Code, bientôt Gemini/OpenCode) lit et modifie les
+// données lui-même via le serveur MCP local — Rust ne fait qu'orchestrer le
+// sous-processus, il n'exécute plus rien pour son compte (contrairement à
+// l'ancien circuit sidecar).
 import { invoke } from "@tauri-apps/api/core";
-import type { AiAgentResponse } from "@/features/todos/generated/AiAgentResponse";
 import type { AiChatMessage } from "@/features/todos/generated/AiChatMessage";
 
-export type { AiAgentResponse } from "@/features/todos/generated/AiAgentResponse";
-export type { AiSource } from "@/features/todos/generated/AiSource";
 export type { AiChatMessage } from "@/features/todos/generated/AiChatMessage";
 
-// Le LLM est sans état : on lui renvoie le fil de la conversation à chaque
-// appel pour qu'il résolve les références au contexte ("et demain ?").
-export function aiAgent(
+export interface AiAgentTurn {
+  message: string;
+}
+
+// Le CLI est sans état entre deux appels (`--no-session-persistence`) : on
+// lui renvoie le fil de la conversation à chaque appel pour qu'il résolve
+// les références au contexte ("et demain ?").
+export async function aiAgent(
   text: string,
   history: AiChatMessage[] = [],
-): Promise<AiAgentResponse> {
-  return invoke<AiAgentResponse>("ai_agent", { text, history });
+): Promise<AiAgentTurn> {
+  const message = await invoke<string>("ai_agent_run", { text, history });
+  return { message };
 }
