@@ -303,7 +303,7 @@ export default function Omnibar({
               // (mesure : colonne a 0 px, rangee a 62 px au lieu de 54).
               // Toujours enroulable, la rangee n'a qu'une ligne tant qu'il n'y
               // a rien a y mettre.
-              "flex w-full flex-wrap items-start gap-x-3 gap-y-2.5 bg-transparent px-3 py-3.5",
+              "flex w-full flex-wrap items-start gap-x-3 bg-transparent px-3 py-3.5",
               "transition-[background-color,border-color] duration-300 ease-out",
               isFocused
                 ? "border border-border/60"
@@ -482,17 +482,29 @@ export default function Omnibar({
         {showControls &&
           (stackControls ? (
             <motion.div
-              initial={{ opacity: 0, y: -6 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -6 }}
-              transition={{ duration: 0.2, ease: "easeOut" }}
+              // C'est CETTE rangee qui s'ouvre et se referme, pas le
+              // formulaire : sa hauteur commande celle de la barre, qui suit
+              // donc en douceur sans qu'on ait a lui appliquer un `layout`
+              // (celui-ci animait la taille par un scale qui ecrasait le
+              // contenu — voir le commentaire du formulaire).
+              initial={{ height: 0, opacity: 0 }}
+              animate={{ height: "auto", opacity: 1 }}
+              exit={{ height: 0, opacity: 0 }}
+              transition={{
+                height: { duration: 0.26, ease: [0.16, 1, 0.3, 1] },
+                opacity: { duration: 0.16 },
+              }}
               // `basis-full` et non `w-full` : en flex, une largeur de 100 %
               // se fait encore comprimer par la colonne de texte (mesure :
               // largeur calculee 0). La base de flex, elle, reclame la ligne
               // entiere — l'element passe donc dessous, au bord gauche.
-              className="flex w-full shrink-0 basis-full items-center gap-2"
+              className="w-full shrink-0 basis-full overflow-hidden"
             >
-              {controls}
+              {/* L'espacement vit A L'INTERIEUR du bloc anime : en `gap` du
+                  formulaire ou en padding du bloc lui-meme, il resterait a
+                  hauteur nulle et laisserait un residu qui sauterait au
+                  demontage. */}
+              <div className="flex items-center gap-2 pt-2.5">{controls}</div>
             </motion.div>
           ) : (
             <motion.div
