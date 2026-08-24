@@ -33,7 +33,10 @@ export const CaptureRow = forwardRef<CaptureRowHandle, CaptureRowProps>(
     const rootRef = useRef<HTMLDivElement>(null);
 
     useImperativeHandle(ref, () => ({
-      open: () => rootRef.current?.querySelector("textarea")?.focus(),
+      open: () =>
+        rootRef.current
+          ?.querySelector<HTMLElement>('[contenteditable="true"], textarea')
+          ?.focus(),
     }), []);
 
     return (

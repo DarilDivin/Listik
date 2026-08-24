@@ -7,6 +7,7 @@ import { Plus, Tag } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import { cn } from "@/lib/utils";
 import { AutoGrowTextarea } from "@/components/omnibar/AutoGrowTextarea";
+import { CaptureField } from "@/components/omnibar/CaptureField";
 import { PrioritySelect } from "@/components/omnibar/PrioritySelect";
 import { ModeBadge } from "@/components/omnibar/ModeBadge";
 import { ListControl } from "@/components/todo/ListControl";
@@ -89,7 +90,9 @@ export default function Omnibar({
   const showLeading = Boolean(leading) && mode === defaultMode;
 
   const focusField = () =>
-    formRef.current?.querySelector("textarea")?.focus();
+    formRef.current
+      ?.querySelector<HTMLElement>('textarea, [contenteditable="true"]')
+      ?.focus();
 
   const switchMode = (next: OmnibarMode) => {
     setMode(next);
@@ -124,7 +127,7 @@ export default function Omnibar({
     setValue(raw);
   };
 
-  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLElement>) => {
     slash.onKeyDown(e);
     if (e.defaultPrevented) return;
     if (isTask) autocomplete.onKeyDown(e);
@@ -135,7 +138,7 @@ export default function Omnibar({
     // brouillon en cours : un texte tapé n'est pas jetable.
     if (inline && e.key === "Escape" && !value.trim()) {
       e.preventDefault();
-      (e.target as HTMLTextAreaElement).blur();
+      (e.target as HTMLElement).blur();
     }
   };
 
@@ -250,7 +253,12 @@ export default function Omnibar({
         e.preventDefault();
         focusField();
       }}
-      layout
+      // `layout` anime la taille en appliquant un scale au conteneur, ce qui
+      // ECRASE son contenu pendant la transition (mesure : scaleY 0.84, les
+      // controles chevauchaient le texte). La rangee inline s'en passe : sa
+      // hauteur suit le contenu, et l'ouverture est portee par les controles
+      // eux-memes. La variante flottante le garde, son gabarit ne bouge pas.
+      layout={!inline}
       animate={inline ? { borderRadius: isFocused ? 16 : 8 } : undefined}
       transition={{ type: "spring", bounce: 0.25, duration: 0.55 }}
       style={{ height: "auto", width: inline || isFocused ? "100%" : "auto" }}
@@ -283,21 +291,36 @@ export default function Omnibar({
       >
         <PopoverAnchor asChild>
           <div className="relative min-w-0 flex-1">
-            <AutoGrowTextarea
-              value={value}
-              onChange={handleChange}
-              onFocus={() => setIsFocused(true)}
-              onEnter={handleSubmit}
-              dateMatch={isTask ? task.dateMatch : null}
-              listMatch={isTask ? task.listMatch : null}
-              tagMatches={isTask ? task.tagMatches : undefined}
-              placeholder={effectivePlaceholder}
-              autoFocus={autoFocus}
-              compact={inline}
-              dimmed={inline && !isFocused}
-              onMultilineChange={setMultiline}
-              onKeyDown={handleKeyDown}
-            />
+            {inline ? (
+              // Variante inline : editeur Lexical, ou les fragments reconnus
+              // sont de vrais noeuds (survolables, cliquables) au lieu d'un
+              // calque peint sous un textarea transparent.
+              <CaptureField
+                value={value}
+                onChange={handleChange}
+                onFocus={() => setIsFocused(true)}
+                onEnter={handleSubmit}
+                placeholder={effectivePlaceholder}
+                autoFocus={autoFocus}
+                dimmed={!isFocused}
+                onMultilineChange={setMultiline}
+                onKeyDown={handleKeyDown}
+              />
+            ) : (
+              <AutoGrowTextarea
+                value={value}
+                onChange={handleChange}
+                onFocus={() => setIsFocused(true)}
+                onEnter={handleSubmit}
+                dateMatch={isTask ? task.dateMatch : null}
+                listMatch={isTask ? task.listMatch : null}
+                tagMatches={isTask ? task.tagMatches : undefined}
+                placeholder={effectivePlaceholder}
+                autoFocus={autoFocus}
+                onMultilineChange={setMultiline}
+                onKeyDown={handleKeyDown}
+              />
+            )}
           </div>
         </PopoverAnchor>
 
