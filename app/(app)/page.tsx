@@ -455,6 +455,13 @@ function PlannerPageContent() {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (!(e.metaKey || e.ctrlKey) || e.key.toLowerCase() !== "n") return;
+      // Un panneau modal ouvert (détail de tâche, confirmation) garde le focus
+      // par son piège Radix : la capture ne l'obtiendrait pas, mais le
+      // défilement, lui, partirait quand même — la liste bougerait sous le
+      // panneau et l'utilisateur perdrait sa position en le refermant.
+      // Contrairement au garde de Ctrl+Z ci-dessus, on n'exclut PAS les champs
+      // de saisie : capturer en pleine frappe est justement le geste voulu.
+      if (document.querySelector('[role="dialog"]')) return;
       e.preventDefault();
       scrollRef.current?.scrollTo({ top: 0, behavior: "smooth" });
       captureRef.current?.open();
