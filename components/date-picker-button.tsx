@@ -16,6 +16,10 @@ import {
 interface DatePickerButtonProps {
   date?: Date | null;
   onDateChange?: (date: Date | undefined) => void;
+  /** Gabarit resserré : le contrôle vit sur la ligne de texte d'une rangée de
+   *  capture, il doit en faire exactement la hauteur (sinon la rangée grandit
+   *  au focus et le texte se décale). */
+  compact?: boolean;
 }
 
 /** Libellé court pour le chip : « Auj. » / « Demain » / « 7 juin ». */
@@ -25,7 +29,11 @@ function shortLabel(date: Date): string {
   return format(date, "d MMM", { locale: fr });
 }
 
-export function DatePickerButton({ date, onDateChange }: DatePickerButtonProps) {
+export function DatePickerButton({
+  date,
+  onDateChange,
+  compact,
+}: DatePickerButtonProps) {
   const [open, setOpen] = React.useState(false);
 
   const pick = (next: Date | undefined) => {
@@ -40,11 +48,16 @@ export function DatePickerButton({ date, onDateChange }: DatePickerButtonProps) 
           type="button"
           data-empty={!date}
           className={cn(
-            "flex h-9 items-center rounded-lg bg-muted text-sm font-medium text-foreground transition-colors hover:bg-muted/80 outline-none",
-            date ? "gap-1.5 pl-2.5 pr-2.5" : "w-9 justify-center text-muted-foreground",
+            "flex items-center rounded-lg bg-muted font-medium text-foreground transition-colors hover:bg-muted/80 outline-none",
+            compact ? "h-6 text-xs" : "h-9 text-sm",
+            date
+              ? compact
+                ? "gap-1 px-2"
+                : "gap-1.5 pl-2.5 pr-2.5"
+              : cn("justify-center text-muted-foreground", compact ? "w-6" : "w-9"),
           )}
         >
-          <CalendarIcon className="size-4 shrink-0 text-muted-foreground" />
+          <CalendarIcon className={cn("shrink-0 text-muted-foreground", compact ? "size-3.5" : "size-4")} />
           {date && <span>{shortLabel(date)}</span>}
         </button>
       </PopoverTrigger>

@@ -434,8 +434,11 @@
   }
 }
 
-/* Halo du marqueur `//` : « j'ajoute une pensée » est un geste à part, il
-   mérite d'être remarqué. Repris de l'ancien calque, en pseudo-élément. */
+/* Halo du marqueur `//` : une PULSATION, pas un décor permanent. Il salue le
+   geste « j'ajoute une pensée » à l'instant où les deux barres sont tapées,
+   puis s'efface — `forwards` fige l'état final, invisible. Le nœud du marqueur
+   n'étant recréé que si son texte change, la pulsation ne se rejoue pas à
+   chaque frappe dans la note. */
 .capture-note-marker {
   position: relative;
 }
@@ -443,26 +446,31 @@
 .capture-note-marker::before {
   content: "";
   position: absolute;
-  inset: -7px -12px;
+  inset: -6px -10px;
   z-index: -1;
   border-radius: 9999px;
-  background: oklch(0.86 0.17 92 / 0.5);
-  filter: blur(7px);
-  animation: capture-halo 0.42s cubic-bezier(0.16, 1, 0.3, 1);
+  background: oklch(0.86 0.17 92 / 0.3);
+  filter: blur(8px);
+  opacity: 0;
+  animation: capture-halo 900ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
 
 .dark .capture-note-marker::before {
-  background: oklch(0.82 0.17 92 / 0.34);
+  background: oklch(0.82 0.17 92 / 0.24);
 }
 
 @keyframes capture-halo {
-  from {
+  0% {
     opacity: 0;
-    transform: scale(0.3);
+    transform: scale(0.5);
   }
-  to {
+  30% {
     opacity: 1;
-    transform: scale(1);
+    transform: scale(1.08);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(0.98);
   }
 }
 

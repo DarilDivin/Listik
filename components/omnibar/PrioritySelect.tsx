@@ -11,6 +11,8 @@ import {
 import type { Priority } from "@/features/todos/types";
 
 interface PrioritySelectProps {
+  /** Gabarit resserré : hauteur d'une ligne de texte (rangée de capture). */
+  compact?: boolean;
   value: Priority;
   onChange: (priority: Priority) => void;
 }
@@ -38,7 +40,7 @@ function Dot({ color }: { color: string | null }) {
  * Construit sur Popover (et non Radix Select) car ce dernier remanie le focus de
  * façon trop agressive pour la fenêtre flottante de capture rapide.
  */
-export function PrioritySelect({ value, onChange }: PrioritySelectProps) {
+export function PrioritySelect({ value, onChange, compact }: PrioritySelectProps) {
   const [open, setOpen] = React.useState(false);
   const current = OPTIONS.find((o) => o.value === value) ?? OPTIONS[0];
 
@@ -53,10 +55,13 @@ export function PrioritySelect({ value, onChange }: PrioritySelectProps) {
         <button
           type="button"
           aria-label="Priorité"
-          className="flex h-9 items-center gap-1.5 rounded-lg bg-muted px-2.5 text-sm font-medium text-foreground outline-none transition-colors hover:bg-muted/80"
+          className={cn(
+            "flex items-center rounded-lg bg-muted font-medium text-foreground outline-none transition-colors hover:bg-muted/80",
+            compact ? "h-6 gap-1 px-2 text-xs" : "h-9 gap-1.5 px-2.5 text-sm",
+          )}
         >
           {value === "normal" ? (
-            <Flag className="size-4 text-muted-foreground" />
+            <Flag className={cn("text-muted-foreground", compact ? "size-3.5" : "size-4")} />
           ) : (
             <>
               <Dot color={current.color} />

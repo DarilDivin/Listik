@@ -237,15 +237,24 @@ export default function Omnibar({
   const controls = (
     <>
       {!(tokenIsEditable && task.dateMatch) && (
-        <DatePickerButton date={task.dueDate} onDateChange={task.handleDateChange} />
+        <DatePickerButton
+          date={task.dueDate}
+          onDateChange={task.handleDateChange}
+          compact={inline}
+        />
       )}
       {/* La priorite n'a pas de jeton : ses mots-cles restent des mots de la
           phrase. Son bouton est donc toujours la. */}
-      <PrioritySelect value={task.priority} onChange={task.setPriority} />
+      <PrioritySelect
+        value={task.priority}
+        onChange={task.setPriority}
+        compact={inline}
+      />
       {lists !== undefined && !(tokenIsEditable && task.listMatch) && (
         <ListControl
           list={task.list}
           lists={lists}
+          compact={inline}
           onChange={task.setList}
         />
       )}
