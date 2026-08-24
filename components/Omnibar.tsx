@@ -226,6 +226,19 @@ export default function Omnibar({
     ? placeholder ?? activeCommand.placeholder
     : activeCommand.placeholder;
 
+  /**
+   * Les contrôles passent-ils sous le texte ?
+   *
+   * En variante inline, la réponse ne dépend PAS de la largeur occupée : dès
+   * qu'on écrit, ils descendent. Se fier à l'enroulement mesuré créait une
+   * boucle — le texte s'allonge, pousse les contrôles à la ligne, ce qui
+   * libère de la place, donc ils remontent, donc le texte les rejoint à
+   * nouveau : ils faisaient l'aller-retour à chaque caractère.
+   */
+  const stackControls = inline
+    ? isFocused && value.trim().length > 0
+    : multiline;
+
   const menuOpen = slash.open || (isTask && autocomplete.open);
 
   // Un attribut deja ecrit dans le texte y est MODIFIABLE (on clique son
@@ -333,7 +346,7 @@ export default function Omnibar({
           sans déplacer le badge qui reste à gauche en pleine hauteur). */}
       <div
         className={`flex min-w-0 flex-1 gap-2 ${
-          multiline ? "flex-col" : "max-sm:flex-wrap items-center"
+          stackControls ? "flex-col" : "max-sm:flex-wrap items-center"
         }`}
       >
         <Popover
@@ -359,7 +372,6 @@ export default function Omnibar({
                 placeholder={effectivePlaceholder}
                 autoFocus={autoFocus}
                 dimmed={!isFocused}
-                onMultilineChange={setMultiline}
                 onKeyDown={handleKeyDown}
                 onTokenClick={setTokenEdit}
               />
@@ -452,7 +464,7 @@ export default function Omnibar({
       <AnimatePresence>
         {isTask &&
           isFocused &&
-          (multiline ? (
+          (stackControls ? (
             <motion.div
               initial={{ opacity: 0, y: -6 }}
               animate={{ opacity: 1, y: 0 }}

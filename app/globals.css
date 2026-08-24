@@ -452,21 +452,33 @@
   background: oklch(0.86 0.17 92 / 0.3);
   filter: blur(8px);
   opacity: 0;
-  animation: capture-halo 900ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  /* `linear` ici : chaque étape porte son propre easing (voir les keyframes).
+     Un ease-out global consommait presque tout le fondu dès le début du
+     segment, et le halo s'éteignait bien avant la fin de la durée. */
+  animation: capture-halo 1800ms linear forwards;
 }
 
 .dark .capture-note-marker::before {
   background: oklch(0.82 0.17 92 / 0.24);
 }
 
+/* Montée franche, palier, puis extinction lente : le halo a le temps d'être
+   vu avant de s'effacer. La majeure partie de la durée est le fondu. */
 @keyframes capture-halo {
   0% {
     opacity: 0;
     transform: scale(0.5);
+    animation-timing-function: cubic-bezier(0.16, 1, 0.3, 1);
   }
-  30% {
+  15% {
     opacity: 1;
-    transform: scale(1.08);
+    transform: scale(1.1);
+    animation-timing-function: ease-out;
+  }
+  40% {
+    opacity: 0.92;
+    transform: scale(1.03);
+    animation-timing-function: linear;
   }
   100% {
     opacity: 0;

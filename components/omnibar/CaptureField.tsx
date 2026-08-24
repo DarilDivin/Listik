@@ -185,39 +185,15 @@ function KeysPlugin({
   return null;
 }
 
-/** Une ligne fait `LINE_HEIGHT` ; au-dela, la saisie s'enroule. */
-const LINE_HEIGHT = 24;
-
-function MultilinePlugin({ onChange }: { onChange?: (m: boolean) => void }) {
-  const [editor] = useLexicalComposerContext();
-  const wasMultiline = useRef(false);
-  useEffect(() => {
-    const root = editor.getRootElement();
-    if (!root || !onChange) return;
-    const measure = () => {
-      const multiline = root.offsetHeight > LINE_HEIGHT + 8;
-      if (multiline !== wasMultiline.current) {
-        wasMultiline.current = multiline;
-        onChange(multiline);
-      }
-    };
-    measure();
-    const observer = new ResizeObserver(measure);
-    observer.observe(root);
-    return () => observer.disconnect();
-  }, [editor, onChange]);
-  return null;
-}
-
-/** Un jeton que l'utilisateur vient de designer a la souris. */
+/** Un jeton que l'utilisateur vient de désigner à la souris. */
 export interface TokenClick {
   kind: TokenKind;
   text: string;
-  /** Position a l'ecran, pour y ancrer le selecteur. */
+  /** Position à l'écran, pour y ancrer le sélecteur. */
   rect: DOMRect;
 }
 
-/** Natures dont le clic OUVRE un selecteur. Les autres gardent le
+/** Natures dont le clic OUVRE un sélecteur. Les autres gardent le
  *  comportement d'un texte ordinaire : le clic y pose le curseur. */
 const CLICKABLE: TokenKind[] = ["date", "project"];
 
@@ -237,9 +213,13 @@ function TokenClickPlugin({
       const kind = el?.dataset.token as TokenKind | undefined;
       if (!el || !kind || !CLICKABLE.includes(kind)) return;
       // Sur `mousedown` et non `click` : c'est lui qui poserait le curseur
-      // dans le jeton. On le retient pour ouvrir le selecteur a la place.
+      // dans le jeton. On le retient pour ouvrir le sélecteur à la place.
       event.preventDefault();
-      onTokenClick({ kind, text: el.textContent ?? "", rect: el.getBoundingClientRect() });
+      onTokenClick({
+        kind,
+        text: el.textContent ?? "",
+        rect: el.getBoundingClientRect(),
+      });
     };
     root.addEventListener("mousedown", handler);
     return () => root.removeEventListener("mousedown", handler);
@@ -264,9 +244,6 @@ interface CaptureFieldProps {
   autoFocus?: boolean;
   /** Invite estompée : la rangée est au repos. */
   dimmed?: boolean;
-  /** Notifie quand la saisie passe sur plusieurs lignes (l'Omnibar déplace
-   *  alors ses contrôles sous le texte). */
-  onMultilineChange?: (multiline: boolean) => void;
   onKeyDown?: (e: React.KeyboardEvent<HTMLElement>) => void;
   /** Clic sur un fragment reconnu : l'hôte ouvre le sélecteur correspondant. */
   onTokenClick?: (info: TokenClick) => void;
@@ -295,7 +272,6 @@ export function CaptureField({
   autoFocus,
   dimmed,
   onKeyDown,
-  onMultilineChange,
   onTokenClick,
 }: CaptureFieldProps) {
   return (
@@ -337,7 +313,6 @@ export function CaptureField({
           ErrorBoundary={LexicalErrorBoundary}
         />
         <SyncPlugin value={value} onChange={onChange} />
-        <MultilinePlugin onChange={onMultilineChange} />
         <TokenClickPlugin onTokenClick={onTokenClick} />
         <KeysPlugin onEnter={onEnter} onKeyDown={onKeyDown} />
         <AutoFocusPlugin enabled={autoFocus} />
