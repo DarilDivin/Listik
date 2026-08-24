@@ -40,8 +40,8 @@ export function DatePickerButton({ date, onDateChange }: DatePickerButtonProps) 
           type="button"
           data-empty={!date}
           className={cn(
-            "flex h-9 items-center rounded-lg bg-muted text-sm font-medium text-foreground transition-colors hover:bg-muted/80 outline-none",
-            date ? "gap-1.5 pl-2.5 pr-2.5" : "w-9 justify-center text-muted-foreground",
+            "flex h-8 items-center rounded-lg bg-muted text-sm font-medium text-foreground transition-colors hover:bg-muted/80 outline-none",
+            date ? "gap-1.5 pl-2.5 pr-2.5" : "w-8 justify-center text-muted-foreground",
           )}
         >
           <CalendarIcon className="size-4 shrink-0 text-muted-foreground" />

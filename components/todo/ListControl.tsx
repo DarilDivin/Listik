@@ -59,7 +59,7 @@ export function ListControl({
           type="button"
           aria-label={list ? "Changer de liste" : "Assigner une liste"}
           className={cn(
-            "flex h-9 items-center gap-1.5 rounded-lg bg-muted px-2.5 text-sm font-medium text-foreground transition-colors hover:bg-muted/80 outline-none",
+            "flex h-8 items-center gap-1.5 rounded-lg bg-muted px-2.5 text-sm font-medium text-foreground transition-colors hover:bg-muted/80 outline-none",
             !list && "text-muted-foreground",
             dimmed && "opacity-60",
           )}

@@ -53,7 +53,7 @@ export function PrioritySelect({ value, onChange }: PrioritySelectProps) {
         <button
           type="button"
           aria-label="Priorité"
-          className="flex h-9 items-center gap-1.5 rounded-lg bg-muted px-2.5 text-sm font-medium text-foreground outline-none transition-colors hover:bg-muted/80"
+          className="flex h-8 items-center gap-1.5 rounded-lg bg-muted px-2.5 text-sm font-medium text-foreground outline-none transition-colors hover:bg-muted/80"
         >
           {value === "normal" ? (
             <Flag className="size-4 text-muted-foreground" />
