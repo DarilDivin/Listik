@@ -3,47 +3,51 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { motion } from "motion/react";
-import {
-  CalendarDays,
-  NotebookPen,
-  Search,
-  Settings,
-  Sparkles,
-} from "lucide-react";
+import { Search } from "lucide-react";
 import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import { APP_NAV, isNavActive } from "@/components/app-nav";
 import { spring } from "@/lib/motion";
 import { cn } from "@/lib/utils";
 
-const NAV = [
-  { href: "/", label: "Planificateur", icon: CalendarDays },
-  { href: "/journal", label: "Journal", icon: NotebookPen },
-  { href: "/assistant", label: "Assistant", icon: Sparkles },
-  { href: "/settings", label: "Réglages", icon: Settings },
-];
-
 interface FloatingDockProps {
   onOpenSearch?: () => void;
+  /**
+   * Aimanté au pied du rail (mode dock, page avec contenu latéral) : la pilule
+   * quitte son ancrage flottant centré-gauche et se pose en rangée horizontale.
+   * Les `layoutId` partagés (`app-dock`, `dock-item-*`, `dock-active`) font
+   * glisser la pilule et chaque icône d'un état à l'autre.
+   */
+  docked?: boolean;
 }
 
 /**
  * Dock flottant : pilule verticale sculptée, centrée à gauche. La pastille
  * active (lavis d'accent) GLISSE d'une icône à l'autre (layoutId) ; chaque
  * icône se soulève au survol et s'écrase légèrement au clic, façon Dock macOS.
+ * En variante `docked`, la même pilule vient s'aimanter au pied du rail.
  */
-export function FloatingDock({ onOpenSearch }: FloatingDockProps) {
-  const raw = usePathname() ?? "/";
-  const pathname = raw.replace(/\/$/, "") || "/";
+export function FloatingDock({ onOpenSearch, docked = false }: FloatingDockProps) {
+  const pathname = usePathname() ?? "/";
+  const tooltipSide = docked ? "top" : "right";
+  const itemSize = docked ? "size-9 rounded-xl" : "size-11 rounded-2xl";
+  const iconSize = docked ? 17 : 19;
 
   return (
     <motion.nav
-      initial={{ opacity: 0, x: -24, scale: 0.9 }}
-      animate={{ opacity: 1, x: 0, scale: 1 }}
-      transition={{ ...spring.pop, delay: 0.05 }}
-      className="card-floating fixed left-4 top-1/2 z-30 flex -translate-y-1/2 flex-col items-center gap-1 p-2"
+      layoutId="app-dock"
+      transition={spring.smooth}
+      initial={docked ? false : { opacity: 0, scale: 0.9 }}
+      animate={docked ? undefined : { opacity: 1, scale: 1 }}
+      className={cn(
+        "card-floating z-30 flex items-center gap-1 p-2",
+        docked
+          ? "flex-row p-1.5 max-md:flex-col"
+          : "fixed left-4 top-1/2 -translate-y-1/2 flex-col",
+      )}
       aria-label="Navigation principale"
     >
       {onOpenSearch && (
@@ -51,32 +55,44 @@ export function FloatingDock({ onOpenSearch }: FloatingDockProps) {
           <Tooltip>
             <TooltipTrigger asChild>
               <motion.button
+                layoutId="dock-item-search"
                 type="button"
                 onClick={onOpenSearch}
                 whileHover={{ scale: 1.12, y: -1 }}
                 whileTap={{ scale: 0.92 }}
                 transition={spring.snappy}
                 aria-label="Rechercher (Ctrl K)"
-                className="grid size-11 place-items-center rounded-2xl text-muted-foreground transition-colors hover:text-foreground"
+                className={cn(
+                  "grid place-items-center text-muted-foreground transition-colors hover:text-foreground",
+                  itemSize,
+                )}
               >
-                <Search size={19} strokeWidth={2.1} />
+                <Search size={iconSize} strokeWidth={2.1} />
               </motion.button>
             </TooltipTrigger>
-            <TooltipContent side="right" sideOffset={10}>
+            <TooltipContent side={tooltipSide} sideOffset={10}>
               Rechercher · Ctrl K
             </TooltipContent>
           </Tooltip>
-          <span aria-hidden className="my-0.5 h-px w-6 bg-border" />
+          <span
+            aria-hidden
+            className={cn(
+              "bg-border",
+              docked
+                ? "mx-0.5 h-6 w-px max-md:mx-0 max-md:my-0.5 max-md:h-px max-md:w-6"
+                : "my-0.5 h-px w-6",
+            )}
+          />
         </>
       )}
 
-      {NAV.map(({ href, label, icon: Icon }) => {
-        const active =
-          href === "/" ? pathname === "/" : pathname.startsWith(href);
+      {APP_NAV.map(({ href, label, icon: Icon }) => {
+        const active = isNavActive(pathname, href);
         return (
           <Tooltip key={href}>
             <TooltipTrigger asChild>
               <motion.span
+                layoutId={`dock-item-${href}`}
                 whileHover={{ scale: 1.12, y: -1 }}
                 whileTap={{ scale: 0.92 }}
                 transition={spring.snappy}
@@ -86,7 +102,10 @@ export function FloatingDock({ onOpenSearch }: FloatingDockProps) {
                   <motion.span
                     layoutId="dock-active"
                     aria-hidden
-                    className="absolute inset-0 rounded-2xl bg-brand-soft"
+                    className={cn(
+                      "absolute inset-0 bg-brand-soft",
+                      docked ? "rounded-xl" : "rounded-2xl",
+                    )}
                     transition={spring.snappy}
                   />
                 )}
@@ -95,17 +114,18 @@ export function FloatingDock({ onOpenSearch }: FloatingDockProps) {
                   aria-label={label}
                   aria-current={active ? "page" : undefined}
                   className={cn(
-                    "relative z-10 grid size-11 place-items-center rounded-2xl transition-colors",
+                    "relative z-10 grid place-items-center transition-colors",
+                    itemSize,
                     active
                       ? "text-brand"
                       : "text-muted-foreground hover:text-foreground",
                   )}
                 >
-                  <Icon size={19} strokeWidth={2.1} />
+                  <Icon size={iconSize} strokeWidth={2.1} />
                 </Link>
               </motion.span>
             </TooltipTrigger>
-            <TooltipContent side="right" sideOffset={10}>
+            <TooltipContent side={tooltipSide} sideOffset={10}>
               {label}
             </TooltipContent>
           </Tooltip>
