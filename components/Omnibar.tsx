@@ -304,7 +304,7 @@ export default function Omnibar({
                 : "cursor-text border border-transparent hover:bg-foreground/[0.045]",
             )
           : cn(
-              "flex w-full max-w-4xl items-stretch gap-2 rounded-[1.25rem] p-2",
+              "flex w-full max-w-4xl items-stretch gap-2 rounded-2xl p-2",
               "transition-[background-color,border-color,box-shadow] duration-500 ease-out",
               isFocused
                 ? "border border-border/60 bg-popover"
@@ -335,7 +335,7 @@ export default function Omnibar({
       // hauteur suit le contenu, et l'ouverture est portee par les controles
       // eux-memes. La variante flottante le garde, son gabarit ne bouge pas.
       layout={!inline}
-      animate={inline ? { borderRadius: isFocused ? 16 : 8 } : undefined}
+      animate={inline ? { borderRadius: isFocused ? 12 : 8 } : undefined}
       transition={{ type: "spring", bounce: 0.25, duration: 0.55 }}
       style={{ height: "auto", width: inline || isFocused ? "100%" : "auto" }}
       onBlur={handleFormBlur}

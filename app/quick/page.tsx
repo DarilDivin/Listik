@@ -224,7 +224,7 @@ export default function QuickPage() {
             native, c'est elle qui donne l'effet « flotte au-dessus du bureau ».
             `.shadow-floating` = même recette (teintée oklch) que `.card-floating`,
             avec sa variante sombre — pas de rgba noir en dur. */}
-        <div className="rounded-[1.25rem] shadow-floating">
+        <div className="rounded-2xl shadow-floating">
           <Omnibar
             key={mountKey}
             autoFocus
