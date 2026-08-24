@@ -290,9 +290,12 @@ export default function Omnibar({
               // d'accent du canvas compris (un `bg-background` opaque le
               // masquerait et redessinerait une carte). Aucune ombre : au
               // focus, une simple hairline.
-              // Le rayon est animé par motion (voir `animate`) et NON par une
-              // classe : `layout` écrit lui-même un border-radius en style
-              // inline pendant ses animations, qui écraserait un `rounded-*`.
+              // Le rayon revient aux CLASSES, donc aux jetons : code en dur
+              // dans un `animate` motion, il est reste a 8/12 px pendant que
+              // l'echelle etait refondue, et la rangee se retrouvait moins
+              // arrondie (8) que les lignes de taches sous elle (10) — alors
+              // qu'elle est censee se lire comme l'une d'elles. Plus rien ne
+              // l'ecrase : `layout` est desactive sur cette variante.
               // `flex-wrap` en PERMANENCE, et non seulement quand les
               // controles sont empiles : ils portent `basis-full`, donc sans
               // enroulement ils reclament toute la largeur sans pouvoir passer
@@ -304,10 +307,10 @@ export default function Omnibar({
               // Toujours enroulable, la rangee n'a qu'une ligne tant qu'il n'y
               // a rien a y mettre.
               "flex w-full flex-wrap items-start gap-x-3 bg-transparent px-3 py-3.5",
-              "transition-[background-color,border-color] duration-300 ease-out",
+              "transition-[background-color,border-color,border-radius] duration-300 ease-out",
               isFocused
-                ? "border border-border/60"
-                : "cursor-text border border-transparent hover:bg-foreground/[0.045]",
+                ? "rounded-xl border border-border/60"
+                : "cursor-text rounded-lg border border-transparent hover:bg-foreground/[0.045]",
             )
           : cn(
               "flex w-full max-w-4xl items-stretch gap-2 rounded-2xl p-2",
@@ -341,7 +344,6 @@ export default function Omnibar({
       // hauteur suit le contenu, et l'ouverture est portee par les controles
       // eux-memes. La variante flottante le garde, son gabarit ne bouge pas.
       layout={!inline}
-      animate={inline ? { borderRadius: isFocused ? 12 : 8 } : undefined}
       transition={{ type: "spring", bounce: 0.25, duration: 0.55 }}
       style={{ height: "auto", width: inline || isFocused ? "100%" : "auto" }}
       onBlur={handleFormBlur}
@@ -531,7 +533,7 @@ export default function Omnibar({
       {/* Indice clavier : au repos seulement, et jamais par-dessus un
           brouillon (le bouton d'envoi occupe alors ce coin). */}
       {hint && !isFocused && !value.trim() && (
-        <span className="flex shrink-0 items-center">{hint}</span>
+        <span className="flex h-6 shrink-0 items-center">{hint}</span>
       )}
 
       {/* Selecteur ouvert par un clic sur un jeton : ancre a l'endroit du mot

@@ -2,7 +2,6 @@
 
 import { forwardRef, useImperativeHandle, useRef } from "react";
 import Omnibar from "@/components/Omnibar";
-import { Kbd } from "@/components/ui/kbd";
 import type { SmartTaskData } from "@/features/todos/useTaskMode";
 
 export interface CaptureRowHandle {
@@ -57,10 +56,15 @@ export const CaptureRow = forwardRef<CaptureRowHandle, CaptureRowProps>(
               className="mt-[3px] size-[18px] shrink-0 rounded-full border-2 border-dashed border-muted-foreground/30 transition-colors group-hover:border-muted-foreground/50 group-focus-within:border-brand/40"
             />
           }
+          // Indice typographique, pas pastille : meme teinte que l'invite,
+          // simplement en chasse fixe pour dire « c'est une touche ». Un `Kbd`
+          // (fond plein, hauteur propre) etait l'element le plus lourd d'une
+          // rangee qui se veut plate. Ecrit « Ctrl N » et non « ⌃N » : le
+          // chevron est la notation macOS du Control, illisible ici.
           hint={
-            <Kbd className="mt-[3px] bg-muted text-[10px] text-muted-foreground/70 opacity-0 transition-opacity group-hover:opacity-100">
-              ⌃N
-            </Kbd>
+            <span className="font-mono text-[11px] tracking-tight text-muted-foreground/40 opacity-0 transition-opacity duration-200 group-hover:opacity-100">
+              Ctrl N
+            </span>
           }
         />
       </div>
