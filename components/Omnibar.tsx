@@ -1,13 +1,14 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { DatePickerButton } from "@/components/date-picker-button";
 import { Button } from "@/components/ui/button";
 import { Plus, Tag } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import { cn } from "@/lib/utils";
 import { AutoGrowTextarea } from "@/components/omnibar/AutoGrowTextarea";
-import { CaptureField } from "@/components/omnibar/CaptureField";
+import { CaptureField, type TokenClick } from "@/components/omnibar/CaptureField";
+import { DatePickerCalendar } from "@/components/date-picker-calendar";
 import { PrioritySelect } from "@/components/omnibar/PrioritySelect";
 import { ModeBadge } from "@/components/omnibar/ModeBadge";
 import { ListControl } from "@/components/todo/ListControl";
@@ -80,6 +81,8 @@ export default function Omnibar({
   const [mode, setMode] = useState<OmnibarMode>(defaultMode);
   const [isFocused, setIsFocused] = useState(false);
   const [multiline, setMultiline] = useState(false);
+  // Jeton designe a la souris : son selecteur s'ouvre a l'endroit du mot.
+  const [tokenEdit, setTokenEdit] = useState<TokenClick | null>(null);
   const formRef = useRef<HTMLFormElement>(null);
 
   const isTask = mode === "task";
@@ -121,6 +124,23 @@ export default function Omnibar({
     switchMode,
     availableModes,
   });
+
+  // L'ancre du selecteur est figee aux coordonnees du clic : si la page
+  // defile, elle ne suit pas. On referme plutot que de laisser un popover
+  // flotter loin de son mot.
+  useEffect(() => {
+    if (!tokenEdit) return;
+    const close = () => setTokenEdit(null);
+    window.addEventListener("scroll", close, true);
+    return () => window.removeEventListener("scroll", close, true);
+  }, [tokenEdit]);
+
+  /** Remplace dans le texte le fragment reconnu par une nouvelle ecriture. */
+  const rewriteToken = (match: { index: number; text: string }, next: string) => {
+    setValue(
+      value.slice(0, match.index) + next + value.slice(match.index + match.text.length),
+    );
+  };
 
   const handleChange = (raw: string) => {
     if (slash.interceptChange(raw)) return;
@@ -191,11 +211,21 @@ export default function Omnibar({
 
   const menuOpen = slash.open || (isTask && autocomplete.open);
 
+  // Un attribut deja ecrit dans le texte y est MODIFIABLE (on clique son
+  // jeton) : afficher en plus son bouton le montrerait deux fois, sans dire
+  // lequel fait foi. Le controle ne sert donc qu'a AJOUTER ce qui manque.
+  // Reserve a la variante inline : ailleurs, les fragments ne sont pas
+  // cliquables, retirer le bouton priverait de tout moyen de corriger.
+  const tokenIsEditable = inline && isTask;
   const controls = (
     <>
-      <DatePickerButton date={task.dueDate} onDateChange={task.handleDateChange} />
+      {!(tokenIsEditable && task.dateMatch) && (
+        <DatePickerButton date={task.dueDate} onDateChange={task.handleDateChange} />
+      )}
+      {/* La priorite n'a pas de jeton : ses mots-cles restent des mots de la
+          phrase. Son bouton est donc toujours la. */}
       <PrioritySelect value={task.priority} onChange={task.setPriority} />
-      {lists !== undefined && (
+      {lists !== undefined && !(tokenIsEditable && task.listMatch) && (
         <ListControl
           list={task.list}
           lists={lists}
@@ -305,6 +335,7 @@ export default function Omnibar({
                 dimmed={!isFocused}
                 onMultilineChange={setMultiline}
                 onKeyDown={handleKeyDown}
+                onTokenClick={setTokenEdit}
               />
             ) : (
               <AutoGrowTextarea
@@ -433,6 +464,78 @@ export default function Omnibar({
       {hint && !isFocused && !value.trim() && (
         <span className="flex shrink-0 items-center">{hint}</span>
       )}
+
+      {/* Selecteur ouvert par un clic sur un jeton : ancre a l'endroit du mot
+          plutot qu'au bouton — on modifie l'attribut la ou on le lit. */}
+      <Popover
+        open={tokenEdit !== null}
+        onOpenChange={(o) => {
+          if (!o) setTokenEdit(null);
+        }}
+      >
+        <PopoverAnchor asChild>
+          <span
+            aria-hidden
+            style={
+              tokenEdit
+                ? {
+                    position: "fixed",
+                    left: tokenEdit.rect.left,
+                    top: tokenEdit.rect.bottom,
+                    width: tokenEdit.rect.width,
+                    height: 0,
+                  }
+                : { display: "none" }
+            }
+          />
+        </PopoverAnchor>
+        <PopoverContent
+          side="bottom"
+          align="start"
+          sideOffset={6}
+          collisionPadding={8}
+          onOpenAutoFocus={(e) => e.preventDefault()}
+          className="w-auto p-0"
+        >
+          {tokenEdit?.kind === "date" && (
+            <DatePickerCalendar
+              date={task.dueDate}
+              onPick={(next) => {
+                task.handleDateChange(next);
+                setTokenEdit(null);
+                focusField();
+              }}
+            />
+          )}
+          {tokenEdit?.kind === "project" && (
+            <div className="flex max-h-64 w-52 flex-col gap-px overflow-y-auto p-1">
+              {(lists ?? []).length === 0 && (
+                <p className="px-2 py-1.5 text-sm text-muted-foreground">
+                  Aucun projet
+                </p>
+              )}
+              {(lists ?? []).map((name) => (
+                <button
+                  key={name}
+                  type="button"
+                  onMouseDown={(e) => e.preventDefault()}
+                  onClick={() => {
+                    if (task.listMatch) rewriteToken(task.listMatch, `#${name}`);
+                    setTokenEdit(null);
+                    focusField();
+                  }}
+                  className={cn(
+                    "truncate rounded-md px-2 py-1.5 text-left text-sm transition-colors hover:bg-accent",
+                    task.list?.toLowerCase() === name.toLowerCase() && "text-brand",
+                  )}
+                >
+                  {name}
+                </button>
+              ))}
+            </div>
+          )}
+        </PopoverContent>
+      </Popover>
 
       {/* Bouton d'envoi rapide quand la barre n'est pas focus (mode Tâche). */}
       <AnimatePresence>

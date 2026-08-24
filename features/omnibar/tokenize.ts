@@ -12,8 +12,11 @@ import {
   type DateMatch,
 } from "../todos/smartParse";
 
-/** Nature d'un fragment reconnu. « note » = tout ce qui suit `//`. */
-export type TokenKind = "date" | "project" | "tag" | "note";
+/**
+ * Nature d'un fragment reconnu. Le marqueur `//` est séparé du corps de la
+ * note : c'est LUI qui porte le halo, la note n'étant que du texte libre.
+ */
+export type TokenKind = "date" | "project" | "tag" | "note" | "noteMarker";
 
 export interface Segment {
   /** `null` = texte ordinaire. */
@@ -47,7 +50,10 @@ export function tokenizeCapture(text: string): Segment[] {
   // aucun autre marqueur n'est reconnu à l'intérieur.
   const noteAt = text.indexOf("//");
   const head = noteAt === -1 ? text : text.slice(0, noteAt);
-  if (noteAt !== -1) ranges.push({ kind: "note", start: noteAt, end: text.length });
+  if (noteAt !== -1) {
+    ranges.push({ kind: "noteMarker", start: noteAt, end: noteAt + 2 });
+    ranges.push({ kind: "note", start: noteAt + 2, end: text.length });
+  }
 
   const push = (kind: TokenKind, match: DateMatch | undefined | null) => {
     if (!match) return;

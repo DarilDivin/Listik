@@ -17,6 +17,9 @@ const TOKEN_CLASS: Record<TokenKind, string> = {
   project: "text-violet-500",
   tag: "text-emerald-500",
   note: "text-yellow-700/80 dark:text-yellow-200/60",
+  // Le halo (::before flouté) vit dans globals.css : une pseudo-élément ne
+  // s'exprime pas en classes utilitaires.
+  noteMarker: "capture-note-marker text-yellow-600 dark:text-yellow-400",
 };
 
 export type SerializedTokenNode = Spread<

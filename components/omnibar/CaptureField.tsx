@@ -16,7 +16,7 @@ import {
   type ElementNode,
   type LexicalEditor,
 } from "lexical";
-import { tokenizeCapture } from "@/features/omnibar/tokenize";
+import { tokenizeCapture, type TokenKind } from "@/features/omnibar/tokenize";
 import { $createTokenNode, $isTokenNode, TokenNode } from "./TokenNode";
 import { cn } from "@/lib/utils";
 
@@ -54,21 +54,45 @@ function $restoreCaret(paragraph: ElementNode, offset: number): void {
   paragraph.selectEnd();
 }
 
-/** Rebâtit la ligne à partir des segments. Le curseur est repris à l'identique. */
+/**
+ * Aligne la ligne sur les segments attendus, en ne remplaçant QUE les nœuds
+ * qui ont changé. Tout recréer serait plus court à écrire, mais chaque frappe
+ * détruirait et recréerait les jetons intacts : leurs éléments DOM étant
+ * neufs, leurs animations d'apparition se rejoueraient sans fin (le halo de
+ * la note clignoterait à chaque lettre tapée ailleurs).
+ */
 function $writeSegments(text: string, keepCaret: boolean): void {
   const root = $getRoot();
   const caret = keepCaret ? $readCaret() : null;
 
-  const paragraph = $createParagraphNode();
-  for (const segment of tokenizeCapture(text)) {
-    paragraph.append(
-      segment.kind
-        ? $createTokenNode(segment.text, segment.kind)
-        : $createTextNode(segment.text),
-    );
+  const existing = root.getFirstChild();
+  let paragraph: ElementNode;
+  if ($isElementNode(existing)) {
+    paragraph = existing;
+  } else {
+    paragraph = $createParagraphNode();
+    root.clear();
+    root.append(paragraph);
   }
-  root.clear();
-  root.append(paragraph);
+
+  const expected = tokenizeCapture(text);
+  const children = paragraph.getChildren();
+
+  expected.forEach((segment, i) => {
+    const child = children[i];
+    const kind = $isTokenNode(child) ? child.getKind() : null;
+    if (child && kind === segment.kind && child.getTextContent() === segment.text) {
+      return; // inchangé : on le laisse vivre, animation comprise
+    }
+    const node = segment.kind
+      ? $createTokenNode(segment.text, segment.kind)
+      : $createTextNode(segment.text);
+    if (child) child.replace(node);
+    else paragraph.append(node);
+  });
+
+  // Segments disparus (le texte a raccourci).
+  for (let i = expected.length; i < children.length; i++) children[i].remove();
 
   if (caret === null) paragraph.selectEnd();
   else $restoreCaret(paragraph, caret);
@@ -185,6 +209,44 @@ function MultilinePlugin({ onChange }: { onChange?: (m: boolean) => void }) {
   return null;
 }
 
+/** Un jeton que l'utilisateur vient de designer a la souris. */
+export interface TokenClick {
+  kind: TokenKind;
+  text: string;
+  /** Position a l'ecran, pour y ancrer le selecteur. */
+  rect: DOMRect;
+}
+
+/** Natures dont le clic OUVRE un selecteur. Les autres gardent le
+ *  comportement d'un texte ordinaire : le clic y pose le curseur. */
+const CLICKABLE: TokenKind[] = ["date", "project"];
+
+function TokenClickPlugin({
+  onTokenClick,
+}: {
+  onTokenClick?: (info: TokenClick) => void;
+}) {
+  const [editor] = useLexicalComposerContext();
+  useEffect(() => {
+    const root = editor.getRootElement();
+    if (!root || !onTokenClick) return;
+    const handler = (event: MouseEvent) => {
+      const el = (event.target as HTMLElement | null)?.closest?.(
+        "[data-token]",
+      ) as HTMLElement | null;
+      const kind = el?.dataset.token as TokenKind | undefined;
+      if (!el || !kind || !CLICKABLE.includes(kind)) return;
+      // Sur `mousedown` et non `click` : c'est lui qui poserait le curseur
+      // dans le jeton. On le retient pour ouvrir le selecteur a la place.
+      event.preventDefault();
+      onTokenClick({ kind, text: el.textContent ?? "", rect: el.getBoundingClientRect() });
+    };
+    root.addEventListener("mousedown", handler);
+    return () => root.removeEventListener("mousedown", handler);
+  }, [editor, onTokenClick]);
+  return null;
+}
+
 function AutoFocusPlugin({ enabled }: { enabled?: boolean }) {
   const [editor] = useLexicalComposerContext();
   useEffect(() => {
@@ -206,6 +268,8 @@ interface CaptureFieldProps {
    *  alors ses contrôles sous le texte). */
   onMultilineChange?: (multiline: boolean) => void;
   onKeyDown?: (e: React.KeyboardEvent<HTMLElement>) => void;
+  /** Clic sur un fragment reconnu : l'hôte ouvre le sélecteur correspondant. */
+  onTokenClick?: (info: TokenClick) => void;
 }
 
 /**
@@ -232,6 +296,7 @@ export function CaptureField({
   dimmed,
   onKeyDown,
   onMultilineChange,
+  onTokenClick,
 }: CaptureFieldProps) {
   return (
     <div className="relative w-full">
@@ -273,6 +338,7 @@ export function CaptureField({
         />
         <SyncPlugin value={value} onChange={onChange} />
         <MultilinePlugin onChange={onMultilineChange} />
+        <TokenClickPlugin onTokenClick={onTokenClick} />
         <KeysPlugin onEnter={onEnter} onKeyDown={onKeyDown} />
         <AutoFocusPlugin enabled={autoFocus} />
       </LexicalComposer>

@@ -415,3 +415,60 @@
   font-weight: 600;
   letter-spacing: -0.006em;
 }
+
+/* ── Jetons de la barre de capture ──────────────────────────────────────
+   Les fragments reconnus (date, projet, tag, note) sont de vrais nœuds de
+   l'éditeur, donc animables. La reconstruction de la ligne est incrémentale
+   (voir `CaptureField`) : un jeton inchangé conserve son élément DOM, son
+   animation ne rejoue donc pas à chaque frappe ailleurs dans la phrase. */
+[data-token] {
+  animation: capture-token-in 0.28s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes capture-token-in {
+  from {
+    opacity: 0.3;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+/* Halo du marqueur `//` : « j'ajoute une pensée » est un geste à part, il
+   mérite d'être remarqué. Repris de l'ancien calque, en pseudo-élément. */
+.capture-note-marker {
+  position: relative;
+}
+
+.capture-note-marker::before {
+  content: "";
+  position: absolute;
+  inset: -7px -12px;
+  z-index: -1;
+  border-radius: 9999px;
+  background: oklch(0.86 0.17 92 / 0.5);
+  filter: blur(7px);
+  animation: capture-halo 0.42s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.dark .capture-note-marker::before {
+  background: oklch(0.82 0.17 92 / 0.34);
+}
+
+@keyframes capture-halo {
+  from {
+    opacity: 0;
+    transform: scale(0.3);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-token],
+  .capture-note-marker::before {
+    animation: none;
+  }
+}

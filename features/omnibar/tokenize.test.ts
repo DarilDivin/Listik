@@ -32,7 +32,8 @@ describe("tokenizeCapture", () => {
   it("ferme le texte sur la note et n'y reconnaît plus rien", () => {
     expect(shape("appeler Jean // demain #Boulot")).toEqual([
       "plain:appeler Jean ",
-      "note:// demain #Boulot",
+      "noteMarker://",
+      "note: demain #Boulot",
     ]);
   });
 
