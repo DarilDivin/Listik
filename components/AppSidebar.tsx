@@ -24,6 +24,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { Kbd } from "@/components/ui/kbd";
+import { useShortcut } from "@/lib/keys";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { ProgressRing } from "@/components/planner/ProgressRing";
 import { APP_NAV, isNavActive } from "@/components/app-nav";
@@ -59,6 +60,7 @@ interface AppSidebarProps {
 export function AppSidebar({ onOpenSearch }: AppSidebarProps) {
   const pathname = usePathname() ?? "/";
   const { hasContent, setContainer } = useSidebarSlot();
+  const searchShortcut = useShortcut("K");
 
   useTodosSync();
   const { data: todos = [] } = useSWR(SWR_KEYS.ALL_TODOS, () => todosApi.list());
@@ -122,7 +124,7 @@ export function AppSidebar({ onOpenSearch }: AppSidebarProps) {
                       <Search />
                       <span>Rechercher</span>
                       <Kbd className="ml-auto bg-muted text-[10px] text-muted-foreground/70">
-                        ⌃K
+                        {searchShortcut}
                       </Kbd>
                     </SidebarMenuButton>
                   </SidebarMenuItem>

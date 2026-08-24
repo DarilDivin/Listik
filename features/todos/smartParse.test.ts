@@ -161,6 +161,18 @@ describe("stripDateFromText", () => {
     expect(strip("Acheter le pain demain")).toBe("Acheter le pain");
   });
 
+  it("ne touche pas a une date au milieu de la phrase", () => {
+    // La date y appartient au propos : l'extraire couperait la phrase.
+    const phrase =
+      "Aimer Floriane de tout mon coeur. Aujourd'hui et demain et tous les autres jours.";
+    expect(strip(phrase)).toBe(phrase);
+    expect(strip("Reunion demain a Paris")).toBe("Reunion demain a Paris");
+  });
+
+  it("tolere une ponctuation finale apres la date", () => {
+    expect(strip("Faire la vaisselle demain.")).toBe("Faire la vaisselle.");
+  });
+
   it("rend le texte tel quel sans date", () => {
     expect(stripDateFromText("Acheter du pain", null)).toBe("Acheter du pain");
   });

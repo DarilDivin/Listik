@@ -115,16 +115,31 @@ export function expandDateMatchLeft(text: string, match: DateMatch): DateMatch {
   return { index: start, text: text.slice(start, match.index + match.text.length) };
 }
 
+/** Ce qui peut suivre la date sans qu'elle cesse de terminer la saisie : rien,
+ *  des espaces, au plus une ponctuation finale. */
+const TRAILING_NOISE = /^\s*[.!?;:,]?\s*$/;
+
 /**
- * Retire la date du titre (avec ses mots de liaison). La date devient un
- * attribut de la tache — la garder dans le titre le rendrait faux des le
- * lendemain (« Reviser le CV demain »).
+ * Retire la date du titre (avec ses mots de liaison), MAIS seulement si elle
+ * termine la saisie. La date devient alors un attribut — la garder rendrait le
+ * titre faux des le lendemain (« Reviser le CV demain »).
+ *
+ * Une date au MILIEU d'une phrase en fait partie : l'extraire couperait le
+ * propos. Constate en usage reel sur « Aimer X de tout mon coeur. Aujourd'hui
+ * et demain et tous les autres jours. », qui devenait « Aimer X de tout mon
+ * coeur. et demain… ». Dans ce cas on ne touche a rien : la date est quand
+ * meme reconnue et posee sur la tache, elle reste simplement ecrite.
  */
 export function stripDateFromText(text: string, match: DateMatch | null): string {
   if (!match) return text;
   const full = expandDateMatchLeft(text, match);
-  return (text.slice(0, full.index) + text.slice(full.index + full.text.length))
+  const after = text.slice(full.index + full.text.length);
+  if (!TRAILING_NOISE.test(after)) return text;
+  return (text.slice(0, full.index) + after)
     .replace(/\s{2,}/g, " ")
+    // Retirer la date laisse la ponctuation finale detachee (« la vaisselle . ») :
+    // on la recolle. Pas avant « ! » ni « ? », qui prennent une espace en francais.
+    .replace(/\s+([.,])/g, "$1")
     .trim();
 }
 
