@@ -7,7 +7,8 @@ import { Plus, Tag } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import { cn } from "@/lib/utils";
 import { AutoGrowTextarea } from "@/components/omnibar/AutoGrowTextarea";
-import { CaptureField, type TokenClick } from "@/components/omnibar/CaptureField";
+import dynamic from "next/dynamic";
+import type { TokenClick } from "@/components/omnibar/CaptureField";
 import { DatePickerCalendar } from "@/components/date-picker-calendar";
 import { PrioritySelect } from "@/components/omnibar/PrioritySelect";
 import { ModeBadge } from "@/components/omnibar/ModeBadge";
@@ -33,6 +34,22 @@ const KEEP_OPEN_SELECTORS = [
   '[data-state="open"]',
   ".calendar",
 ];
+
+/**
+ * L'editeur n'est charge QUE par les surfaces qui l'utilisent (variante
+ * inline). En import statique, il pesait sur toute page important l'Omnibar :
+ * la fenetre de capture rapide et l'Assistant payaient ~70 kB pour un champ
+ * qu'ils n'affichent pas. `ssr: false` : Lexical touche au DOM au montage.
+ */
+const CaptureField = dynamic(
+  () => import("@/components/omnibar/CaptureField").then((m) => m.CaptureField),
+  {
+    ssr: false,
+    // Reserve la hauteur d'une ligne : sans lui, la rangee se replierait le
+    // temps du chargement et le contenu sauterait.
+    loading: () => <div className="min-h-6 w-full" />,
+  },
+);
 
 interface OmnibarProps {
   /** Soumission d'une tâche (mode « task »). */
