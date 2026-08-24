@@ -1,6 +1,9 @@
 import { describe, it, expect } from "vitest";
 import {
   detectListFromText,
+  expandDateMatchLeft,
+  parseTaskDate,
+  stripDateFromText,
   detectPriorityFromText,
   detectTagsFromText,
   formatDateToNaturalText,
@@ -128,5 +131,52 @@ describe("formatDateToNaturalText", () => {
     const tomorrow = new Date();
     tomorrow.setDate(tomorrow.getDate() + 1);
     expect(formatDateToNaturalText(tomorrow)).toBe("demain");
+  });
+});
+
+
+describe("stripDateFromText", () => {
+  /** Passe par le vrai chrono : c'est sa capture (parfois avec la
+   *  preposition, parfois sans) que l'extension doit rattraper. */
+  const strip = (phrase: string) =>
+    stripDateFromText(phrase, parseTaskDate(phrase)?.match ?? null);
+
+  it("emporte le determinant que chrono laisse derriere", () => {
+    expect(strip("Faire la vaisselle le 3 juin")).toBe("Faire la vaisselle");
+    expect(strip("Reviser le CV pour vendredi")).toBe("Reviser le CV");
+  });
+
+  it("emporte deux mots de liaison quand il le faut", () => {
+    expect(strip("Payer le loyer avant le 5 septembre")).toBe("Payer le loyer");
+  });
+
+  it("laisse les captures que chrono fait deja proprement", () => {
+    expect(strip("Acheter du pain demain")).toBe("Acheter du pain");
+    expect(strip("Dentiste dans 3 jours")).toBe("Dentiste");
+    expect(strip("Rendez-vous a 14h")).toBe("Rendez-vous");
+  });
+
+  it("ne mange pas un mot qui appartient a la phrase", () => {
+    // « le » porte « pain », pas « demain » : il doit rester.
+    expect(strip("Acheter le pain demain")).toBe("Acheter le pain");
+  });
+
+  it("rend le texte tel quel sans date", () => {
+    expect(stripDateFromText("Acheter du pain", null)).toBe("Acheter du pain");
+  });
+});
+
+describe("expandDateMatchLeft", () => {
+  it("n'etend pas au-dela de deux mots", () => {
+    const texte = "Tache pour avant le 3 juin";
+    const match = { index: texte.indexOf("3 juin"), text: "3 juin" };
+    // « le » puis « avant » : on s'arrete la, « pour » reste dans le titre.
+    expect(expandDateMatchLeft(texte, match).text).toBe("avant le 3 juin");
+  });
+
+  it("rend la capture intacte quand rien n'est a emporter", () => {
+    const texte = "Acheter le pain demain";
+    const match = { index: texte.indexOf("demain"), text: "demain" };
+    expect(expandDateMatchLeft(texte, match)).toEqual(match);
   });
 });

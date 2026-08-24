@@ -80,6 +80,54 @@ export function parseTaskDate(task: string): { date: Date; match: DateMatch } | 
   return { date: start.date(), match: { index, text } };
 }
 
+/**
+ * Mots qui n'appartiennent qu'a l'expression de date : « le », « pour »,
+ * « avant »... Sans eux, retirer la date du titre laisse une preposition
+ * orpheline — « Faire la vaisselle le 3 juin » donnerait « Faire la vaisselle
+ * le ». chrono les inclut parfois dans sa capture (« a 14h », « dans 3
+ * jours ») et parfois non (« le 3 juin » -> « 3 juin ») : on complete.
+ */
+const DATE_LEAD_WORDS = new Set([
+  "le", "la", "les", "l", "du", "de", "des", "au", "aux", "a",
+  "pour", "avant", "apres", "vers", "en", "d", "jusqu", "depuis",
+]);
+
+/** Enlève les diacritiques : « après » et « apres » se valent ici. */
+const deaccent = (s: string): string =>
+  s.normalize("NFD").replace(/[̀-ͯ]/g, "");
+
+/**
+ * Etend la capture de date vers la GAUCHE sur les mots qui n'ont de sens
+ * qu'avec elle (au plus deux : « avant le 5 septembre »). Rend une nouvelle
+ * capture ; l'originale si rien a etendre.
+ */
+export function expandDateMatchLeft(text: string, match: DateMatch): DateMatch {
+  let start = match.index;
+  for (let step = 0; step < 2; step++) {
+    const before = text.slice(0, start);
+    const m = /(\S+)(\s*)$/.exec(before);
+    if (!m) break;
+    const word = deaccent(m[1].toLowerCase()).replace(/['’]$/, "");
+    if (!DATE_LEAD_WORDS.has(word)) break;
+    start = m.index;
+  }
+  if (start === match.index) return match;
+  return { index: start, text: text.slice(start, match.index + match.text.length) };
+}
+
+/**
+ * Retire la date du titre (avec ses mots de liaison). La date devient un
+ * attribut de la tache — la garder dans le titre le rendrait faux des le
+ * lendemain (« Reviser le CV demain »).
+ */
+export function stripDateFromText(text: string, match: DateMatch | null): string {
+  if (!match) return text;
+  const full = expandDateMatchLeft(text, match);
+  return (text.slice(0, full.index) + text.slice(full.index + full.text.length))
+    .replace(/\s{2,}/g, " ")
+    .trim();
+}
+
 /** Formate une date en texte naturel français (aujourd'hui / demain / EEEE d MMMM). */
 export function formatDateToNaturalText(date: Date): string {
   const now = new Date();

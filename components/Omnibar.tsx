@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { DatePickerButton } from "@/components/date-picker-button";
 import { Button } from "@/components/ui/button";
 import { Plus, Tag } from "lucide-react";
@@ -101,8 +101,23 @@ export default function Omnibar({
   const task = useTaskMode(value, setValue, onSubmit, lists ?? []);
   // Autocomplétion `#liste` (mode Tâche uniquement).
   const autocomplete = useListAutocomplete(value, setValue, lists ?? []);
+  // Capacités RÉELLES de cette surface : déduites des callbacks câblés plutôt
+  // que déclarées à part — impossible d'annoncer un mode qu'on ne traite pas.
+  const availableModes = useMemo<OmnibarMode[]>(() => {
+    const modes: OmnibarMode[] = ["task"];
+    if (onSubmitNote) modes.push("note");
+    if (onSubmitAsk) modes.push("ask");
+    return modes;
+  }, [onSubmitNote, onSubmitAsk]);
+
   // Menu de commandes « slash ».
-  const slash = useSlashCommands({ value, setValue, currentMode: mode, switchMode });
+  const slash = useSlashCommands({
+    value,
+    setValue,
+    currentMode: mode,
+    switchMode,
+    availableModes,
+  });
 
   const handleChange = (raw: string) => {
     if (slash.interceptChange(raw)) return;

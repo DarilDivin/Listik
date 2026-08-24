@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState } from "react";
 import type { Priority } from "./types";
-import { aiParseTask } from "./aiParse";
 import {
   type DateMatch,
   detectListFromText,
@@ -10,6 +9,7 @@ import {
   formatDateToNaturalText,
   parseTaskDate,
   replaceDateInText,
+  stripDateFromText,
   splitNote,
   stripListFromText,
   stripTagsFromText,
@@ -24,6 +24,11 @@ export interface SmartTaskData {
   list?: string | null;
   /** Tags écrits `@nom` (résolus en ids par l'appelant). */
   tags?: string[];
+  /** Saisie brute, telle que tapée — la correction IA travaille dessus. */
+  rawText?: string;
+  /** `false` si l'utilisateur a choisi la priorité à la main : l'IA ne doit
+   *  alors pas la réécrire. */
+  aiPriorityAllowed?: boolean;
 }
 
 /**
@@ -118,28 +123,38 @@ export function useTaskMode(
       const { mainText, note } = splitNote(value);
       // Retire du titre les marqueurs `#projet` et `@tag` : ce sont des
       // attributs, pas des mots de la tâche.
-      const text = stripTagsFromText(stripListFromText(mainText));
+      const withoutMarkers = stripTagsFromText(stripListFromText(mainText));
+      // La date en est un aussi : « Réviser le CV demain » serait faux dès le
+      // lendemain. On la re-détecte SUR LE TEXTE COURANT plutôt que de
+      // réutiliser `dateMatch` — ses index portent sur `value`, que les deux
+      // retraits précédents ont déjà décalé.
+      const stripped = stripDateFromText(
+        withoutMarkers,
+        parseTaskDate(withoutMarkers)?.match ?? null,
+      );
+      // Une saisie qui n'est QUE une date (« demain ») donnerait un titre
+      // vide : on garde alors le texte tel quel plutôt qu'une tâche sans nom.
+      const text = stripped || withoutMarkers;
       const tags = detectTagsFromText(mainText);
       // Canonise vers une liste existante (à la casse près) pour éviter les doublons.
       const canonicalList = list
         ? lists.find((l) => l.toLowerCase() === list.toLowerCase()) ?? list
         : null;
 
-      // Correction IA de la priorité (négation/contexte) — seulement si elle
-      // n'a pas été choisie manuellement depuis la dernière auto-détection.
-      let finalPriority = priority;
-      const aiResult = await aiParseTask(value);
-      if (aiResult && priority === lastDetectedPriority.current) {
-        finalPriority = aiResult.priority;
-      }
-
+      // La correction IA de la priorité N'EST PLUS attendue ici : elle partait
+      // sur le réseau (timeout 8 s côté Rust) AVANT l'écriture, donc sur le
+      // geste le plus répété de l'app, rien n'apparaissait tant qu'elle
+      // n'avait pas répondu. Elle est désormais appliquée après coup par la
+      // couche données (voir `createTodoFromSmart`), en écriture optimiste.
       await onSubmit({
         text,
         note,
         dueDate,
-        priority: finalPriority,
+        priority,
         list: canonicalList,
         tags,
+        rawText: value,
+        aiPriorityAllowed: priority === lastDetectedPriority.current,
       });
 
       setValue("");

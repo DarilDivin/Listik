@@ -12,6 +12,13 @@ interface Params {
   currentMode: OmnibarMode;
   /** Bascule l'Omnibar vers un autre mode (le parent vide le champ). */
   switchMode: (mode: OmnibarMode) => void;
+  /**
+   * Modes que la SURFACE hôte sait réellement traiter. Le registre des
+   * commandes est global, les capacités ne le sont pas : sans ce filtre, la
+   * barre de capture proposait « /question » puis restait muette sur Entrée,
+   * son `onSubmitAsk` n'étant pas câblé.
+   */
+  availableModes: OmnibarMode[];
 }
 
 /**
@@ -25,7 +32,13 @@ interface Params {
  * - même mode → on retire simplement le préfixe ;
  * - autre mode → on bascule de mode (le nouveau mode démarre vide).
  */
-export function useSlashCommands({ value, setValue, currentMode, switchMode }: Params) {
+export function useSlashCommands({
+  value,
+  setValue,
+  currentMode,
+  switchMode,
+  availableModes,
+}: Params) {
   const [highlight, setHighlight] = useState(0);
   const [dismissed, setDismissed] = useState(false);
 
@@ -34,10 +47,17 @@ export function useSlashCommands({ value, setValue, currentMode, switchMode }: P
   const query = m ? m[1] : null;
   const lower = (query ?? "").toLowerCase();
 
+  // Une surface qui ne sait faire qu'une chose n'a pas de menu du tout : il ne
+  // proposerait que le mode déjà actif.
+  const offered =
+    availableModes.length > 1
+      ? OMNIBAR_COMMANDS.filter((c) => availableModes.includes(c.mode))
+      : [];
+
   const items: OmnibarCommand[] =
     query === null
       ? []
-      : OMNIBAR_COMMANDS.filter(
+      : offered.filter(
           (c) =>
             c.trigger.toLowerCase().includes(lower) ||
             c.label.toLowerCase().includes(lower) ||
@@ -67,7 +87,9 @@ export function useSlashCommands({ value, setValue, currentMode, switchMode }: P
     const sp = /^(\/\S+)\s(.*)$/.exec(raw);
     if (!sp) return false;
     const command = matchTrigger(sp[1]);
-    if (!command) return false;
+    // Même garde que le menu : un trigger tapé au clavier ne doit pas ouvrir
+    // un mode que la surface ne sait pas traiter.
+    if (!command || !availableModes.includes(command.mode)) return false;
     commit(command, sp[2]);
     return true;
   };

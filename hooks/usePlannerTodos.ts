@@ -3,6 +3,7 @@ import { useMemo } from "react";
 import { toast } from "sonner";
 import { todosApi } from "@/features/todos/api";
 import { useTodoMutations } from "@/features/todos/useTodoMutations";
+import { aiParseTask } from "@/features/todos/aiParse";
 import { useTodosSync } from "@/features/todos/useTodosSync";
 import { sortTodos } from "@/features/todos/sort";
 import { useProjects } from "@/hooks/useProjects";
@@ -100,6 +101,21 @@ export const usePlannerTodos = () => {
     toast.success(
       payload.scheduled_for ? "Tâche planifiée" : "Tâche capturée",
     );
+
+    // Correction IA de la priorité, APRÈS coup et sans bloquer : la tâche est
+    // déjà écrite et affichée. Attendre la réponse avant d'écrire figeait la
+    // capture jusqu'au timeout réseau (8 s côté Rust). `skipUndo` : c'est un
+    // affinage silencieux, pas un geste de l'utilisateur — il n'a rien à
+    // annuler. Best-effort : sans clé API, l'appel échoue et on garde
+    // l'analyse locale.
+    if (taskData.aiPriorityAllowed && taskData.rawText) {
+      void aiParseTask(taskData.rawText).then((ai) => {
+        if (ai && ai.priority !== payload.priority) {
+          void updateTodo(result.id, { priority: ai.priority }, { skipUndo: true });
+        }
+      });
+    }
+
     return result;
   };
 
