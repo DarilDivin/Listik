@@ -159,7 +159,16 @@ function SyncPlugin({
   return null;
 }
 
-/** Entrée valide (Maj+Entrée reste un saut de ligne, géré par Lexical). */
+/**
+ * Entrée valide la saisie ; Maj+Entrée reste un saut de ligne, laissé à
+ * Lexical.
+ *
+ * Écouté en phase de CAPTURE, et non en bulle : Lexical attache son propre
+ * gestionnaire au même élément et le fait AVANT nous. Il insérait donc son
+ * saut de ligne puis marquait l'événement comme traité — sur quoi nous
+ * renoncions, et la tâche n'était jamais soumise. On le prend maintenant en
+ * amont, et on lui coupe la propagation pour qu'il n'y touche plus.
+ */
 function KeysPlugin({
   onEnter,
   onKeyDown,
@@ -172,15 +181,19 @@ function KeysPlugin({
     const root = editor.getRootElement();
     if (!root) return;
     const handler = (event: KeyboardEvent) => {
+      // D'abord l'hôte : le menu de commandes et l'autocomplétion ont leur mot
+      // à dire sur Entrée (choisir une entrée plutôt que soumettre).
       onKeyDown?.(event as unknown as React.KeyboardEvent<HTMLElement>);
-      if (event.defaultPrevented) return;
-      if (event.key === "Enter" && !event.shiftKey) {
-        event.preventDefault();
-        onEnter();
-      }
+      if (event.key !== "Enter" || event.shiftKey) return;
+      // Qu'on soumette ou qu'un menu ait tranché, cet Entrée ne doit pas
+      // parvenir à Lexical : il y insérerait un saut de ligne.
+      event.stopPropagation();
+      if (event.defaultPrevented) return; // un menu l'a consommé
+      event.preventDefault();
+      onEnter();
     };
-    root.addEventListener("keydown", handler);
-    return () => root.removeEventListener("keydown", handler);
+    root.addEventListener("keydown", handler, true);
+    return () => root.removeEventListener("keydown", handler, true);
   }, [editor, onEnter, onKeyDown]);
   return null;
 }
