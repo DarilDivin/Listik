@@ -293,11 +293,17 @@ export default function Omnibar({
               // Le rayon est animé par motion (voir `animate`) et NON par une
               // classe : `layout` écrit lui-même un border-radius en style
               // inline pendant ses animations, qui écraserait un `rounded-*`.
-              "flex w-full items-start gap-3 bg-transparent px-3 py-3.5",
-              // Autorise l'enroulement : la rangee de controles, en pleine
-              // largeur, tombe alors sous le texte ET commence au bord gauche
-              // du formulaire — alignee sur le cercle, pas sur le texte.
-              stackControls && "flex-wrap gap-y-2.5",
+              // `flex-wrap` en PERMANENCE, et non seulement quand les
+              // controles sont empiles : ils portent `basis-full`, donc sans
+              // enroulement ils reclament toute la largeur sans pouvoir passer
+              // a la ligne — et ecrasent la colonne de texte. Cela arrivait
+              // pendant les ~200 ms d'animation de sortie, quand la condition
+              // etait deja retombee mais l'element encore monte : le
+              // placeholder, prive de largeur, s'enroulait sur deux lignes
+              // (mesure : colonne a 0 px, rangee a 62 px au lieu de 54).
+              // Toujours enroulable, la rangee n'a qu'une ligne tant qu'il n'y
+              // a rien a y mettre.
+              "flex w-full flex-wrap items-start gap-x-3 gap-y-2.5 bg-transparent px-3 py-3.5",
               "transition-[background-color,border-color] duration-300 ease-out",
               isFocused
                 ? "border border-border/60"
