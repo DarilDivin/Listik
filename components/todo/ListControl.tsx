@@ -11,8 +11,6 @@ import {
 } from "@/components/ui/popover";
 
 interface ListControlProps {
-  /** Gabarit resserré : hauteur d'une ligne de texte (rangée de capture). */
-  compact?: boolean;
   /** Liste actuelle de la tâche, ou null. */
   list: string | null;
   /** Listes existantes proposées. */
@@ -38,7 +36,6 @@ export function ListControl({
   lists,
   dimmed = false,
   modal = false,
-  compact,
   onChange,
 }: ListControlProps) {
   const [open, setOpen] = React.useState(false);
@@ -62,8 +59,7 @@ export function ListControl({
           type="button"
           aria-label={list ? "Changer de liste" : "Assigner une liste"}
           className={cn(
-            "flex items-center rounded-lg bg-muted font-medium text-foreground transition-colors hover:bg-muted/80 outline-none",
-            compact ? "h-6 gap-1 px-2 text-xs" : "h-9 gap-1.5 px-2.5 text-sm",
+            "flex h-9 items-center gap-1.5 rounded-lg bg-muted px-2.5 text-sm font-medium text-foreground transition-colors hover:bg-muted/80 outline-none",
             !list && "text-muted-foreground",
             dimmed && "opacity-60",
           )}

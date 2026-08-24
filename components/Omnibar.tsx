@@ -239,6 +239,18 @@ export default function Omnibar({
     ? isFocused && value.trim().length > 0
     : multiline;
 
+  /**
+   * En variante inline, les contrôles n'apparaissent qu'à partir du premier
+   * caractère — ils sont donc toujours sur leur propre ligne, et peuvent
+   * garder leur hauteur normale sans imposer la sienne à la rangée. C'est ce
+   * qui permet d'avoir À LA FOIS des boutons de taille normale et aucun
+   * décalage entre repos et focus : à vide, la rangée est identique dans les
+   * deux états. (Sur un champ vide il n'y a de toute façon rien à dater ni à
+   * ranger.) La variante flottante les montre dès le focus, comme avant.
+   */
+  const showControls =
+    isTask && isFocused && (!inline || value.trim().length > 0);
+
   const menuOpen = slash.open || (isTask && autocomplete.open);
 
   // Un attribut deja ecrit dans le texte y est MODIFIABLE (on clique son
@@ -250,24 +262,15 @@ export default function Omnibar({
   const controls = (
     <>
       {!(tokenIsEditable && task.dateMatch) && (
-        <DatePickerButton
-          date={task.dueDate}
-          onDateChange={task.handleDateChange}
-          compact={inline}
-        />
+        <DatePickerButton date={task.dueDate} onDateChange={task.handleDateChange} />
       )}
       {/* La priorite n'a pas de jeton : ses mots-cles restent des mots de la
           phrase. Son bouton est donc toujours la. */}
-      <PrioritySelect
-        value={task.priority}
-        onChange={task.setPriority}
-        compact={inline}
-      />
+      <PrioritySelect value={task.priority} onChange={task.setPriority} />
       {lists !== undefined && !(tokenIsEditable && task.listMatch) && (
         <ListControl
           list={task.list}
           lists={lists}
-          compact={inline}
           onChange={task.setList}
         />
       )}
@@ -470,8 +473,7 @@ export default function Omnibar({
           DIRECT du formulaire, pas de la colonne de texte : empiles, ils
           commencent ainsi au bord gauche, alignes sur le cercle. */}
       <AnimatePresence>
-        {isTask &&
-          isFocused &&
+        {showControls &&
           (stackControls ? (
             <motion.div
               initial={{ opacity: 0, y: -6 }}
