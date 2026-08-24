@@ -290,7 +290,11 @@ export default function Omnibar({
               // Le rayon est animé par motion (voir `animate`) et NON par une
               // classe : `layout` écrit lui-même un border-radius en style
               // inline pendant ses animations, qui écraserait un `rounded-*`.
-              "flex w-full items-start gap-3 bg-transparent px-3 py-2",
+              "flex w-full items-start gap-3 bg-transparent px-3 py-3.5",
+              // Autorise l'enroulement : la rangee de controles, en pleine
+              // largeur, tombe alors sous le texte ET commence au bord gauche
+              // du formulaire — alignee sur le cercle, pas sur le texte.
+              stackControls && "flex-wrap gap-y-2.5",
               "transition-[background-color,border-color] duration-300 ease-out",
               isFocused
                 ? "border border-border/60"
@@ -460,7 +464,11 @@ export default function Omnibar({
         </PopoverContent>
       </Popover>
 
-      {/* Contrôles (date / priorité / liste) : mode Tâche uniquement. */}
+      </div>
+
+      {/* Contrôles (date / priorité / liste) : mode Tâche uniquement. Enfant
+          DIRECT du formulaire, pas de la colonne de texte : empiles, ils
+          commencent ainsi au bord gauche, alignes sur le cercle. */}
       <AnimatePresence>
         {isTask &&
           isFocused &&
@@ -470,7 +478,11 @@ export default function Omnibar({
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -6 }}
               transition={{ duration: 0.2, ease: "easeOut" }}
-              className="flex items-center gap-2 px-1 pb-0.5"
+              // `basis-full` et non `w-full` : en flex, une largeur de 100 %
+              // se fait encore comprimer par la colonne de texte (mesure :
+              // largeur calculee 0). La base de flex, elle, reclame la ligne
+              // entiere — l'element passe donc dessous, au bord gauche.
+              className="flex w-full shrink-0 basis-full items-center gap-2"
             >
               {controls}
             </motion.div>
@@ -495,7 +507,6 @@ export default function Omnibar({
             </motion.div>
           ))}
       </AnimatePresence>
-      </div>
 
       {/* Indice clavier : au repos seulement, et jamais par-dessus un
           brouillon (le bouton d'envoi occupe alors ce coin). */}
