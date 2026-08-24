@@ -14,13 +14,19 @@ interface AutoGrowTextareaProps {
   tagMatches?: DateMatch[];
   placeholder?: string;
   autoFocus?: boolean;
+  /** Gabarit resserré : la barre vit dans une liste (variante « inline » de
+   *  l'Omnibar) et doit avoir la hauteur d'une rangée, pas d'une console. */
+  compact?: boolean;
+  /** Invite estompée : la rangée est au repos, elle ne réclame pas l'œil. */
+  dimmed?: boolean;
   /** Notifie le parent quand la saisie passe sur plusieurs lignes (ou inversement). */
   onMultilineChange?: (multiline: boolean) => void;
   /** Intercepteur clavier (autocomplétion) : appelé avant la logique interne. */
   onKeyDown?: (e: React.KeyboardEvent<HTMLTextAreaElement>) => void;
 }
 
-const BASE_HEIGHT = 36;
+/** Hauteur d'une ligne de texte (16px, interligne normal). */
+const LINE_HEIGHT = 24;
 
 /**
  * Champ de saisie « surligné » construit sur l'**approche miroir** :
@@ -46,27 +52,36 @@ export function AutoGrowTextarea({
   tagMatches,
   placeholder,
   autoFocus,
+  compact = false,
+  dimmed = false,
   onMultilineChange,
   onKeyDown,
 }: AutoGrowTextareaProps) {
   const mirrorRef = useRef<HTMLDivElement>(null);
   const wasMultiline = useRef(false);
 
+  // En gabarit resserré, la boîte se règle sur la ligne de texte elle-même :
+  // le champ fait exactement la hauteur d'une rangée de tâche, et son bord
+  // gauche tombe sur le titre (l'indentation vient du gabarit de la rangée,
+  // pas d'un padding interne).
+  const padY = compact ? 0 : 6;
+  const oneLine = padY * 2 + LINE_HEIGHT;
+
   // Détecte le passage multi-ligne d'après la hauteur réelle du miroir.
   useLayoutEffect(() => {
     const el = mirrorRef.current;
     if (!el) return;
-    const multiline = el.offsetHeight > BASE_HEIGHT + 12;
+    const multiline = el.offsetHeight > oneLine + 12;
     if (multiline !== wasMultiline.current) {
       wasMultiline.current = multiline;
       onMultilineChange?.(multiline);
     }
-  }, [value, onMultilineChange]);
+  }, [value, oneLine, onMultilineChange]);
 
   // Métriques de boîte IDENTIQUES entre le miroir et le textarea.
   const sharedBox: React.CSSProperties = {
-    minHeight: `${BASE_HEIGHT}px`,
-    padding: "6px 8px 6px 16px", // ≡ pl-4 pr-2 + 6px haut/bas
+    minHeight: `${oneLine}px`,
+    padding: compact ? `0 8px 0 0` : "6px 8px 6px 16px", // ≡ pl-4 pr-2 + 6px haut/bas
     whiteSpace: "pre-wrap",
     overflowWrap: "break-word",
     wordBreak: "normal",
@@ -76,7 +91,13 @@ export function AutoGrowTextarea({
   const textClasses = "font-sans font-normal text-base leading-normal";
 
   return (
-    <div className="relative w-full max-sm:min-w-[280px] min-w-[300px]">
+    <div
+      className={
+        compact
+          ? "relative w-full"
+          : "relative w-full max-sm:min-w-[280px] min-w-[300px]"
+      }
+    >
       {/* Miroir visible : dicte la taille et l'enroulement. */}
       <div ref={mirrorRef} aria-hidden className={textClasses} style={sharedBox}>
         <HighlightedOverlay
@@ -95,7 +116,11 @@ export function AutoGrowTextarea({
         spellCheck={false}
         autoFocus={autoFocus}
         placeholder={placeholder}
-        className={`absolute inset-0 resize-none overflow-hidden border-none bg-transparent text-transparent outline-none placeholder:text-muted-foreground ${textClasses}`}
+        className={`absolute inset-0 resize-none overflow-hidden border-none bg-transparent text-transparent outline-none placeholder:transition-colors ${
+          dimmed
+            ? "placeholder:text-muted-foreground/50"
+            : "placeholder:text-muted-foreground"
+        } ${textClasses}`}
         style={{ ...sharedBox, caretColor: "var(--color-foreground)" }}
         onChange={(e) => onChange(e.target.value)}
         onFocus={onFocus}

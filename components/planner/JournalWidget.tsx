@@ -17,6 +17,10 @@ import { todayLocalISODate } from "@/lib/date";
  * modifier ou taguer un bloc ne demande jamais de quitter l'accueil. Le lien
  * « Ouvrir » ne sert qu'à naviguer vers un AUTRE jour (la page complète a la
  * navigation par jour, absente ici par construction).
+ *
+ * Le composer parle le même idiome que la capture de tâche (＋ Écrire une
+ * pensée…) : un seul langage « ajouter ici » sur toute la page. Toujours
+ * monté, il ouvre son enveloppe au focus plutôt que de se faire remplacer.
  */
 export function JournalWidget() {
   const today = todayLocalISODate();
@@ -72,7 +76,8 @@ export function JournalWidget() {
 
       <div className="pt-2">
         <JournalComposer
-          placeholder="Écrire dans le Journal…"
+          variant="inline"
+          placeholder="Écrire une pensée…"
           onSubmit={async (content) => {
             await createEntry({ target_day: today, content });
           }}

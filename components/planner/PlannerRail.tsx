@@ -110,8 +110,10 @@ function RailRow({
       title={label}
       {...pressable}
       className={cn(
-        "relative flex w-full items-center gap-2.5 rounded-xl py-2 text-left text-sm transition-colors max-md:justify-center max-md:px-0",
-        indent ? "pl-7 pr-2.5 max-md:pl-0" : "px-2.5",
+        "relative flex w-full items-center gap-2.5 rounded-xl py-2 text-left text-sm transition-colors max-md:justify-center max-md:px-0 group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:px-0",
+        indent
+          ? "pl-7 pr-2.5 max-md:pl-0 group-data-[collapsible=icon]:pl-0"
+          : "px-2.5",
         active ? "text-brand" : "text-muted-foreground hover:text-foreground",
         // Cible de dépôt survolée : anneau accent — lisible même sur la
         // rangée active (qui a déjà le fond brand-soft).
@@ -128,11 +130,13 @@ function RailRow({
         />
       )}
       <span className="relative z-10 flex shrink-0 items-center">{icon}</span>
-      <span className="relative z-10 flex-1 truncate font-medium max-md:hidden">
+      <span className="relative z-10 flex-1 truncate font-medium max-md:hidden group-data-[collapsible=icon]:hidden">
         {label}
       </span>
       {trailing && (
-        <span className="relative z-10 max-md:hidden">{trailing}</span>
+        <span className="relative z-10 max-md:hidden group-data-[collapsible=icon]:hidden">
+          {trailing}
+        </span>
       )}
     </motion.button>
   );
@@ -163,9 +167,12 @@ interface PlannerRailProps {
  * À venir, Quand je peux, Un jour, Historique) puis l'arbre Domaines → Projets —
  * les repères d'un habitué de Things.
  *
- * Vit DANS la page Planificateur, pas dans le shell : il fonctionne ainsi à
- * l'identique que l'utilisateur ait choisi le dock flottant ou la sidebar, et
- * la navigation d'app (4 sections) reste stable.
+ * Son ÉTAT vit dans la page Planificateur (sélection, compteurs, CRUD, DnD),
+ * mais son RENDU est téléporté dans le meuble de navigation du shell via
+ * `<SidebarSlot>` : corps de la sidebar, ou colonne du mode dock. Le shell
+ * possède donc la géométrie (largeur, bordure) — ici, aucun `w-*`/`border-r`.
+ * Les classes `group-data-[collapsible=icon]:*` (miroir des `max-md:*`)
+ * répondent au repli Ctrl+B de la sidebar shadcn (ancêtre DOM `group`).
  *
  * Posé à plat sur le canvas, séparé par de simples hairlines — aucune carte.
  * L'état actif est une pastille `--brand-soft` partagée en `layoutId` qui
@@ -245,7 +252,7 @@ export function PlannerRail({
         }}
         placeholder={kind === "area" ? "Nouveau domaine…" : "Nouveau projet…"}
         className={cn(
-          "w-full rounded-xl bg-foreground/[0.04] py-2 text-sm text-foreground outline-none placeholder:text-muted-foreground/60 max-md:hidden",
+          "w-full rounded-xl bg-foreground/[0.04] py-2 text-sm text-foreground outline-none placeholder:text-muted-foreground/60 max-md:hidden group-data-[collapsible=icon]:hidden",
           kind === "project" ? "pl-7 pr-2.5" : "px-2.5",
         )}
       />
@@ -305,7 +312,7 @@ export function PlannerRail({
     <>
       <nav
         aria-label="Vues du planificateur"
-        className="flex h-full w-52 shrink-0 flex-col overflow-y-auto border-r border-border/60 px-3 py-6 max-md:w-14"
+        className="flex h-full flex-col overflow-y-auto px-3 py-6"
       >
         {/* ── Vues GTD ── */}
         <div className="flex flex-col gap-0.5">
@@ -362,7 +369,7 @@ export function PlannerRail({
 
         {/* ── Arbre Domaines → Projets ── */}
         <div className="mt-4 border-t border-border/60 pt-4">
-          <div className="flex items-center justify-between px-2.5 pb-1 max-md:hidden">
+          <div className="flex items-center justify-between px-2.5 pb-1 max-md:hidden group-data-[collapsible=icon]:hidden">
             <span className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground/60">
               Domaines
             </span>
@@ -400,7 +407,7 @@ export function PlannerRail({
                           type="button"
                           aria-label={open ? "Replier" : "Déplier"}
                           onClick={() => toggleArea(area.id)}
-                          className="grid size-5 shrink-0 place-items-center rounded text-muted-foreground/50 transition-colors hover:text-foreground max-md:hidden"
+                          className="grid size-5 shrink-0 place-items-center rounded text-muted-foreground/50 transition-colors hover:text-foreground max-md:hidden group-data-[collapsible=icon]:hidden"
                         >
                           <motion.span
                             animate={{ rotate: open ? 90 : 0 }}
@@ -467,10 +474,12 @@ export function PlannerRail({
             <button
               type="button"
               onClick={() => openDraft("project", null)}
-              className="flex items-center gap-2.5 rounded-xl px-2.5 py-2 text-left text-sm text-muted-foreground/60 transition-colors hover:text-foreground max-md:justify-center max-md:px-0"
+              className="flex items-center gap-2.5 rounded-xl px-2.5 py-2 text-left text-sm text-muted-foreground/60 transition-colors hover:text-foreground max-md:justify-center max-md:px-0 group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:px-0"
             >
               <Plus size={15} className="shrink-0" />
-              <span className="max-md:hidden">Nouveau projet</span>
+              <span className="max-md:hidden group-data-[collapsible=icon]:hidden">
+                Nouveau projet
+              </span>
             </button>
           </div>
         </div>

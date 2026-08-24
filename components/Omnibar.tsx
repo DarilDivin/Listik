@@ -45,6 +45,22 @@ interface OmnibarProps {
   lists?: string[];
   /** Mode actif au démarrage de cette surface (Alt+Q = « task »). */
   defaultMode?: OmnibarMode;
+  /**
+   * Habillage. « floating » (défaut) : barre posée au-dessus du contenu, fond
+   * et ombre propres — fenêtre de capture rapide, Assistant. « inline » : la
+   * barre EST une rangée de la liste où elle vit — fond de page, aucune ombre,
+   * simple hairline au focus (voir `CaptureRow`).
+   */
+  variant?: "floating" | "inline";
+  /**
+   * Remplace la pastille de mode tant qu'on est dans le mode par défaut — la
+   * rangée de capture y met un cercle fantôme, pour se lire comme une tâche
+   * pas encore née. Un mode explicite (`/note`) reprend la pastille : là, le
+   * changement d'élément EST le signal.
+   */
+  leading?: React.ReactNode;
+  /** Indice discret à droite, au repos seulement (raccourci clavier). */
+  hint?: React.ReactNode;
 }
 
 export default function Omnibar({
@@ -55,6 +71,9 @@ export default function Omnibar({
   autoFocus,
   lists,
   defaultMode = "ask",
+  variant = "floating",
+  leading,
+  hint,
 }: OmnibarProps) {
   const [value, setValue] = useState("");
   const [mode, setMode] = useState<OmnibarMode>(defaultMode);
@@ -64,6 +83,13 @@ export default function Omnibar({
 
   const isTask = mode === "task";
   const activeCommand = commandForMode(mode);
+  const inline = variant === "inline";
+  // Le cercle fantôme ne tient que dans le mode par défaut : dès qu'un mode
+  // explicite est choisi, la pastille reprend sa place (c'est le signal).
+  const showLeading = Boolean(leading) && mode === defaultMode;
+
+  const focusField = () =>
+    formRef.current?.querySelector("textarea")?.focus();
 
   const switchMode = (next: OmnibarMode) => {
     setMode(next);
@@ -87,6 +113,15 @@ export default function Omnibar({
     slash.onKeyDown(e);
     if (e.defaultPrevented) return;
     if (isTask) autocomplete.onKeyDown(e);
+    if (e.defaultPrevented) return;
+    // Échap sur une barre inline vide : on rend simplement le focus — la
+    // rangée reprend son habillage au repos (le menu slash et l'autocomplétion
+    // ont déjà eu leur chance de consommer la touche). Jamais avec un
+    // brouillon en cours : un texte tapé n'est pas jetable.
+    if (inline && e.key === "Escape" && !value.trim()) {
+      e.preventDefault();
+      (e.target as HTMLTextAreaElement).blur();
+    }
   };
 
   const submitNote = async () => {
@@ -155,30 +190,65 @@ export default function Omnibar({
   return (
     <motion.form
       ref={formRef}
-      className={`w-full max-w-4xl rounded-[1.25rem] transition-[background-color,border-color,box-shadow] duration-500 ease-out ${
-        isFocused
-          ? "bg-popover border border-border/60"
-          : "bg-foreground/[0.035] border border-transparent dark:bg-foreground/[0.05]"
-      } ${
-        isTask && task.hasGlow
-          ? "shadow-[0_0_20px_rgba(250,204,21,0.18)] dark:shadow-[0_0_20px_rgba(250,204,21,0.12)]"
-          : isFocused
-            ? "shadow-[0_1px_2px_rgba(0,0,0,0.04),0_12px_32px_-12px_rgba(0,0,0,0.14)] dark:shadow-[0_1px_2px_rgba(0,0,0,0.3),0_12px_32px_-12px_rgba(0,0,0,0.55)]"
-            : "shadow-none"
-      } relative flex items-stretch gap-2 p-2 text-left`}
+      className={cn(
+        "relative text-left",
+        inline
+          ? cn(
+              // Padding CONSTANT entre repos et focus : le texte ne bouge pas
+              // d'un pixel, seule l'enveloppe s'ouvre. Fond TOUJOURS
+              // transparent — donc rigoureusement la couleur de la page, voile
+              // d'accent du canvas compris (un `bg-background` opaque le
+              // masquerait et redessinerait une carte). Aucune ombre : au
+              // focus, une simple hairline.
+              // Le rayon est animé par motion (voir `animate`) et NON par une
+              // classe : `layout` écrit lui-même un border-radius en style
+              // inline pendant ses animations, qui écraserait un `rounded-*`.
+              "flex w-full items-start gap-3 bg-transparent px-3 py-2",
+              "transition-[background-color,border-color] duration-300 ease-out",
+              isFocused
+                ? "border border-border/60"
+                : "cursor-text border border-transparent hover:bg-foreground/[0.045]",
+            )
+          : cn(
+              "flex w-full max-w-4xl items-stretch gap-2 rounded-[1.25rem] p-2",
+              "transition-[background-color,border-color,box-shadow] duration-500 ease-out",
+              isFocused
+                ? "border border-border/60 bg-popover"
+                : "border border-transparent bg-foreground/[0.035] dark:bg-foreground/[0.05]",
+              isTask && task.hasGlow
+                ? "shadow-[0_0_20px_rgba(250,204,21,0.18)] dark:shadow-[0_0_20px_rgba(250,204,21,0.12)]"
+                : isFocused
+                  ? "shadow-[0_1px_2px_rgba(0,0,0,0.04),0_12px_32px_-12px_rgba(0,0,0,0.14)] dark:shadow-[0_1px_2px_rgba(0,0,0,0.3),0_12px_32px_-12px_rgba(0,0,0,0.55)]"
+                  : "shadow-none",
+            ),
+      )}
       onSubmit={(e) => {
         e.preventDefault();
         handleSubmit();
       }}
+      // Toute la rangée est une cible de saisie : cliquer dans la marge donne
+      // le focus au champ (mousedown + preventDefault, sinon le clic le
+      // reprendrait aussitôt).
+      onMouseDown={(e) => {
+        if (!inline || isFocused) return;
+        if ((e.target as HTMLElement).closest("textarea, button")) return;
+        e.preventDefault();
+        focusField();
+      }}
       layout
+      animate={inline ? { borderRadius: isFocused ? 16 : 8 } : undefined}
       transition={{ type: "spring", bounce: 0.25, duration: 0.55 }}
-      style={{ height: "auto", width: isFocused ? "100%" : "auto" }}
+      style={{ height: "auto", width: inline || isFocused ? "100%" : "auto" }}
       onBlur={handleFormBlur}
     >
-      <ModeBadge
-        command={activeCommand}
-        onClear={mode !== defaultMode ? clearMode : undefined}
-      />
+      {showLeading ? (
+        <span className="flex shrink-0 items-center">{leading}</span>
+      ) : (
+        <ModeBadge
+          command={activeCommand}
+          onClear={mode !== defaultMode ? clearMode : undefined}
+        />
+      )}
 
       {/* Colonne centrale : texte + contrôles (gère le passage multi-ligne,
           sans déplacer le badge qui reste à gauche en pleine hauteur). */}
@@ -208,6 +278,8 @@ export default function Omnibar({
               tagMatches={isTask ? task.tagMatches : undefined}
               placeholder={effectivePlaceholder}
               autoFocus={autoFocus}
+              compact={inline}
+              dimmed={inline && !isFocused}
               onMultilineChange={setMultiline}
               onKeyDown={handleKeyDown}
             />
@@ -317,6 +389,12 @@ export default function Omnibar({
           ))}
       </AnimatePresence>
       </div>
+
+      {/* Indice clavier : au repos seulement, et jamais par-dessus un
+          brouillon (le bouton d'envoi occupe alors ce coin). */}
+      {hint && !isFocused && !value.trim() && (
+        <span className="flex shrink-0 items-center">{hint}</span>
+      )}
 
       {/* Bouton d'envoi rapide quand la barre n'est pas focus (mode Tâche). */}
       <AnimatePresence>

@@ -12,13 +12,15 @@ import { useTags } from "@/hooks/useTags";
 import { TagFilterProvider } from "@/features/tags/tag-filter";
 import { DuplicateTodoProvider } from "@/features/todos/duplicate-context";
 import { useJournalMutations } from "@/features/journal/useJournalMutations";
-import Omnibar from "@/components/Omnibar";
+import { CaptureRow, type CaptureRowHandle } from "@/components/todo/CaptureRow";
 import { EmptyState } from "@/components/todo/EmptyState";
 import { ListFilter } from "@/components/todo/ListFilter";
+import { SidebarSlot } from "@/components/sidebar-slot";
 import { AreaView } from "@/components/planner/AreaView";
 import { HeroDay } from "@/components/planner/HeroDay";
 import { JournalWidget } from "@/components/planner/JournalWidget";
 import { PlannerRail } from "@/components/planner/PlannerRail";
+import { RailSkeleton } from "@/components/planner/RailSkeleton";
 import { ProjectView } from "@/components/planner/ProjectView";
 import { SectionBody } from "@/components/planner/SectionBody";
 import {
@@ -83,11 +85,11 @@ const SECTION_META: Record<
 const EMPTY_COPY: Record<PlannerView, { title: string; subtitle: string }> = {
   inbox: {
     title: "Boîte de réception vide",
-    subtitle: "Tout est trié. Capturez une idée ci-dessous.",
+    subtitle: "Tout est trié. Capturez une idée ci-dessus.",
   },
   today: {
     title: "Rien pour aujourd'hui",
-    subtitle: "Profitez-en, ou planifiez une tâche ci-dessous.",
+    subtitle: "Profitez-en, ou planifiez une tâche ci-dessus.",
   },
   upcoming: {
     title: "Rien à venir",
@@ -115,6 +117,33 @@ interface PlannerSection {
   overdue?: boolean;
   /** La date de ces tâches est implicite (section = un jour précis) : on ne la répète pas. */
   dateImplied?: boolean;
+}
+
+/**
+ * Sélection du rail persistée entre les sessions et les navigations : comme
+ * Things, revenir sur le Planificateur rouvre là où l'on était. La validation
+ * ne vérifie que la FORME — un projet/domaine supprimé entre-temps est rattrapé
+ * par le garde-fou existant qui retombe sur Aujourd'hui (voir l'effet plus bas).
+ */
+const SELECTION_KEY = "listik.planner.selection";
+
+function readStoredSelection(): PlannerSelection | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = localStorage.getItem(SELECTION_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as PlannerSelection;
+    if (parsed.kind === "view" && PLANNER_VIEWS.some((v) => v.id === parsed.view))
+      return { kind: "view", view: parsed.view };
+    if (
+      (parsed.kind === "project" || parsed.kind === "area") &&
+      typeof parsed.id === "string"
+    )
+      return { kind: parsed.kind, id: parsed.id };
+    return null;
+  } catch {
+    return null;
+  }
 }
 
 /**
@@ -209,11 +238,22 @@ function PlannerPageContent() {
     [todos],
   );
 
-  // Aujourd'hui est l'accueil, comme dans Things.
-  const [selection, setSelection] = useState<PlannerSelection>({
-    kind: "view",
-    view: "today",
-  });
+  // Aujourd'hui est l'accueil, comme dans Things — sauf si une sélection
+  // stockée existe (lecture paresseuse : côté build, `window` absent → défaut ;
+  // le premier rendu client est le squelette, identique dans les deux cas).
+  const [selection, setSelection] = useState<PlannerSelection>(
+    () => readStoredSelection() ?? { kind: "view", view: "today" },
+  );
+
+  // Persistance de la sélection — chaque changement, quelle qu'en soit la
+  // source (rail, deep-link, garde-fou), est la nouvelle vérité.
+  useEffect(() => {
+    try {
+      localStorage.setItem(SELECTION_KEY, JSON.stringify(selection));
+    } catch {
+      // localStorage indisponible : la persistance est un confort, pas un dû.
+    }
+  }, [selection]);
   const [tagFilter, setTagFilter] = useState<string | null>(null);
   const [portalKey, setPortalKey] = useState<SectionKey | null>(null);
   // Le clip (overflow-hidden) ne vit que pendant le repli/dépli du chrome :
@@ -221,6 +261,8 @@ function PlannerPageContent() {
   const [chromeClipped, setChromeClipped] = useState(false);
 
   const scrollRef = useRef<HTMLDivElement>(null);
+  // Rangée de capture montée dans la branche courante (une seule à la fois).
+  const captureRef = useRef<CaptureRowHandle>(null);
 
   // Tâches fraîchement (dé)cochées : id → statut de routage (celui d'AVANT le
   // basculement), le temps de la pause. Voir LINGER_MS.
@@ -402,6 +444,20 @@ function PlannerPageContent() {
       if (tag === "INPUT" || tag === "TEXTAREA" || target?.isContentEditable) return;
       e.preventDefault();
       triggerPendingUndo();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+
+  // Ctrl/Cmd+N : remonte en haut et déploie la rangée de capture — la barre
+  // n'étant plus épinglée en bas, c'est le chemin clavier vers la capture
+  // depuis n'importe où dans la page (façon Cmd+N de Things).
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (!(e.metaKey || e.ctrlKey) || e.key.toLowerCase() !== "n") return;
+      e.preventDefault();
+      scrollRef.current?.scrollTo({ top: 0, behavior: "smooth" });
+      captureRef.current?.open();
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -590,10 +646,25 @@ function PlannerPageContent() {
     toast.success("Bloc ajouté au Journal");
   };
 
+  // UNE rangée de capture, définie une fois et posée par la branche courante
+  // (vues GTD, projet, domaine) : même place dans la grammaire de la page
+  // partout. Les défauts de rangement viennent de `captureOptions()`.
+  const captureNode = (
+    <CaptureRow
+      ref={captureRef}
+      onSubmit={handleCreateTodo}
+      onSubmitNote={handleCreateJournalEntry}
+      placeholder="Capturer une tâche…"
+      lists={projectNames}
+    />
+  );
+
   if (loading) {
     return (
       <div className="flex h-full">
-        <div className="w-52 shrink-0 border-r border-border/60 max-md:w-14" />
+        <SidebarSlot>
+          <RailSkeleton />
+        </SidebarSlot>
         <div className="flex h-full flex-1 flex-col overflow-hidden">
           <div className="mx-auto w-full max-w-[46rem] px-8 pt-10">
             <div className="flex items-end justify-between gap-6 border-b border-border/60 pb-6">
@@ -637,28 +708,32 @@ function PlannerPageContent() {
     <SelectionProvider value={multiSelect}>
     <DuplicateTodoProvider onDuplicate={(id) => void duplicateTodo(id)}>
     <div className="relative flex h-full">
-      <PlannerRail
-        selection={selection}
-        onSelect={changeSelection}
-        counts={counts}
-        areas={areas}
-        projects={projects}
-        progressOf={progressOf}
-        onCreateArea={(name) => void createArea({ name })}
-        onCreateProject={(name, areaId) =>
-          void createProject({ name, area_id: areaId })
-        }
-        onRenameArea={(id, name) => void updateArea(id, { name })}
-        onRenameProject={(id, name) => void updateProject(id, { name })}
-        onDeleteArea={(id) => void deleteArea(id)}
-        onDeleteProject={(id) => void deleteProject(id)}
-        onDuplicateProject={(id) =>
-          void duplicateProject(id).then((copy) =>
-            changeSelection({ kind: "project", id: copy.id }),
-          )
-        }
-        onDropTodo={handleRailDrop}
-      />
+      {/* Le rail est téléporté dans le meuble de navigation du shell
+          (SidebarSlot) : son état reste ici, seul son rendu voyage. */}
+      <SidebarSlot>
+        <PlannerRail
+          selection={selection}
+          onSelect={changeSelection}
+          counts={counts}
+          areas={areas}
+          projects={projects}
+          progressOf={progressOf}
+          onCreateArea={(name) => void createArea({ name })}
+          onCreateProject={(name, areaId) =>
+            void createProject({ name, area_id: areaId })
+          }
+          onRenameArea={(id, name) => void updateArea(id, { name })}
+          onRenameProject={(id, name) => void updateProject(id, { name })}
+          onDeleteArea={(id) => void deleteArea(id)}
+          onDeleteProject={(id) => void deleteProject(id)}
+          onDuplicateProject={(id) =>
+            void duplicateProject(id).then((copy) =>
+              changeSelection({ kind: "project", id: copy.id }),
+            )
+          }
+          onDropTodo={handleRailDrop}
+        />
+      </SidebarSlot>
 
       <div className="relative flex h-full min-w-0 flex-1 flex-col overflow-hidden">
         {/* Voile d'accent très doux en haut du canvas */}
@@ -672,8 +747,10 @@ function PlannerPageContent() {
         />
 
         {/* ───────── Zone défilante ───────── */}
+        {/* Colonne en flex min-h-full : le Journal peut s'ancrer au bas du
+            flux (mt-auto) quand le jour est léger. */}
         <div ref={scrollRef} className="relative z-10 flex-1 overflow-y-auto">
-          <div className="mx-auto max-w-[46rem] px-8">
+          <div className="mx-auto flex min-h-full w-full max-w-[46rem] flex-col px-8">
             {error && (
               <div className="mt-4 flex items-center gap-2 text-sm text-destructive">
                 <span className="h-1 w-1 rounded-full bg-destructive" />
@@ -687,6 +764,7 @@ function PlannerPageContent() {
             {activeProject ? (
               <ProjectView
                 project={activeProject}
+                capture={captureNode}
                 todos={applyOrdering(
                   tasksOfProject(todos, activeProject.id),
                   positionsByContext.get(projectOrderingContext(activeProject.id)),
@@ -725,6 +803,7 @@ function PlannerPageContent() {
             ) : activeArea ? (
               <AreaView
                 area={activeArea}
+                capture={captureNode}
                 projects={projects.filter(
                   (p) => p.area_id === activeArea.id && p.status === "active",
                 )}
@@ -774,9 +853,27 @@ function PlannerPageContent() {
                     </motion.div>
                   )}
 
+                  {/* Rangée de capture, en tête de liste — pas sur l'Historique
+                      (surface de lecture : même précédent que le rail qui y
+                      refuse le dépôt). Repliée en portail, comme le chrome. */}
+                  {currentView !== "journal" && (
+                    <motion.div
+                      initial={false}
+                      animate={portalSection ? "collapsed" : "open"}
+                      variants={chromeVariants}
+                      className={chromeClipped ? "overflow-hidden" : undefined}
+                    >
+                      <div className="pb-2 pt-6">{captureNode}</div>
+                    </motion.div>
+                  )}
+
                   <motion.div
                     initial={false}
-                    animate={{ paddingTop: portalSection ? 32 : showHero ? 4 : 24 }}
+                    animate={{
+                      // L'Historique n'a pas de capture au-dessus : il garde
+                      // son aération propre.
+                      paddingTop: portalSection ? 32 : currentView === "journal" ? 24 : 4,
+                    }}
                     transition={spring.smooth}
                     className="pb-10"
                   >
@@ -823,22 +920,27 @@ function PlannerPageContent() {
                       )}
                     </AnimatePresence>
 
-                    {/* Widget Journal (Phase Q) : uniquement sur Aujourd'hui,
-                        masqué en portail comme le hero/le filtre. */}
-                    {currentView === "today" && !portalSection && (
-                      <div className="mt-6">
-                        <JournalWidget />
-                      </div>
-                    )}
                   </motion.div>
+
+                  {/* Journal (Phase Q) : fil du jour ANCRÉ au bas du flux
+                      (mt-auto dans la colonne min-h-full) — les tâches
+                      descendent du hero, le journal remonte du bas, le vide
+                      entre les deux devient de la composition. Masqué en
+                      portail comme le reste du chrome. */}
+                  {currentView === "today" && !portalSection && (
+                    <div className="mt-auto pb-10">
+                      <JournalWidget />
+                    </div>
+                  )}
                 </LayoutGroup>
               )
             )}
           </div>
         </div>
 
-        {/* Barre d'actions par lot : flotte au-dessus de la capture. */}
-        <div className="pointer-events-none absolute inset-x-0 bottom-24 z-30 flex justify-center px-4">
+        {/* Barre d'actions par lot : flotte au bas de la page (la capture
+            n'est plus épinglée en bas — elle vit en tête de liste). */}
+        <div className="pointer-events-none absolute inset-x-0 bottom-8 z-30 flex justify-center px-4">
           <SelectionBar
             count={selectedCount}
             projects={projects}
@@ -853,23 +955,6 @@ function PlannerPageContent() {
           />
         </div>
 
-        {/* ───────── Capture épinglée en bas ───────── */}
-        <div className="relative z-10 shrink-0 bg-background/90 backdrop-blur-sm">
-          {/* Fondu doux au-dessus de la capture (au lieu d'un trait) */}
-          <div
-            aria-hidden
-            className="pointer-events-none absolute inset-x-0 -top-8 h-8 bg-gradient-to-t from-background to-transparent"
-          />
-          <div className="mx-auto max-w-[46rem] px-8 py-4">
-            <Omnibar
-              defaultMode="task"
-              onSubmit={handleCreateTodo}
-              onSubmitNote={handleCreateJournalEntry}
-              placeholder="Capturer une tâche…"
-              lists={projectNames}
-            />
-          </div>
-        </div>
       </div>
 
       {/* Panneau de détail autonome pour un deep-link Quick Find (`?task=`) :

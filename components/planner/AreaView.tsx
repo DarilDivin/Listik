@@ -17,6 +17,9 @@ interface AreaViewProps {
   projects: Project[];
   /** Tâches rangées DIRECTEMENT dans le domaine (sans projet). */
   todos: Todo[];
+  /** Rangée de capture (fantôme), posée en tête par la page — la tâche
+   *  capturée se range directement dans le domaine. */
+  capture?: React.ReactNode;
   progressOf: (projectId: string) => { done: number; total: number };
   onOpenProject: (id: string) => void;
   onToggle: (id: string) => void;
@@ -34,6 +37,7 @@ export function AreaView({
   area,
   projects,
   todos,
+  capture,
   progressOf,
   onOpenProject,
   onToggle,
@@ -78,10 +82,11 @@ export function AreaView({
       </div>
 
       <div className="pb-10 pt-4">
+        {capture}
         {isEmpty && (
           <EmptyState
             title="Domaine vide"
-            subtitle="Créez un projet ici depuis le rail, ou capturez une tâche ci-dessous."
+            subtitle="Créez un projet ici depuis le rail, ou capturez une tâche ci-dessus."
           />
         )}
 

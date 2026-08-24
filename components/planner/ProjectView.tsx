@@ -26,6 +26,8 @@ interface ProjectViewProps {
   project: Project;
   /** Tâches du projet (terminées comprises) — filtrées par `project_id`. */
   todos: Todo[];
+  /** Rangée de capture (fantôme), posée en tête de liste par la page. */
+  capture?: React.ReactNode;
   /** Drag & drop de la liste en cours (contexte `project:<id>`). */
   dnd?: TodoListDnd;
   onToggle: (id: string) => void;
@@ -47,6 +49,7 @@ interface ProjectViewProps {
 export function ProjectView({
   project,
   todos,
+  capture,
   dnd,
   onToggle,
   onDelete,
@@ -159,6 +162,7 @@ export function ProjectView({
       </div>
 
       <div className="pb-10 pt-4">
+        {capture}
         {pending.length > 0 ? (
           <AnimatedTodoList
             todos={pending}
@@ -173,7 +177,7 @@ export function ProjectView({
             title={total === 0 ? "Projet vide" : "Tout est fait"}
             subtitle={
               total === 0
-                ? "Capturez la première tâche de ce projet ci-dessous."
+                ? "Capturez la première tâche de ce projet ci-dessus."
                 : "Plus rien à faire ici — beau travail."
             }
           />
