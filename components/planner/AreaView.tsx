@@ -97,7 +97,7 @@ export function AreaView({
               <span className="text-[13px] font-semibold tracking-[-0.005em] text-muted-foreground">
                 Projets
               </span>
-              <span className="ml-auto font-mono text-[11px] tabular-nums text-muted-foreground/50">
+              <span className="ml-auto text-[11px] tabular-nums text-muted-foreground/50">
                 <AnimatedNumber value={projects.length} />
               </span>
             </h3>
@@ -127,7 +127,7 @@ export function AreaView({
                     <span className="flex-1 truncate text-sm text-foreground">
                       {project.name}
                     </span>
-                    <span className="font-mono text-[11px] tabular-nums text-muted-foreground/50">
+                    <span className="text-[11px] tabular-nums text-muted-foreground/50">
                       {done}/{total}
                     </span>
                     <ChevronRight
@@ -148,7 +148,7 @@ export function AreaView({
               <span className="text-[13px] font-semibold tracking-[-0.005em] text-muted-foreground">
                 Tâches
               </span>
-              <span className="ml-auto font-mono text-[11px] tabular-nums text-muted-foreground/50">
+              <span className="ml-auto text-[11px] tabular-nums text-muted-foreground/50">
                 <AnimatedNumber value={pending.length} />
               </span>
             </h3>

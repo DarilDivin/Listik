@@ -111,7 +111,7 @@ export function HeroDay({ date, done, total }: HeroDayProps) {
         </motion.div>
 
         <div className="flex flex-col gap-0.5 pr-1">
-          <span className="flex items-baseline gap-1 font-mono tabular-nums">
+          <span className="flex items-baseline gap-1 tabular-nums">
             <AnimatedNumber
               value={done}
               className="text-2xl font-semibold text-foreground"

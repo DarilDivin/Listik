@@ -53,7 +53,7 @@ export function FilterTabs({ value, onChange, counts }: FilterTabsProps) {
               <AnimatedNumber
                 value={counts[key]}
                 className={cn(
-                  "font-mono text-[11px] tabular-nums transition-colors",
+                  "text-[11px] tabular-nums transition-colors",
                   active ? "text-foreground/45" : "text-muted-foreground/45",
                 )}
               />

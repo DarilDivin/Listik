@@ -353,7 +353,7 @@ export function PlannerRail({
                     count > 0 ? (
                       <span
                         className={cn(
-                          "font-mono text-[11px] tabular-nums",
+                          "text-[11px] tabular-nums",
                           active ? "text-brand/70" : "text-muted-foreground/50",
                         )}
                       >

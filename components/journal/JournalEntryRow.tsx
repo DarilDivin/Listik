@@ -85,7 +85,7 @@ export function JournalEntryRow({
   return (
     <div className="group/entry flex flex-col gap-1.5 border-t border-border/50 py-3 first:border-t-0">
       <div className="flex items-center gap-2 text-[11px] text-muted-foreground/70">
-        <span className="font-mono tabular-nums">{writtenTime}</span>
+        <span className="tabular-nums">{writtenTime}</span>
         {writtenElsewhere && (
           <span>écrit le {format(writtenAt, "d MMM", { locale: fr })}</span>
         )}

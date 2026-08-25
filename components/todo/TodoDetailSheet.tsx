@@ -319,7 +319,7 @@ export function TodoDetailSheet({
                           {formatShortDate(todo.due_date)}
                           <span
                             className={cn(
-                              "font-mono text-[11px] tabular-nums",
+                              "text-[11px] tabular-nums",
                               deadlineCountdown(todo.due_date, todayLocalISODate())
                                 .reached
                                 ? "text-destructive"

@@ -78,7 +78,7 @@ export function TodoMetaLine({
         <span
           title="Échéance"
           className={cn(
-            "inline-flex items-center gap-1 font-mono text-[11px] font-medium tabular-nums",
+            "inline-flex items-center gap-1 text-[11px] font-medium tabular-nums",
             deadline.reached ? "text-destructive" : "text-muted-foreground",
             dimmed && "opacity-60",
           )}

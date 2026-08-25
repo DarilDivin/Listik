@@ -85,7 +85,7 @@ export function SelectionBar({
           aria-label="Actions sur la sélection"
         >
           <span className="flex items-center gap-1.5 px-2 text-sm font-semibold text-foreground">
-            <span className="font-mono tabular-nums text-brand">
+            <span className="tabular-nums text-brand">
               <AnimatedNumber value={count} />
             </span>
             <span className="text-muted-foreground max-sm:hidden">

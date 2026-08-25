@@ -51,7 +51,7 @@ export function CompactBucket({
           className={cn("size-1.5 shrink-0 rounded-full", dotClassName ?? "bg-muted-foreground/40")}
         />
         <span className="truncate text-[12.5px] font-semibold text-foreground">{label}</span>
-        <span className="ml-auto shrink-0 font-mono text-[11px] tabular-nums text-muted-foreground/50">
+        <span className="ml-auto shrink-0 text-[11px] tabular-nums text-muted-foreground/50">
           {todos.length}
         </span>
         <motion.span

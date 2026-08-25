@@ -134,7 +134,7 @@ export function ProjectView({
               strokeWidth={3}
             />
             <div className="flex flex-col gap-0.5 pr-1">
-              <span className="flex items-baseline gap-1 font-mono tabular-nums">
+              <span className="flex items-baseline gap-1 tabular-nums">
                 <AnimatedNumber
                   value={done.length}
                   className="text-2xl font-semibold text-foreground"
@@ -193,7 +193,7 @@ export function ProjectView({
               <span className="text-[13px] font-semibold tracking-[-0.005em] text-muted-foreground">
                 Terminées
               </span>
-              <span className="ml-auto font-mono text-[11px] tabular-nums text-muted-foreground/50">
+              <span className="ml-auto text-[11px] tabular-nums text-muted-foreground/50">
                 <AnimatedNumber value={done.length} />
               </span>
             </h3>

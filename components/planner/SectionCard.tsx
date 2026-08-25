@@ -148,7 +148,7 @@ export function SectionCard({
           </AnimatePresence>
         </motion.button>
 
-        <span className="ml-auto font-mono text-[11px] tabular-nums text-muted-foreground/50">
+        <span className="ml-auto text-[11px] tabular-nums text-muted-foreground/50">
           <AnimatedNumber value={count} />
         </span>
       </h3>
