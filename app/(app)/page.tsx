@@ -4,6 +4,7 @@ import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { AnimatePresence, LayoutGroup, motion } from "motion/react";
 import { toast } from "sonner";
+import { X } from "lucide-react";
 import { spring } from "@/lib/motion";
 import { usePlannerTodos } from "@/hooks/usePlannerTodos";
 import { triggerPendingUndo } from "@/features/todos/useTodoMutations";
@@ -14,7 +15,6 @@ import { DuplicateTodoProvider } from "@/features/todos/duplicate-context";
 import { useJournalMutations } from "@/features/journal/useJournalMutations";
 import { CaptureRow, type CaptureRowHandle } from "@/components/todo/CaptureRow";
 import { EmptyState } from "@/components/todo/EmptyState";
-import { ListFilter } from "@/components/todo/ListFilter";
 import { SidebarSlot } from "@/components/sidebar-slot";
 import { AreaView } from "@/components/planner/AreaView";
 import { HeroDay } from "@/components/planner/HeroDay";
@@ -839,24 +839,35 @@ function PlannerPageContent() {
                     </div>
                   </motion.div>
 
-                  {/* Filtre de projet collant : élément sticky À PART, enfant direct
-                      de la colonne (un sticky ne colle que dans les limites de son
-                      parent — il lui faut donc un parent qui contient aussi les
-                      sections). Il porte lui-même son repli en portail. */}
-                  {tagFilterItems.length > 0 && (
+                  {/* Filtre par tag : PLUS de barre de chips permanente.
+                      Elle occupait une ligne tous les jours pour une action
+                      rare, restait collée en haut au défilement (seule barre
+                      d'outils d'une page à plat) et portait l'unique aplat
+                      d'accent de l'écran. Elle était surtout le TROISIÈME
+                      chemin vers ce filtre : Ctrl+K le pose déjà, et cliquer
+                      le tag d'une tâche aussi. Ne reste que la sortie —
+                      affichée seulement quand un filtre est en cours, car
+                      sinon rien n'a besoin d'être dit. */}
+                  {tagFilter && (
                     <motion.div
-                      initial={false}
-                      animate={portalSection ? "collapsed" : "open"}
-                      variants={chromeVariants}
-                      className="sticky top-0 z-10 -mx-8 overflow-hidden bg-background/85 backdrop-blur-md"
+                      initial={{ opacity: 0, y: -4 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      className="flex items-center gap-2 pt-6 text-xs text-muted-foreground"
                     >
-                      <div className="px-8 pt-5 pb-3">
-                        <ListFilter
-                          items={tagFilterItems}
-                          value={tagFilter}
-                          onChange={setTagFilter}
+                      <span>Filtré par</span>
+                      <button
+                        type="button"
+                        onClick={() => setTagFilter(null)}
+                        className="group inline-flex items-center gap-1.5 rounded-md bg-emerald-500/10 px-2 py-1 font-medium text-emerald-600 transition-colors hover:bg-emerald-500/20 dark:text-emerald-400"
+                      >
+                        @
+                        {tagFilterItems.find((t) => t.id === tagFilter)?.label ??
+                          "tag"}
+                        <X
+                          size={12}
+                          className="opacity-60 transition-opacity group-hover:opacity-100"
                         />
-                      </div>
+                      </button>
                     </motion.div>
                   )}
 
