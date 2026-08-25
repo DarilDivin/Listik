@@ -5,6 +5,7 @@ import { AnimatePresence, motion } from "motion/react";
 import { AnimatedNumber } from "@/components/ui/animated-number";
 import { ProgressRing } from "@/components/planner/ProgressRing";
 import { spring } from "@/lib/motion";
+import { useDayProgress } from "@/lib/day-progress";
 
 interface HeroDayProps {
   date: Date;
@@ -25,6 +26,11 @@ export function HeroDay({ date, done, total }: HeroDayProps) {
     month: "long",
   });
   const year = date.getFullYear();
+
+  // Part de la journée écoulée : le repère de l'anneau. Ce que l'horloge du
+  // système ne dit pas — non pas « quelle heure il est », mais « où j'en suis
+  // par rapport au temps qu'il me reste ».
+  const dayProgress = useDayProgress();
 
   const remaining = total - done;
   const complete = total > 0 && remaining === 0;
@@ -107,7 +113,13 @@ export function HeroDay({ date, done, total }: HeroDayProps) {
           animate={celebrate ? { scale: [1, 1.15, 1] } : { scale: 1 }}
           transition={{ duration: 0.5, ease: [0.16, 1, 0.3, 1] }}
         >
-          <ProgressRing progress={total > 0 ? done / total : 0} size={40} strokeWidth={3} />
+          <ProgressRing
+            progress={total > 0 ? done / total : 0}
+            size={40}
+            strokeWidth={3}
+            // Rien à situer sur le cadran s'il n'y a rien à faire aujourd'hui.
+            marker={total > 0 ? dayProgress ?? undefined : undefined}
+          />
         </motion.div>
 
         <div className="flex flex-col gap-0.5 pr-1">
