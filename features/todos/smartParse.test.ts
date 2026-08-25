@@ -5,6 +5,7 @@ import {
   parseTaskDate,
   stripDateFromText,
   detectPriorityFromText,
+  detectPriorityMatchFromText,
   detectTagsFromText,
   formatDateToNaturalText,
   splitNote,
@@ -21,6 +22,21 @@ describe("detectPriorityFromText", () => {
 
   it("détecte low", () => {
     expect(detectPriorityFromText("ranger le garage plus tard")).toBe("low");
+  });
+
+  it("couvre le mot ACCORDÉ, pas seulement sa racine", () => {
+    // « important » seul laissait le « e » dehors : le remplacer donnait
+    // « très plus tarde ».
+    const m = detectPriorityMatchFromText("Cette tâche est très importante");
+    expect(m?.match.text).toBe("importante");
+    expect(detectPriorityMatchFromText("des choses urgentes")?.match.text).toBe(
+      "urgentes",
+    );
+  });
+
+  it("ne confond pas un mot qui commence pareil", () => {
+    expect(detectPriorityMatchFromText("appeler l'importateur")).toBeNull();
+    expect(detectPriorityFromText("appeler l'importateur")).toBe("normal");
   });
 
   it("retombe sur normal par défaut", () => {

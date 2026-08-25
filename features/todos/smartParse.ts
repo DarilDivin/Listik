@@ -191,15 +191,22 @@ export function replaceDateInText(
  * Mots-clés de priorité, DANS L'ORDRE de décision : le premier trouvé gagne.
  * « haute » passe avant « basse », et « !! » avant « ! » — sinon on
  * surlignerait le premier point d'exclamation d'une paire.
+ *
+ * Ce sont des EXPRESSIONS, pas des sous-chaînes. Chercher « important » dans
+ * « très importante » ne capturait que les neuf premières lettres : le « e » de
+ * l'accord restait dehors, et le remplacer donnait « très plus tarde ». Les
+ * bornes de mot et les suffixes d'accord règlent les deux : le jeton
+ * couvre le mot entier, et « importateur » cesse d'être pris pour « important ».
+ * La ponctuation, elle, n'a pas de borne de mot : elle se cherche telle quelle.
  */
-const PRIORITY_KEYWORDS: { word: string; priority: Priority }[] = [
-  { word: "urgent", priority: "high" },
-  { word: "important", priority: "high" },
-  { word: "!!", priority: "high" },
-  { word: "asap", priority: "high" },
-  { word: "!", priority: "high" },
-  { word: "plus tard", priority: "low" },
-  { word: "quand possible", priority: "low" },
+const PRIORITY_KEYWORDS: { pattern: RegExp; priority: Priority }[] = [
+  { pattern: /\burgent(?:e|s|es)?\b/i, priority: "high" },
+  { pattern: /\bimportant(?:e|s|es)?\b/i, priority: "high" },
+  { pattern: /!!/, priority: "high" },
+  { pattern: /\basap\b/i, priority: "high" },
+  { pattern: /!/, priority: "high" },
+  { pattern: /\bplus\s+tard\b/i, priority: "low" },
+  { pattern: /\bquand\s+possible\b/i, priority: "low" },
 ];
 
 /**
@@ -210,15 +217,9 @@ const PRIORITY_KEYWORDS: { word: string; priority: Priority }[] = [
 export function detectPriorityMatchFromText(
   text: string,
 ): { priority: Priority; match: DateMatch } | null {
-  const lower = text.toLowerCase();
-  for (const { word, priority } of PRIORITY_KEYWORDS) {
-    const index = lower.indexOf(word);
-    if (index !== -1) {
-      return {
-        priority,
-        match: { index, text: text.slice(index, index + word.length) },
-      };
-    }
+  for (const { pattern, priority } of PRIORITY_KEYWORDS) {
+    const found = pattern.exec(text);
+    if (found) return { priority, match: { index: found.index, text: found[0] } };
   }
   return null;
 }
