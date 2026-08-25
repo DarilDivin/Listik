@@ -48,6 +48,18 @@ describe("tokenizeCapture", () => {
     ]);
   });
 
+  it("isole le mot qui porte la priorité", () => {
+    expect(shape("relire le dossier urgent")).toEqual([
+      "plain:relire le dossier ",
+      "priority:urgent",
+    ]);
+  });
+
+  it("laisse le tag l'emporter sur la priorité qu'il contient", () => {
+    // « @urgent » commence avant le « urgent » qu'il contient.
+    expect(shape("relire @urgent")).toEqual(["plain:relire ", "tag:@urgent"]);
+  });
+
   it("recouvre toujours la saisie, quoi qu'on lui donne", () => {
     for (const t of [
       "",

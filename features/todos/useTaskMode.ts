@@ -6,6 +6,7 @@ import {
   detectTagMatchesFromText,
   detectTagsFromText,
   detectPriorityFromText,
+  detectPriorityMatchFromText,
   formatDateToNaturalText,
   parseTaskDate,
   replaceDateInText,
@@ -51,6 +52,7 @@ export function useTaskMode(
   const [list, setList] = useState<string | null>(null);
   const [dateMatch, setDateMatch] = useState<DateMatch | null>(null);
   const [listMatch, setListMatch] = useState<DateMatch | null>(null);
+  const [priorityMatch, setPriorityMatch] = useState<DateMatch | null>(null);
   const [tagMatches, setTagMatches] = useState<DateMatch[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -71,7 +73,9 @@ export function useTaskMode(
     setDueDate(parsed?.date ?? null);
     setDateMatch(parsed?.match ?? null);
 
-    const detected = detectPriorityFromText(value);
+    const detectedMatch = detectPriorityMatchFromText(value);
+    setPriorityMatch(detectedMatch?.match ?? null);
+    const detected = detectedMatch?.priority ?? "normal";
     if (detected !== lastDetectedPriority.current) {
       setPriority(detected);
       lastDetectedPriority.current = detected;
@@ -111,6 +115,7 @@ export function useTaskMode(
     lastDetectedPriority.current = "normal";
     setList(null);
     setListMatch(null);
+    setPriorityMatch(null);
     setTagMatches([]);
     lastDetectedList.current = null;
   };
@@ -180,6 +185,7 @@ export function useTaskMode(
     setList,
     dateMatch,
     listMatch,
+    priorityMatch,
     tagMatches,
     isSubmitting,
     hasGlow,

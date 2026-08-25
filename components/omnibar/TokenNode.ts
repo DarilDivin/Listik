@@ -12,14 +12,20 @@ import type { TokenKind } from "@/features/omnibar/tokenize";
  * Une couleur par nature d'attribut — mêmes teintes que le surlignage
  * historique, pour que la refonte ne change rien à ce que l'œil a appris.
  */
+const NOTE_COLOR = "text-yellow-700/80 dark:text-yellow-200/60";
+
 const TOKEN_CLASS: Record<TokenKind, string> = {
   date: "text-blue-500",
   project: "text-violet-500",
   tag: "text-emerald-500",
-  note: "text-yellow-700/80 dark:text-yellow-200/60",
-  // Le halo (::before flouté) vit dans globals.css : une pseudo-élément ne
-  // s'exprime pas en classes utilitaires.
-  noteMarker: "capture-note-marker text-yellow-600 dark:text-yellow-400",
+  priority: "text-rose-500",
+  note: NOTE_COLOR,
+  // MÊME couleur que le corps de la note : le marqueur s'en distingue par son
+  // halo, pas par sa teinte. Les avoir peints de deux jaunes différents ne
+  // servait rien — la note se lisait en deux morceaux.
+  // (Le halo est un ::before flouté, il vit dans globals.css : un
+  // pseudo-élément ne s'exprime pas en classes utilitaires.)
+  noteMarker: `capture-note-marker ${NOTE_COLOR}`,
 };
 
 export type SerializedTokenNode = Spread<

@@ -7,6 +7,7 @@
 // nouvelle grammaire n'est inventée ici.
 import {
   detectListFromText,
+  detectPriorityMatchFromText,
   detectTagMatchesFromText,
   parseTaskDate,
   type DateMatch,
@@ -16,7 +17,13 @@ import {
  * Nature d'un fragment reconnu. Le marqueur `//` est séparé du corps de la
  * note : c'est LUI qui porte le halo, la note n'étant que du texte libre.
  */
-export type TokenKind = "date" | "project" | "tag" | "note" | "noteMarker";
+export type TokenKind =
+  | "date"
+  | "project"
+  | "tag"
+  | "priority"
+  | "note"
+  | "noteMarker";
 
 export interface Segment {
   /** `null` = texte ordinaire. */
@@ -69,6 +76,9 @@ export function tokenizeCapture(text: string): Segment[] {
   push("date", parseTaskDate(head)?.match);
   push("project", detectListFromText(head)?.match);
   for (const tag of detectTagMatchesFromText(head)) push("tag", tag.match);
+  // La priorité passe APRÈS les tags : « @urgent » commence avant le « urgent »
+  // qu'il contient, il gagne donc le chevauchement — le tag reste un tag.
+  push("priority", detectPriorityMatchFromText(head)?.match);
 
   ranges.sort((a, b) => a.start - b.start || b.end - a.end);
 

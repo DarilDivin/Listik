@@ -3,7 +3,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { DatePickerButton } from "@/components/date-picker-button";
 import { Button } from "@/components/ui/button";
-import { Plus, Tag } from "lucide-react";
+import { Spinner } from "@/components/ui/spinner";
+import { ArrowUp, Plus, Tag } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import { cn } from "@/lib/utils";
 import { AutoGrowTextarea } from "@/components/omnibar/AutoGrowTextarea";
@@ -80,6 +81,12 @@ interface OmnibarProps {
   leading?: React.ReactNode;
   /** Indice discret à droite, au repos seulement (raccourci clavier). */
   hint?: React.ReactNode;
+  /**
+   * Une question est en vol (mode « ask ») : le bouton d'envoi tourne et
+   * l'Entrée ne part plus. Sans cela, la deuxième question serait avalée —
+   * la barre viderait son champ pendant que la page refuse l'appel.
+   */
+  busy?: boolean;
 }
 
 export default function Omnibar({
@@ -93,6 +100,7 @@ export default function Omnibar({
   variant = "floating",
   leading,
   hint,
+  busy = false,
 }: OmnibarProps) {
   const [value, setValue] = useState("");
   const [mode, setMode] = useState<OmnibarMode>(defaultMode);
@@ -152,11 +160,22 @@ export default function Omnibar({
     return () => window.removeEventListener("scroll", close, true);
   }, [tokenEdit]);
 
+  /**
+   * Mot qui exprimera la priorite choisie. Le TEXTE reste la source de verite :
+   * choisir « haute » ecrit « urgent », choisir « normale » efface le mot.
+   */
+  const PRIORITY_WORD: Record<string, string | null> = {
+    high: "urgent",
+    low: "plus tard",
+    normal: null,
+  };
+
   /** Remplace dans le texte le fragment reconnu par une nouvelle ecriture. */
   const rewriteToken = (match: { index: number; text: string }, next: string) => {
-    setValue(
-      value.slice(0, match.index) + next + value.slice(match.index + match.text.length),
-    );
+    const rebuilt =
+      value.slice(0, match.index) + next + value.slice(match.index + match.text.length);
+    // Effacer un mot laisse une double espace derriere lui.
+    setValue(next ? rebuilt : rebuilt.replace(/\s{2,}/g, " ").trimStart());
   };
 
   const handleChange = (raw: string) => {
@@ -192,7 +211,7 @@ export default function Omnibar({
 
   const submitAsk = async () => {
     const text = value.trim();
-    if (!text || !onSubmitAsk) return;
+    if (!text || !onSubmitAsk || busy) return;
     try {
       await onSubmitAsk(text);
       setValue(""); // on reste en mode « ask » pour enchaîner les questions
@@ -264,9 +283,9 @@ export default function Omnibar({
       {!(tokenIsEditable && task.dateMatch) && (
         <DatePickerButton date={task.dueDate} onDateChange={task.handleDateChange} />
       )}
-      {/* La priorite n'a pas de jeton : ses mots-cles restent des mots de la
-          phrase. Son bouton est donc toujours la. */}
-      <PrioritySelect value={task.priority} onChange={task.setPriority} />
+      {!(tokenIsEditable && task.priorityMatch) && (
+        <PrioritySelect value={task.priority} onChange={task.setPriority} />
+      )}
       {lists !== undefined && !(tokenIsEditable && task.listMatch) && (
         <ListControl
           list={task.list}
@@ -477,6 +496,25 @@ export default function Omnibar({
 
       </div>
 
+      {/* Envoi (mode Question) : sur une surface qui se lit comme une
+          conversation, l'Entrée seule est invisible — le template shadcn met
+          là une flèche, on fait pareil. TOUJOURS monté (désactivé à vide) et
+          jamais révélé : monté/démonté, il ferait sauter la largeur de la
+          colonne de texte à la première frappe. */}
+      {mode === "ask" && (
+        <Button
+          type="submit"
+          size="icon-sm"
+          disabled={busy || !value.trim()}
+          aria-label="Envoyer"
+          // `size-9` : le même carré que la pastille de mode à l'autre bout de
+          // la rangée — la barre garde sa hauteur, les deux bouts pèsent pareil.
+          className="size-9 shrink-0 self-end rounded-full bg-brand text-brand-foreground hover:bg-brand/90"
+        >
+          {busy ? <Spinner /> : <ArrowUp />}
+        </Button>
+      )}
+
       {/* Contrôles (date / priorité / liste) : mode Tâche uniquement. Enfant
           DIRECT du formulaire, pas de la colonne de texte : empiles, ils
           commencent ainsi au bord gauche, alignes sur le cercle. */}
@@ -578,6 +616,50 @@ export default function Omnibar({
               }}
             />
           )}
+          {tokenEdit?.kind === "priority" && (
+            <div className="flex w-44 flex-col gap-px p-1">
+              {(
+                [
+                  { value: "high", label: "Haute", color: "#ef4444" },
+                  { value: "low", label: "Basse", color: "#10b981" },
+                  { value: "normal", label: "Aucune", color: null },
+                ] as const
+              ).map((option) => (
+                <button
+                  key={option.value}
+                  type="button"
+                  onMouseDown={(e) => e.preventDefault()}
+                  onClick={() => {
+                    // Le texte reste la source de verite : on y ecrit le mot
+                    // correspondant, ou on l'efface pour « Aucune ».
+                    if (task.priorityMatch) {
+                      rewriteToken(
+                        task.priorityMatch,
+                        PRIORITY_WORD[option.value] ?? "",
+                      );
+                    }
+                    setTokenEdit(null);
+                    focusField();
+                  }}
+                  className={cn(
+                    "flex items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm transition-colors hover:bg-accent",
+                    task.priority === option.value && "text-brand",
+                  )}
+                >
+                  {option.color ? (
+                    <span
+                      className="size-2.5 shrink-0 rounded-full"
+                      style={{ backgroundColor: option.color }}
+                    />
+                  ) : (
+                    <span className="size-2.5 shrink-0 rounded-full border border-muted-foreground/50" />
+                  )}
+                  {option.label}
+                </button>
+              ))}
+            </div>
+          )}
+
           {tokenEdit?.kind === "project" && (
             <div className="flex max-h-64 w-52 flex-col gap-px overflow-y-auto p-1">
               {(lists ?? []).length === 0 && (

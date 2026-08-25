@@ -187,20 +187,46 @@ export function replaceDateInText(
   return trimmed + (trimmed ? " " : "") + dateText;
 }
 
-/** Heuristique de priorité à partir de mots-clés. */
-export function detectPriorityFromText(text: string): Priority {
-  const lower = text.toLowerCase();
+/**
+ * Mots-clés de priorité, DANS L'ORDRE de décision : le premier trouvé gagne.
+ * « haute » passe avant « basse », et « !! » avant « ! » — sinon on
+ * surlignerait le premier point d'exclamation d'une paire.
+ */
+const PRIORITY_KEYWORDS: { word: string; priority: Priority }[] = [
+  { word: "urgent", priority: "high" },
+  { word: "important", priority: "high" },
+  { word: "!!", priority: "high" },
+  { word: "asap", priority: "high" },
+  { word: "!", priority: "high" },
+  { word: "plus tard", priority: "low" },
+  { word: "quand possible", priority: "low" },
+];
 
-  if (lower.includes("urgent") || lower.includes("important") || lower.includes("!!")) {
-    return "high";
+/**
+ * Priorité déduite du texte, AVEC la position du mot qui l'a décidée — c'est
+ * elle qui permet de le surligner et de le rendre cliquable, au même titre que
+ * la date ou le projet.
+ */
+export function detectPriorityMatchFromText(
+  text: string,
+): { priority: Priority; match: DateMatch } | null {
+  const lower = text.toLowerCase();
+  for (const { word, priority } of PRIORITY_KEYWORDS) {
+    const index = lower.indexOf(word);
+    if (index !== -1) {
+      return {
+        priority,
+        match: { index, text: text.slice(index, index + word.length) },
+      };
+    }
   }
-  if (lower.includes("!") || lower.includes("asap")) {
-    return "high";
-  }
-  if (lower.includes("plus tard") || lower.includes("quand possible")) {
-    return "low";
-  }
-  return "normal";
+  return null;
+}
+
+/** Heuristique de priorité à partir de mots-clés. Une seule table de vérité :
+ *  celle de `detectPriorityMatchFromText`. */
+export function detectPriorityFromText(text: string): Priority {
+  return detectPriorityMatchFromText(text)?.priority ?? "normal";
 }
 
 /** Sépare le texte principal de la note (délimiteur `//`). */

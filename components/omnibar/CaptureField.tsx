@@ -208,7 +208,7 @@ export interface TokenClick {
 
 /** Natures dont le clic OUVRE un sélecteur. Les autres gardent le
  *  comportement d'un texte ordinaire : le clic y pose le curseur. */
-const CLICKABLE: TokenKind[] = ["date", "project"];
+const CLICKABLE: TokenKind[] = ["date", "project", "priority"];
 
 function TokenClickPlugin({
   onTokenClick,

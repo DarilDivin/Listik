@@ -445,6 +445,33 @@
   animation: capture-token-in 0.28s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
+/* Les fragments qu'on peut MODIFIER doivent en avoir l'air : sans signe, rien
+   ne laisse deviner qu'un mot de la phrase s'ouvre au clic. Un fond teinté de
+   leur PROPRE couleur (`currentColor`) les fait lire comme des pastilles
+   posées dans le texte — sans bordure, sans objet ajouté, et une seule règle
+   pour les trois.
+
+   Les fragments non cliquables (tag, note) n'en reçoivent pas : c'est
+   justement ce qui rend le signe informatif plutôt que décoratif. */
+[data-token="date"],
+[data-token="project"],
+[data-token="priority"] {
+  cursor: pointer;
+  border-radius: var(--radius-sm);
+  padding-inline: 0.18em;
+  background-color: color-mix(in oklch, currentColor 12%, transparent);
+  transition: background-color 140ms ease;
+  /* Un fragment qui s'enroule en fin de ligne garde son fond des deux côtés. */
+  -webkit-box-decoration-break: clone;
+  box-decoration-break: clone;
+}
+
+[data-token="date"]:hover,
+[data-token="project"]:hover,
+[data-token="priority"]:hover {
+  background-color: color-mix(in oklch, currentColor 24%, transparent);
+}
+
 @keyframes capture-token-in {
   from {
     opacity: 0.3;
@@ -510,5 +537,40 @@
   [data-token],
   .capture-note-marker::before {
     animation: none;
+  }
+}
+
+/* ── Attente de l'assistant ───────────────────────────────────────────────
+   Le libellé « Réflexion… » miroite pendant que le CLI travaille — l'appel
+   dure plusieurs secondes et ne rend rien avant la fin, il n'y a donc aucune
+   forme à préfigurer (ni squelette, ni progression) : juste une attente à
+   habiter. Le template shadcn hérite ce `.shimmer` de `shadcn/tailwind.css`,
+   que nous n'importons pas ; on le pose ici. */
+.shimmer {
+  background-image: linear-gradient(
+    100deg,
+    var(--color-muted-foreground) 42%,
+    var(--color-foreground) 50%,
+    var(--color-muted-foreground) 58%
+  );
+  background-size: 250% 100%;
+  background-position: 150% 0;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: listik-shimmer 1.8s linear infinite;
+}
+
+@keyframes listik-shimmer {
+  to {
+    background-position: -50% 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .shimmer {
+    animation: none;
+    background-image: none;
+    color: var(--color-muted-foreground);
   }
 }
