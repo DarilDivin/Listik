@@ -24,6 +24,8 @@ export interface CreateTodoInput {
   recur_interval?: number;
   /** Ne jour de semaine du mois (avec recur_setpos, monthly uniquement). */
   recur_weekday?: RecurWeekday | null;
+  /** Ensemble de jours d'un hebdomadaire, « mon,thu » (migration 0015). */
+  recur_weekdays?: string | null;
   /** 1..4, -1 = dernier ; -1 sans weekday = dernier jour du mois. */
   recur_setpos?: number | null;
   /** Base du report : date fixe, ou jour de complétion. */
@@ -54,6 +56,8 @@ export interface UpdateTodoInput {
   recur_interval?: number;
   /** Ne jour de semaine du mois (avec recur_setpos, monthly uniquement). */
   recur_weekday?: RecurWeekday | null;
+  /** Ensemble de jours d'un hebdomadaire, « mon,thu » (migration 0015). */
+  recur_weekdays?: string | null;
   /** 1..4, -1 = dernier ; -1 sans weekday = dernier jour du mois. */
   recur_setpos?: number | null;
   /** Base du report : date fixe, ou jour de complétion. */

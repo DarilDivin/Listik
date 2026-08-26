@@ -18,7 +18,7 @@ pub struct AppState {
 
 const SELECT_COLUMNS: &str =
     "id, text, note, list, status, priority, recurrence, recur_interval, recur_weekday, \
-     recur_setpos, recur_mode, scheduled_for, due_date, remind_at, \
+     recur_weekdays, recur_setpos, recur_mode, scheduled_for, due_date, remind_at, \
      project_id, area_id, heading_id, this_evening, someday, created_at, updated_at";
 
 const NOTE_COLUMNS: &str = "id, title, content, pinned, created_at, updated_at";
@@ -108,6 +108,7 @@ pub async fn create(pool: &SqlitePool, input: CreateTodo) -> Result<Todo, sqlx::
         recurrence: input.recurrence.unwrap_or_default(),
         recur_interval: input.recur_interval.max(1),
         recur_weekday: input.recur_weekday,
+        recur_weekdays: input.recur_weekdays,
         recur_setpos: input.recur_setpos,
         recur_mode: input.recur_mode,
         scheduled_for: input.scheduled_for,
@@ -128,9 +129,10 @@ pub async fn create(pool: &SqlitePool, input: CreateTodo) -> Result<Todo, sqlx::
 
     sqlx::query(
         "INSERT INTO todos (id, text, note, list, status, priority, recurrence, recur_interval, \
-         recur_weekday, recur_setpos, recur_mode, scheduled_for, due_date, remind_at, \
-         project_id, area_id, heading_id, this_evening, someday, created_at, updated_at) \
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+         recur_weekday, recur_weekdays, recur_setpos, recur_mode, scheduled_for, due_date, \
+         remind_at, project_id, area_id, heading_id, this_evening, someday, created_at, \
+         updated_at) \
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
     )
     .bind(&todo.id)
     .bind(&todo.text)
@@ -141,6 +143,7 @@ pub async fn create(pool: &SqlitePool, input: CreateTodo) -> Result<Todo, sqlx::
     .bind(todo.recurrence)
     .bind(todo.recur_interval)
     .bind(todo.recur_weekday)
+    .bind(&todo.recur_weekdays)
     .bind(todo.recur_setpos)
     .bind(todo.recur_mode)
     .bind(&todo.scheduled_for)
@@ -186,10 +189,10 @@ async fn duplicate_todo_tx(
 
     sqlx::query(
         "INSERT INTO todos (id, text, note, list, status, priority, recurrence, recur_interval, \
-         recur_weekday, recur_setpos, recur_mode, scheduled_for, due_date, remind_at, \
-         project_id, area_id, heading_id, this_evening, someday, needs_embedding, \
+         recur_weekday, recur_weekdays, recur_setpos, recur_mode, scheduled_for, due_date, \
+         remind_at, project_id, area_id, heading_id, this_evening, someday, needs_embedding, \
          created_at, updated_at) \
-         VALUES (?, ?, ?, NULL, 'pending', ?, ?, ?, ?, ?, ?, NULL, NULL, NULL, ?, ?, NULL, 0, 0, 1, ?, ?)",
+         VALUES (?, ?, ?, NULL, 'pending', ?, ?, ?, ?, ?, ?, ?, NULL, NULL, NULL, ?, ?, NULL, 0, 0, 1, ?, ?)",
     )
     .bind(&new_id)
     .bind(&source.text)
@@ -198,6 +201,7 @@ async fn duplicate_todo_tx(
     .bind(source.recurrence)
     .bind(source.recur_interval)
     .bind(source.recur_weekday)
+    .bind(&source.recur_weekdays)
     .bind(source.recur_setpos)
     .bind(source.recur_mode)
     .bind(&project_id)
@@ -323,6 +327,12 @@ pub async fn update(pool: &SqlitePool, id: &str, input: UpdateTodo) -> Result<To
     if let Some(weekday) = input.recur_weekday {
         sep.push("recur_weekday = ").push_bind_unseparated(weekday);
     }
+    if let Some(weekdays) = input.recur_weekdays.clone() {
+        // Chaîne vide = « plus d'ensemble » : on écrit NULL plutôt que "",
+        // pour que `parse_list` n'ait qu'un seul cas d'absence à connaître.
+        let stored = if weekdays.trim().is_empty() { None } else { Some(weekdays) };
+        sep.push("recur_weekdays = ").push_bind_unseparated(stored);
+    }
     if let Some(setpos) = input.recur_setpos {
         sep.push("recur_setpos = ").push_bind_unseparated(setpos);
     }
@@ -390,6 +400,9 @@ pub async fn toggle(pool: &SqlitePool, id: &str) -> Result<Todo, sqlx::Error> {
             interval: current.recur_interval,
             weekday: current.recur_weekday,
             setpos: current.recur_setpos,
+            weekdays: crate::models::RecurWeekday::parse_list(
+                current.recur_weekdays.as_deref(),
+            ),
         };
 
         if let Some(next) = rule.advance(base) {
@@ -1545,6 +1558,7 @@ mod tests {
             recurrence: None,
             recur_interval: 1,
             recur_weekday: None,
+            recur_weekdays: None,
             recur_setpos: None,
             recur_mode: crate::models::RecurMode::Fixed,
             scheduled_for: None,

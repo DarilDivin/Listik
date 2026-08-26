@@ -121,6 +121,7 @@ export function useTodoMutations() {
       recurrence: payload.recurrence ?? "none",
       recur_interval: payload.recur_interval ?? 1,
       recur_weekday: payload.recur_weekday ?? null,
+      recur_weekdays: payload.recur_weekdays ?? null,
       recur_setpos: payload.recur_setpos ?? null,
       recur_mode: payload.recur_mode ?? "fixed",
       scheduled_for: payload.scheduled_for ?? null,

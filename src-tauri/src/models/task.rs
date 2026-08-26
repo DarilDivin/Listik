@@ -64,7 +64,14 @@ impl Recurrence {
     /// Prochaine occurrence après `from`, avec les modificateurs par défaut
     /// (intervalle 1, sans positionnel) — conservé pour compatibilité.
     pub fn advance(self, from: chrono::NaiveDate) -> Option<chrono::NaiveDate> {
-        RecurrenceRule { recurrence: self, interval: 1, weekday: None, setpos: None }.advance(from)
+        RecurrenceRule {
+            recurrence: self,
+            interval: 1,
+            weekday: None,
+            setpos: None,
+            weekdays: Vec::new(),
+        }
+        .advance(from)
     }
 }
 
@@ -81,6 +88,55 @@ pub enum RecurWeekday {
     Fri,
     Sat,
     Sun,
+}
+
+impl RecurWeekday {
+    /// Code stocke en base (« mon »).
+    pub fn as_str(self) -> &'static str {
+        match self {
+            RecurWeekday::Mon => "mon",
+            RecurWeekday::Tue => "tue",
+            RecurWeekday::Wed => "wed",
+            RecurWeekday::Thu => "thu",
+            RecurWeekday::Fri => "fri",
+            RecurWeekday::Sat => "sat",
+            RecurWeekday::Sun => "sun",
+        }
+    }
+
+    fn from_code(code: &str) -> Option<Self> {
+        Some(match code.trim().to_ascii_lowercase().as_str() {
+            "mon" => RecurWeekday::Mon,
+            "tue" => RecurWeekday::Tue,
+            "wed" => RecurWeekday::Wed,
+            "thu" => RecurWeekday::Thu,
+            "fri" => RecurWeekday::Fri,
+            "sat" => RecurWeekday::Sat,
+            "sun" => RecurWeekday::Sun,
+            _ => return None,
+        })
+    }
+
+    /// Lit la colonne `recur_weekdays` (« mon,thu »). Les codes inconnus sont
+    /// ignores plutot que de faire echouer la lecture d'une tache : une donnee
+    /// abimee ne doit pas rendre la tache invisible.
+    pub fn parse_list(raw: Option<&str>) -> Vec<RecurWeekday> {
+        let Some(raw) = raw else { return Vec::new() };
+        let mut days: Vec<RecurWeekday> =
+            raw.split(',').filter_map(Self::from_code).collect();
+        days.sort_by_key(|d| *d as u8);
+        days.dedup();
+        days
+    }
+
+    /// Ecrit la colonne. `None` quand l'ensemble est vide : la regle
+    /// hebdomadaire retombe alors sur son ancrage habituel.
+    pub fn join_list(days: &[RecurWeekday]) -> Option<String> {
+        if days.is_empty() {
+            return None;
+        }
+        Some(days.iter().map(|d| d.as_str()).collect::<Vec<_>>().join(","))
+    }
 }
 
 impl From<RecurWeekday> for chrono::Weekday {
@@ -132,6 +188,10 @@ pub struct RecurrenceRule {
     /// (couvre la fin de mois — un ancrage au 31 se borne au 28/30 et n'y
     /// revient jamais, voir `advance`).
     pub setpos: Option<i64>,
+    /// Ensemble de jours d'un hebdomadaire (« lundi ET jeudi »). Vide = la
+    /// regle reste ancree sur la date de la tache. Distinct de `weekday`, qui
+    /// est scalaire et sert au positionnel mensuel.
+    pub weekdays: Vec<RecurWeekday>,
 }
 
 impl RecurrenceRule {
@@ -142,6 +202,27 @@ impl RecurrenceRule {
         match self.recurrence {
             Recurrence::None => None,
             Recurrence::Daily => Some(from + Duration::days(interval)),
+            // Ensemble de jours (« lundi ET jeudi ») : la prochaine occurrence
+            // est le prochain jour de l'ensemble, STRICTEMENT après `from` —
+            // même garde que le reste de la règle.
+            //
+            // L'intervalle est délibérément ignoré : « un lundi sur deux et un
+            // jeudi sur deux » n'a pas de lecture unique (quelle semaine porte
+            // lequel ?). `Weekdays` prend déjà ce parti pour la même raison.
+            Recurrence::Weekly if !self.weekdays.is_empty() => {
+                let wanted: Vec<Weekday> =
+                    self.weekdays.iter().map(|d| (*d).into()).collect();
+                let mut d = from + Duration::days(1);
+                // Au plus sept pas : l'ensemble n'étant pas vide, on retombe
+                // forcément dessus en une semaine.
+                for _ in 0..7 {
+                    if wanted.contains(&d.weekday()) {
+                        return Some(d);
+                    }
+                    d += Duration::days(1);
+                }
+                None
+            }
             Recurrence::Weekly => Some(from + Duration::days(7 * interval)),
             Recurrence::Weekdays => {
                 // Intervalle volontairement ignoré : « chaque jour ouvré ».
@@ -237,6 +318,9 @@ pub struct Todo {
     pub recur_interval: i64,
     /// Ne jour de semaine du mois (avec `recur_setpos`, monthly uniquement).
     pub recur_weekday: Option<RecurWeekday>,
+    /// Ensemble de jours d'un hebdomadaire, « mon,thu ». Distinct du champ
+    /// scalaire ci-dessus : deux besoins, deux colonnes (voir migration 0015).
+    pub recur_weekdays: Option<String>,
     /// 1..4, -1 = dernier ; -1 sans weekday = dernier jour du mois.
     #[ts(type = "number | null")]
     pub recur_setpos: Option<i64>,
@@ -287,6 +371,9 @@ pub struct CreateTodo {
     pub recur_interval: i64,
     #[serde(default)]
     pub recur_weekday: Option<RecurWeekday>,
+    /// Ensemble de jours d'un hebdomadaire (« mon,thu »).
+    #[serde(default)]
+    pub recur_weekdays: Option<String>,
     #[serde(default)]
     pub recur_setpos: Option<i64>,
     #[serde(default)]
@@ -343,6 +430,10 @@ pub struct UpdateTodo {
     pub recur_interval: Option<i64>,
     #[serde(default, deserialize_with = "double_option")]
     pub recur_weekday: Option<Option<RecurWeekday>>,
+    /// Ensemble de jours d'un hebdomadaire (« mon,thu »). Chaîne vide = on
+    /// retire l'ensemble.
+    #[serde(default)]
+    pub recur_weekdays: Option<String>,
     #[serde(default, deserialize_with = "double_option")]
     pub recur_setpos: Option<Option<i64>>,
     #[serde(default)]
@@ -390,10 +481,84 @@ mod tests {
     // ⚠️ Table de parité avec features/todos/recurrence.test.ts : les mêmes
     // cas doivent passer des deux côtés (le miroir JS sert à l'optimiste).
     #[test]
+    fn ensemble_de_jours_va_au_prochain_jour_choisi() {
+        use RecurWeekday::*;
+        let set = |days: Vec<RecurWeekday>| RecurrenceRule {
+            recurrence: Recurrence::Weekly,
+            interval: 1,
+            weekday: None,
+            setpos: None,
+            weekdays: days,
+        };
+        let d = |s: &str| chrono::NaiveDate::parse_from_str(s, "%Y-%m-%d").unwrap();
+
+        // 2026-08-24 est un lundi. Lundi + jeudi : lundi -> jeudi -> lundi.
+        let lun_jeu = set(vec![Mon, Thu]);
+        assert_eq!(lun_jeu.advance(d("2026-08-24")), Some(d("2026-08-27")));
+        assert_eq!(lun_jeu.advance(d("2026-08-27")), Some(d("2026-08-31")));
+
+        // Strict-apres : depuis un jour DE l'ensemble, on ne se renvoie jamais
+        // soi-meme, sinon la tache ne bougerait plus.
+        let lun = set(vec![Mon]);
+        assert_eq!(lun.advance(d("2026-08-24")), Some(d("2026-08-31")));
+
+        // Depuis un jour hors ensemble, on prend le prochain sans sauter.
+        assert_eq!(lun_jeu.advance(d("2026-08-25")), Some(d("2026-08-27")));
+    }
+
+    #[test]
+    fn ensemble_de_jours_ignore_l_intervalle() {
+        // « un lundi sur deux ET un jeudi sur deux » n'a pas de lecture unique :
+        // l'intervalle est neutralise, comme pour les jours ouvres.
+        let d = |s: &str| chrono::NaiveDate::parse_from_str(s, "%Y-%m-%d").unwrap();
+        let rule = RecurrenceRule {
+            recurrence: Recurrence::Weekly,
+            interval: 3,
+            weekday: None,
+            setpos: None,
+            weekdays: vec![RecurWeekday::Mon, RecurWeekday::Thu],
+        };
+        assert_eq!(rule.advance(d("2026-08-24")), Some(d("2026-08-27")));
+    }
+
+    #[test]
+    fn sans_ensemble_l_hebdomadaire_ne_change_pas() {
+        // Garde de non-regression : la regle existante doit rester intacte.
+        let d = |s: &str| chrono::NaiveDate::parse_from_str(s, "%Y-%m-%d").unwrap();
+        let rule = RecurrenceRule {
+            recurrence: Recurrence::Weekly,
+            interval: 2,
+            weekday: None,
+            setpos: None,
+            weekdays: Vec::new(),
+        };
+        assert_eq!(rule.advance(d("2026-08-24")), Some(d("2026-09-07")));
+    }
+
+    #[test]
+    fn la_liste_de_jours_se_lit_et_s_ecrit() {
+        use RecurWeekday::*;
+        assert_eq!(RecurWeekday::parse_list(Some("mon,thu")), vec![Mon, Thu]);
+        // Ordre de la semaine, doublons ecartes, codes inconnus ignores plutot
+        // que de rendre la tache illisible.
+        assert_eq!(RecurWeekday::parse_list(Some("thu,mon,mon")), vec![Mon, Thu]);
+        assert_eq!(RecurWeekday::parse_list(Some("mon,xxx")), vec![Mon]);
+        assert_eq!(RecurWeekday::parse_list(None), Vec::new());
+        assert_eq!(RecurWeekday::join_list(&[Mon, Thu]), Some("mon,thu".into()));
+        assert_eq!(RecurWeekday::join_list(&[]), None);
+    }
+
+    #[test]
     fn rule_advance_every_n() {
         use chrono::NaiveDate;
         let d = |s: &str| NaiveDate::parse_from_str(s, "%Y-%m-%d").unwrap();
-        let rule = |r, i| RecurrenceRule { recurrence: r, interval: i, weekday: None, setpos: None };
+        let rule = |r, i| RecurrenceRule {
+            recurrence: r,
+            interval: i,
+            weekday: None,
+            setpos: None,
+            weekdays: Vec::new(),
+        };
 
         // Toutes les 2 semaines / tous les 3 jours / tous les 2 mois.
         assert_eq!(rule(Recurrence::Weekly, 2).advance(d("2026-06-14")), Some(d("2026-06-28")));
@@ -405,7 +570,13 @@ mod tests {
         assert_eq!(rule(Recurrence::Monthly, 1).advance(d("2026-01-31")), Some(d("2026-02-28")));
 
         // Jours ouvrés : l'intervalle est ignoré (pas de « un ouvré sur deux »).
-        let wd = RecurrenceRule { recurrence: Recurrence::Weekdays, interval: 5, weekday: None, setpos: None };
+        let wd = RecurrenceRule {
+            recurrence: Recurrence::Weekdays,
+            interval: 5,
+            weekday: None,
+            setpos: None,
+            weekdays: Vec::new(),
+        };
         assert_eq!(wd.advance(d("2026-06-12")), Some(d("2026-06-15"))); // ven → lun
     }
 
@@ -418,6 +589,7 @@ mod tests {
             interval: 1,
             weekday: Some(RecurWeekday::Mon),
             setpos: Some(1),
+            weekdays: Vec::new(),
         };
 
         // 2026-06-01 est un lundi (le 1er lundi de juin). Cocher CE jour-là
@@ -443,6 +615,7 @@ mod tests {
             interval: 1,
             weekday: Some(RecurWeekday::Fri),
             setpos: Some(-1),
+            weekdays: Vec::new(),
         };
         assert_eq!(last_friday.advance(d("2026-06-26")), Some(d("2026-07-31")));
 
@@ -453,6 +626,7 @@ mod tests {
             interval: 1,
             weekday: None,
             setpos: Some(-1),
+            weekdays: Vec::new(),
         };
         assert_eq!(last_day.advance(d("2026-01-31")), Some(d("2026-02-28")));
         assert_eq!(last_day.advance(d("2026-02-28")), Some(d("2026-03-31")));

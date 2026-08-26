@@ -19,6 +19,11 @@ recur_interval: number,
  */
 recur_weekday: RecurWeekday | null, 
 /**
+ * Ensemble de jours d'un hebdomadaire, « mon,thu ». Distinct du champ
+ * scalaire ci-dessus : deux besoins, deux colonnes (voir migration 0015).
+ */
+recur_weekdays: string | null, 
+/**
  * 1..4, -1 = dernier ; -1 sans weekday = dernier jour du mois.
  */
 recur_setpos: number | null, 

@@ -138,6 +138,7 @@ impl DbExecutor {
             recurrence: None,
             recur_interval: 1,
             recur_weekday: None,
+            recur_weekdays: None,
             recur_setpos: None,
             recur_mode: crate::models::RecurMode::Fixed,
             scheduled_for: args_opt_string(args, "scheduled_for"),

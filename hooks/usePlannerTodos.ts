@@ -85,7 +85,14 @@ export const usePlannerTodos = () => {
       // Répétition écrite en clair (« chaque lundi ») : le modèle ne retient
       // pas le jour, c'est `scheduled_for` qui le fixe.
       ...(taskData.recurrence && taskData.recurrence !== "none"
-        ? { recurrence: taskData.recurrence }
+        ? {
+            recurrence: taskData.recurrence,
+            // Jours nommés : « chaque lundi et jeudi ». Sans eux, la règle
+            // hebdomadaire reste ancrée sur `scheduled_for`.
+            ...(taskData.recurWeekdays
+              ? { recur_weekdays: taskData.recurWeekdays }
+              : {}),
+          }
         : {}),
       ...(dueDate ? {} : options?.whenUndated),
       ...options?.container,

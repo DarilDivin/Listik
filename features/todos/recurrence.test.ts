@@ -4,6 +4,7 @@ import {
   recurrenceLabel,
   projectFutureOccurrences,
   buildGhostOccurrences,
+  parseWeekdays,
   type RecurrenceFields,
 } from "./recurrence";
 import type { Recurrence, Todo } from "./types";
@@ -322,5 +323,64 @@ describe("buildGhostOccurrences", () => {
     ]);
     const dates = ghosts.map((g) => g.date);
     expect(dates).toEqual([...dates].sort());
+  });
+});
+
+describe("ensembles de jours (parité avec les tests Rust)", () => {
+  const fields = (weekdays: string | null): RecurrenceFields => ({
+    recurrence: "weekly",
+    recur_interval: 1,
+    recur_weekday: null,
+    recur_weekdays: weekdays,
+    recur_setpos: null,
+    recur_mode: "fixed",
+  });
+
+  it("va au prochain jour choisi", () => {
+    // 2026-08-24 est un lundi. Mêmes cas que `ensemble_de_jours_va_au_prochain_jour_choisi`.
+    expect(nextOccurrence("2026-08-24", fields("mon,thu"))).toBe("2026-08-27");
+    expect(nextOccurrence("2026-08-27", fields("mon,thu"))).toBe("2026-08-31");
+  });
+
+  it("ne se renvoie jamais le même jour", () => {
+    // Strict-après : sans cette garde, la tâche ne bougerait plus.
+    expect(nextOccurrence("2026-08-24", fields("mon"))).toBe("2026-08-31");
+  });
+
+  it("prend le prochain sans sauter depuis un jour hors ensemble", () => {
+    expect(nextOccurrence("2026-08-25", fields("mon,thu"))).toBe("2026-08-27");
+  });
+
+  it("ignore l'intervalle", () => {
+    const withInterval = { ...fields("mon,thu"), recur_interval: 3 };
+    expect(nextOccurrence("2026-08-24", withInterval)).toBe("2026-08-27");
+  });
+
+  it("laisse l'hebdomadaire simple inchangé", () => {
+    const plain = { ...fields(null), recur_interval: 2 };
+    expect(nextOccurrence("2026-08-24", plain)).toBe("2026-09-07");
+  });
+
+  it("lit la colonne comme le Rust", () => {
+    expect(parseWeekdays("mon,thu")).toEqual(["mon", "thu"]);
+    expect(parseWeekdays("thu,mon,mon")).toEqual(["mon", "thu"]);
+    expect(parseWeekdays("mon,xxx")).toEqual(["mon"]);
+    expect(parseWeekdays(null)).toEqual([]);
+  });
+});
+
+describe("recurrenceLabel — ensembles de jours", () => {
+  it("nomme les jours plutôt que le rythme", () => {
+    // « Toutes les semaines » serait faux : la tâche revient deux fois.
+    expect(
+      recurrenceLabel({
+        recurrence: "weekly",
+        recur_interval: 1,
+        recur_weekday: null,
+        recur_weekdays: "mon,thu",
+        recur_setpos: null,
+        recur_mode: "fixed",
+      }),
+    ).toBe("Lundi, jeudi");
   });
 });

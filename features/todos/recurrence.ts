@@ -22,6 +22,10 @@ export interface RecurrenceRule {
   weekday: RecurWeekday | null;
   /** 1..4, -1 = dernier ; -1 sans weekday = dernier jour du mois. */
   setpos: number | null;
+  /** Ensemble de jours d'un hebdomadaire (« lundi ET jeudi »). Vide = la règle
+   *  reste ancrée sur la date de la tâche. Distinct de `weekday`, scalaire et
+   *  réservé au positionnel mensuel. */
+  weekdays: RecurWeekday[];
 }
 
 interface Ymd {
@@ -116,8 +120,22 @@ function advanceRule(from: Ymd, rule: RecurrenceRule): Ymd | null {
       return null;
     case "daily":
       return addDays(from, interval);
-    case "weekly":
+    case "weekly": {
+      // Ensemble de jours : le prochain jour choisi, STRICTEMENT après `from`.
+      // Intervalle ignoré — « un lundi sur deux ET un jeudi sur deux » n'a pas
+      // de lecture unique ; `weekdays` prend déjà ce parti. (Parité Rust.)
+      if (rule.weekdays.length > 0) {
+        const wanted = new Set(rule.weekdays.map((d) => WEEKDAY_INDEX[d]));
+        let d = addDays(from, 1);
+        // Au plus sept pas : l'ensemble n'étant pas vide, on retombe dessus.
+        for (let i = 0; i < 7; i++) {
+          if (wanted.has(weekdayOf(d))) return d;
+          d = addDays(d, 1);
+        }
+        return null;
+      }
       return addDays(from, 7 * interval);
+    }
     case "weekdays": {
       // Intervalle volontairement ignoré : « chaque jour ouvré ».
       let d = addDays(from, 1);
@@ -138,11 +156,28 @@ function advanceRule(from: Ymd, rule: RecurrenceRule): Ymd | null {
   }
 }
 
+/**
+ * Lit la colonne `recur_weekdays` (« mon,thu »). Parité avec
+ * `RecurWeekday::parse_list` : ordre de la semaine, doublons écartés, codes
+ * inconnus ignorés — une donnée abîmée ne doit pas rendre la tâche illisible.
+ */
+export function parseWeekdays(raw: string | null | undefined): RecurWeekday[] {
+  if (!raw) return [];
+  const seen = new Set<RecurWeekday>();
+  for (const part of raw.split(",")) {
+    const code = part.trim().toLowerCase();
+    if (code in WEEKDAY_INDEX) seen.add(code as RecurWeekday);
+  }
+  return [...seen].sort((a, b) => WEEKDAY_INDEX[a] - WEEKDAY_INDEX[b]);
+}
+
 /** Extrait la règle d'une tâche (mêmes champs que côté Rust). */
 export interface RecurrenceFields {
   recurrence: Recurrence;
   recur_interval: number;
   recur_weekday: RecurWeekday | null;
+  /** « mon,thu » — voir la migration 0015. */
+  recur_weekdays?: string | null;
   recur_setpos: number | null;
   recur_mode: RecurMode;
 }
@@ -153,6 +188,7 @@ export function ruleOf(todo: RecurrenceFields): RecurrenceRule {
     interval: todo.recur_interval,
     weekday: todo.recur_weekday,
     setpos: todo.recur_setpos,
+    weekdays: parseWeekdays(todo.recur_weekdays),
   };
 }
 
@@ -249,6 +285,18 @@ export function recurrenceLabel(todo: RecurrenceFields): string {
   const { recurrence } = todo;
   if (recurrence === "none") return "Jamais";
   if (recurrence === "weekdays") return "Jours ouvrés";
+
+  // Ensemble de jours : il PRIME sur l'intervalle, que la règle ignore de
+  // toute façon (voir `advanceRule`). Dire « toutes les semaines » ici serait
+  // faux — la tâche revient deux fois par semaine.
+  const days = parseWeekdays(todo.recur_weekdays);
+  if (recurrence === "weekly" && days.length > 0) {
+    // `WEEKDAY_LABELS` est en minuscules car il sert au milieu de phrases
+    // (« le 3e lundi du mois ») ; ici le libellé est autonome, il prend donc
+    // une capitale initiale comme « Jours ouvrés » ou « Jamais ».
+    const list = days.map((d) => WEEKDAY_LABELS[d]).join(", ");
+    return list.charAt(0).toUpperCase() + list.slice(1);
+  }
 
   const interval = Math.max(1, Number(todo.recur_interval));
   const setpos = todo.recur_setpos === null ? null : Number(todo.recur_setpos);

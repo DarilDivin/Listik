@@ -30,6 +30,8 @@ export interface SmartTaskData {
   tags?: string[];
   /** Répétition écrite en clair (« chaque lundi »). */
   recurrence?: Recurrence;
+  /** Jours nommés d'un hebdomadaire, « mon,thu ». */
+  recurWeekdays?: string | null;
   /** Saisie brute, telle que tapée — la correction IA travaille dessus. */
   rawText?: string;
   /** `false` si l'utilisateur a choisi la priorité à la main : l'IA ne doit
@@ -60,6 +62,7 @@ export function useTaskMode(
   const [priorityMatch, setPriorityMatch] = useState<DateMatch | null>(null);
   const [recurrence, setRecurrenceState] = useState<Recurrence>("none");
   const [recurrenceMatch, setRecurrenceMatch] = useState<DateMatch | null>(null);
+  const [recurWeekdays, setRecurWeekdays] = useState<string | null>(null);
   /**
    * L'utilisateur a fixe la priorite lui-meme alors qu'un mot la portait.
    *
@@ -103,6 +106,11 @@ export function useTaskMode(
     const detectedRecurrence = detectRecurrenceMatchFromText(value);
     setRecurrenceState(detectedRecurrence?.recurrence ?? "none");
     setRecurrenceMatch(detectedRecurrence?.match ?? null);
+    setRecurWeekdays(
+      detectedRecurrence?.weekdays.length
+        ? detectedRecurrence.weekdays.join(",")
+        : null,
+    );
 
     setTagMatches(detectTagMatchesFromText(value).map((t) => t.match));
 
@@ -148,6 +156,7 @@ export function useTaskMode(
     setPriorityDetached(false);
     setRecurrenceState("none");
     setRecurrenceMatch(null);
+    setRecurWeekdays(null);
     setTagMatches([]);
     lastDetectedList.current = null;
   };
@@ -197,6 +206,7 @@ export function useTaskMode(
         list: canonicalList,
         tags,
         recurrence,
+        recurWeekdays,
         rawText: value,
         aiPriorityAllowed: priority === lastDetectedPriority.current,
       });
@@ -228,6 +238,7 @@ export function useTaskMode(
     priorityDetached,
     recurrence,
     recurrenceMatch,
+    recurWeekdays,
     tagMatches,
     isSubmitting,
     hasGlow,

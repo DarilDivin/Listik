@@ -5,6 +5,7 @@ import { format } from "date-fns";
 import { fr } from "date-fns/locale";
 import type { Priority } from "./types";
 import type { Recurrence } from "./generated/Recurrence";
+import type { RecurWeekday } from "./generated/RecurWeekday";
 
 export interface DateMatch {
   index: number;
@@ -186,6 +187,13 @@ const RECURRENCE_PATTERNS: { pattern: RegExp; recurrence: Recurrence }[] = [
   { pattern: /\b(?:chaque|tous les|toutes les)\s+jours?\b/i, recurrence: "daily" },
   { pattern: /\bquotidiennes?\b|\bquotidiens?\b/i, recurrence: "daily" },
   { pattern: /\b(?:chaque|tous les|toutes les)\s+semaines?\b/i, recurrence: "weekly" },
+  // Plusieurs jours (« chaque lundi et jeudi ») : teste AVANT le jour seul,
+  // sinon on ne capturerait que « chaque lundi » et « et jeudi » resterait
+  // dans le titre.
+  {
+    pattern: /\b(?:chaque|tous les|toutes les)\s+(?:lundis?|mardis?|mercredis?|jeudis?|vendredis?|samedis?|dimanches?)(?:\s*(?:,|et)\s*(?:lundis?|mardis?|mercredis?|jeudis?|vendredis?|samedis?|dimanches?))+/i,
+    recurrence: "weekly",
+  },
   { pattern: /\b(?:chaque|tous les|toutes les)\s+(?:lundis?|mardis?|mercredis?|jeudis?|vendredis?|samedis?|dimanches?)\b/i, recurrence: "weekly" },
   { pattern: /\bhebdomadaires?\b/i, recurrence: "weekly" },
   { pattern: /\b(?:chaque|tous les|toutes les)\s+mois\b/i, recurrence: "monthly" },
@@ -196,13 +204,39 @@ const RECURRENCE_PATTERNS: { pattern: RegExp; recurrence: Recurrence }[] = [
  * Repetition demandee dans le texte, AVEC sa position — de quoi la surligner,
  * la rendre cliquable et la retirer du titre, comme la date ou le projet.
  */
-export function detectRecurrenceMatchFromText(
-  text: string,
-): { recurrence: Recurrence; match: DateMatch } | null {
+const WEEKDAY_CODES: { pattern: RegExp; code: RecurWeekday }[] = [
+  { pattern: /\blundis?\b/i, code: "mon" },
+  { pattern: /\bmardis?\b/i, code: "tue" },
+  { pattern: /\bmercredis?\b/i, code: "wed" },
+  { pattern: /\bjeudis?\b/i, code: "thu" },
+  { pattern: /\bvendredis?\b/i, code: "fri" },
+  { pattern: /\bsamedis?\b/i, code: "sat" },
+  { pattern: /\bdimanches?\b/i, code: "sun" },
+];
+
+/** Jours nommés dans un fragment (« chaque lundi et jeudi » → mon, thu). */
+function weekdaysIn(fragment: string): RecurWeekday[] {
+  return WEEKDAY_CODES.filter(({ pattern }) => pattern.test(fragment)).map(
+    ({ code }) => code,
+  );
+}
+
+export function detectRecurrenceMatchFromText(text: string): {
+  recurrence: Recurrence;
+  match: DateMatch;
+  /** Jours nommés, s'il y en a — « mon,thu ». Vide sinon. */
+  weekdays: RecurWeekday[];
+} | null {
   const head = text.split("//")[0];
   for (const { pattern, recurrence } of RECURRENCE_PATTERNS) {
     const found = pattern.exec(head);
-    if (found) return { recurrence, match: { index: found.index, text: found[0] } };
+    if (found) {
+      return {
+        recurrence,
+        match: { index: found.index, text: found[0] },
+        weekdays: recurrence === "weekly" ? weekdaysIn(found[0]) : [],
+      };
+    }
   }
   return null;
 }

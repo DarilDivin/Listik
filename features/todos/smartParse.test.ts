@@ -268,3 +268,38 @@ describe("stripRecurrenceFromText", () => {
     expect(strip("Sortir les poubelles lundi")).toBe("Sortir les poubelles lundi");
   });
 });
+
+describe("détection multi-jours", () => {
+  const days = (t: string) =>
+    detectRecurrenceMatchFromText(t)?.weekdays ?? null;
+  const frag = (t: string) => detectRecurrenceMatchFromText(t)?.match.text ?? null;
+
+  it("capture plusieurs jours nommés", () => {
+    expect(days("Sport chaque lundi et jeudi")).toEqual(["mon", "thu"]);
+    expect(frag("Sport chaque lundi et jeudi")).toBe("chaque lundi et jeudi");
+  });
+
+  it("accepte la virgule autant que « et »", () => {
+    expect(days("Sport chaque lundi, mercredi et vendredi")).toEqual([
+      "mon",
+      "wed",
+      "fri",
+    ]);
+  });
+
+  it("garde le fragment ENTIER — sinon « et jeudi » resterait dans le titre", () => {
+    expect(stripRecurrenceFromText(
+      "Sport chaque lundi et jeudi",
+      detectRecurrenceMatchFromText("Sport chaque lundi et jeudi")?.match ?? null,
+    )).toBe("Sport");
+  });
+
+  it("nomme aussi le jour d'une répétition simple", () => {
+    expect(days("Sport chaque lundi")).toEqual(["mon"]);
+  });
+
+  it("ne nomme aucun jour pour un rythme sans jour", () => {
+    expect(days("Sport chaque semaine")).toEqual([]);
+    expect(days("Sport chaque mois")).toEqual([]);
+  });
+});
