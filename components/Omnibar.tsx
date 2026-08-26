@@ -160,16 +160,6 @@ export default function Omnibar({
     return () => window.removeEventListener("scroll", close, true);
   }, [tokenEdit]);
 
-  /**
-   * Mot qui exprimera la priorite choisie. Le TEXTE reste la source de verite :
-   * choisir « haute » ecrit « urgent », choisir « normale » efface le mot.
-   */
-  const PRIORITY_WORD: Record<string, string | null> = {
-    high: "urgent",
-    low: "plus tard",
-    normal: null,
-  };
-
   /** Remplace dans le texte le fragment reconnu par une nouvelle ecriture. */
   const rewriteToken = (match: { index: number; text: string }, next: string) => {
     const rebuilt =
@@ -283,7 +273,7 @@ export default function Omnibar({
       {!(tokenIsEditable && task.dateMatch) && (
         <DatePickerButton date={task.dueDate} onDateChange={task.handleDateChange} />
       )}
-      {!(tokenIsEditable && task.priorityMatch) && (
+      {!(tokenIsEditable && task.priorityMatch && !task.priorityDetached) && (
         <PrioritySelect value={task.priority} onChange={task.setPriority} />
       )}
       {lists !== undefined && !(tokenIsEditable && task.listMatch) && (
@@ -408,6 +398,7 @@ export default function Omnibar({
                 dimmed={!isFocused}
                 onKeyDown={handleKeyDown}
                 onTokenClick={setTokenEdit}
+                skipPriorityToken={task.priorityDetached}
               />
             ) : (
               <AutoGrowTextarea
@@ -630,14 +621,13 @@ export default function Omnibar({
                   type="button"
                   onMouseDown={(e) => e.preventDefault()}
                   onClick={() => {
-                    // Le texte reste la source de verite : on y ecrit le mot
-                    // correspondant, ou on l'efface pour « Aucune ».
-                    if (task.priorityMatch) {
-                      rewriteToken(
-                        task.priorityMatch,
-                        PRIORITY_WORD[option.value] ?? "",
-                      );
-                    }
+                    // On ne touche PAS au texte. « importante » est un adjectif
+                    // accorde, pris dans la syntaxe de la phrase : le remplacer
+                    // par « plus tard » donnait « tres plus tarde ». Le mot
+                    // reste donc ou il est et cesse simplement d'etre
+                    // l'attribut — la priorite devient un choix a part, et le
+                    // bouton reprend la main.
+                    task.setPriority(option.value);
                     setTokenEdit(null);
                     focusField();
                   }}

@@ -48,11 +48,21 @@ export function useTaskMode(
   lists: string[] = [],
 ) {
   const [dueDate, setDueDate] = useState<Date | null>(null);
-  const [priority, setPriority] = useState<Priority>("normal");
+  const [priority, setPriorityState] = useState<Priority>("normal");
   const [list, setList] = useState<string | null>(null);
   const [dateMatch, setDateMatch] = useState<DateMatch | null>(null);
   const [listMatch, setListMatch] = useState<DateMatch | null>(null);
   const [priorityMatch, setPriorityMatch] = useState<DateMatch | null>(null);
+  /**
+   * L'utilisateur a fixe la priorite lui-meme alors qu'un mot la portait.
+   *
+   * Le mot cesse alors d'etre l'attribut : il redevient un mot de la phrase.
+   * C'est ce qui permet de changer la priorite SANS reecrire le texte —
+   * remplacer « importante » par « plus tard » donnait « tres plus tarde »,
+   * une phrase qui ne veut plus rien dire. Un adjectif accorde n'est pas
+   * substituable, contrairement a une date ou a un « #projet ».
+   */
+  const [priorityDetached, setPriorityDetached] = useState(false);
   const [tagMatches, setTagMatches] = useState<DateMatch[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -75,9 +85,11 @@ export function useTaskMode(
 
     const detectedMatch = detectPriorityMatchFromText(value);
     setPriorityMatch(detectedMatch?.match ?? null);
+    // Plus aucun mot de priorite dans le texte : il n'y a plus rien a detacher.
+    if (!detectedMatch) setPriorityDetached(false);
     const detected = detectedMatch?.priority ?? "normal";
     if (detected !== lastDetectedPriority.current) {
-      setPriority(detected);
+      setPriorityState(detected);
       lastDetectedPriority.current = detected;
     }
 
@@ -108,14 +120,21 @@ export function useTaskMode(
     }
   };
 
+  /** Choix manuel : la priorite quitte le texte et devient un attribut a part. */
+  const setPriority = (next: Priority) => {
+    setPriorityState(next);
+    setPriorityDetached(true);
+  };
+
   const resetMeta = () => {
     setDueDate(null);
     setDateMatch(null);
-    setPriority("normal");
+    setPriorityState("normal");
     lastDetectedPriority.current = "normal";
     setList(null);
     setListMatch(null);
     setPriorityMatch(null);
+    setPriorityDetached(false);
     setTagMatches([]);
     lastDetectedList.current = null;
   };
@@ -186,6 +205,7 @@ export function useTaskMode(
     dateMatch,
     listMatch,
     priorityMatch,
+    priorityDetached,
     tagMatches,
     isSubmitting,
     hasGlow,

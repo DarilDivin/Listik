@@ -48,7 +48,19 @@ interface Range {
  * Priorité en cas de chevauchement : le premier commencé gagne, comme dans le
  * surlignage historique. Un fragment ne peut donc jamais être coupé en deux.
  */
-export function tokenizeCapture(text: string): Segment[] {
+export interface TokenizeOptions {
+  /**
+   * Ne pas reconnaitre le mot de priorite. Sert quand l'utilisateur a fixe la
+   * priorite a la main : le mot redevient alors un mot de la phrase, et non
+   * plus l'attribut. Voir `CaptureField`.
+   */
+  skipPriority?: boolean;
+}
+
+export function tokenizeCapture(
+  text: string,
+  options: TokenizeOptions = {},
+): Segment[] {
   if (!text) return [];
 
   const ranges: Range[] = [];
@@ -78,7 +90,9 @@ export function tokenizeCapture(text: string): Segment[] {
   for (const tag of detectTagMatchesFromText(head)) push("tag", tag.match);
   // La priorité passe APRÈS les tags : « @urgent » commence avant le « urgent »
   // qu'il contient, il gagne donc le chevauchement — le tag reste un tag.
-  push("priority", detectPriorityMatchFromText(head)?.match);
+  if (!options.skipPriority) {
+    push("priority", detectPriorityMatchFromText(head)?.match);
+  }
 
   ranges.sort((a, b) => a.start - b.start || b.end - a.end);
 

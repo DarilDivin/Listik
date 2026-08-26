@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import { LexicalComposer } from "@lexical/react/LexicalComposer";
 import { PlainTextPlugin } from "@lexical/react/LexicalPlainTextPlugin";
 import { ContentEditable } from "@lexical/react/LexicalContentEditable";
@@ -16,7 +16,11 @@ import {
   type ElementNode,
   type LexicalEditor,
 } from "lexical";
-import { tokenizeCapture, type TokenKind } from "@/features/omnibar/tokenize";
+import {
+  tokenizeCapture,
+  type TokenizeOptions,
+  type TokenKind,
+} from "@/features/omnibar/tokenize";
 import { $createTokenNode, $isTokenNode, TokenNode } from "./TokenNode";
 import { cn } from "@/lib/utils";
 
@@ -61,7 +65,11 @@ function $restoreCaret(paragraph: ElementNode, offset: number): void {
  * neufs, leurs animations d'apparition se rejoueraient sans fin (le halo de
  * la note clignoterait à chaque lettre tapée ailleurs).
  */
-function $writeSegments(text: string, keepCaret: boolean): void {
+function $writeSegments(
+  text: string,
+  keepCaret: boolean,
+  options: TokenizeOptions,
+): void {
   const root = $getRoot();
   const caret = keepCaret ? $readCaret() : null;
 
@@ -75,7 +83,7 @@ function $writeSegments(text: string, keepCaret: boolean): void {
     root.append(paragraph);
   }
 
-  const expected = tokenizeCapture(text);
+  const expected = tokenizeCapture(text, options);
   const children = paragraph.getChildren();
 
   expected.forEach((segment, i) => {
@@ -100,8 +108,8 @@ function $writeSegments(text: string, keepCaret: boolean): void {
 
 /** La ligne porte-t-elle déjà exactement ces segments ? Sans cette comparaison,
  *  chaque reconstruction en déclencherait une autre, indéfiniment. */
-function $matchesSegments(text: string): boolean {
-  const expected = tokenizeCapture(text);
+function $matchesSegments(text: string, options: TokenizeOptions): boolean {
+  const expected = tokenizeCapture(text, options);
   const first = $getRoot().getFirstChild();
   const children = $isElementNode(first) ? first.getChildren() : [];
   if (children.length !== expected.length) return false;
@@ -119,9 +127,11 @@ function $matchesSegments(text: string): boolean {
 function SyncPlugin({
   value,
   onChange,
+  options,
 }: {
   value: string;
   onChange: (value: string) => void;
+  options: TokenizeOptions;
 }) {
   const [editor] = useLexicalComposerContext();
   // Dernier texte que NOUS avons annoncé : sert à distinguer « le parent a
@@ -134,9 +144,21 @@ function SyncPlugin({
     emitted.current = value;
     editor.update(() => {
       if ($getRoot().getTextContent() === value) return;
-      $writeSegments(value, false);
+      $writeSegments(value, false, options);
     });
-  }, [value, editor]);
+  }, [value, editor, options]);
+
+  // Les OPTIONS ont changé (la priorité vient d'être détachée, par exemple) :
+  // la ligne doit être re-découpée alors même que le texte n'a pas bougé.
+  // Sans cet effet, rien ne le déclencherait — l'écouteur ci-dessous ne réagit
+  // qu'aux modifications de l'éditeur, et le mot resterait surligné après
+  // avoir cessé d'être l'attribut.
+  useEffect(() => {
+    editor.update(() => {
+      const text = $getRoot().getTextContent();
+      if (!$matchesSegments(text, options)) $writeSegments(text, true, options);
+    });
+  }, [editor, options]);
 
   // Éditeur → parent, puis re-tokenisation de la ligne.
   useEffect(
@@ -150,10 +172,10 @@ function SyncPlugin({
         // Jamais au milieu d'une saisie IME : reconstruire les nœuds
         // interromprait la composition en cours.
         if (editor.isComposing()) return;
-        const stale = editorState.read(() => !$matchesSegments(text));
-        if (stale) editor.update(() => $writeSegments(text, true));
+        const stale = editorState.read(() => !$matchesSegments(text, options));
+        if (stale) editor.update(() => $writeSegments(text, true, options));
       }),
-    [editor, onChange],
+    [editor, onChange, options],
   );
 
   return null;
@@ -260,6 +282,9 @@ interface CaptureFieldProps {
   onKeyDown?: (e: React.KeyboardEvent<HTMLElement>) => void;
   /** Clic sur un fragment reconnu : l'hôte ouvre le sélecteur correspondant. */
   onTokenClick?: (info: TokenClick) => void;
+  /** Ne plus reconnaître le mot de priorité : l'utilisateur l'a fixée à la
+   *  main, le mot est redevenu un mot de la phrase. */
+  skipPriorityToken?: boolean;
 }
 
 /**
@@ -286,7 +311,13 @@ export function CaptureField({
   dimmed,
   onKeyDown,
   onTokenClick,
+  skipPriorityToken,
 }: CaptureFieldProps) {
+  // Objet stable : il sert de dépendance aux effets de synchronisation.
+  const tokenizeOptions = useMemo<TokenizeOptions>(
+    () => ({ skipPriority: skipPriorityToken }),
+    [skipPriorityToken],
+  );
   return (
     <div className="relative w-full">
       <LexicalComposer
@@ -300,7 +331,7 @@ export function CaptureField({
             console.error("Éditeur de capture :", error);
           },
           editorState: (editor: LexicalEditor) =>
-            editor.update(() => $writeSegments(value, false)),
+            editor.update(() => $writeSegments(value, false, { skipPriority: skipPriorityToken })),
         }}
       >
         <PlainTextPlugin
@@ -325,7 +356,7 @@ export function CaptureField({
           }
           ErrorBoundary={LexicalErrorBoundary}
         />
-        <SyncPlugin value={value} onChange={onChange} />
+        <SyncPlugin value={value} onChange={onChange} options={tokenizeOptions} />
         <TokenClickPlugin onTokenClick={onTokenClick} />
         <KeysPlugin onEnter={onEnter} onKeyDown={onKeyDown} />
         <AutoFocusPlugin enabled={autoFocus} />
