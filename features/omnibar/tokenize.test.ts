@@ -88,3 +88,28 @@ describe("tokenizeCapture", () => {
     }
   });
 });
+
+describe("tokenizeCapture — répétitions", () => {
+  it("isole la répétition entière", () => {
+    expect(shape("Sortir les poubelles chaque lundi")).toEqual([
+      "plain:Sortir les poubelles ",
+      "recurrence:chaque lundi",
+    ]);
+  });
+
+  it("l'emporte sur la date qu'elle contient", () => {
+    // chrono capture « lundi » à l'intérieur de « chaque lundi » : c'est la
+    // répétition qui doit se lire, pas une date isolée.
+    const kinds = tokenizeCapture("Sortir les poubelles chaque lundi").map(
+      (s) => s.kind,
+    );
+    expect(kinds).not.toContain("date");
+  });
+
+  it("laisse une date seule être une date", () => {
+    expect(shape("Sortir les poubelles lundi")).toEqual([
+      "plain:Sortir les poubelles ",
+      "date:lundi",
+    ]);
+  });
+});

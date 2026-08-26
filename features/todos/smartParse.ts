@@ -4,6 +4,7 @@ import * as chrono from "chrono-node";
 import { format } from "date-fns";
 import { fr } from "date-fns/locale";
 import type { Priority } from "./types";
+import type { Recurrence } from "./generated/Recurrence";
 
 export interface DateMatch {
   index: number;
@@ -157,6 +158,63 @@ export function stripDateFromText(text: string, match: DateMatch | null): string
     .replace(/\s{2,}/g, " ")
     // Retirer la date laisse la ponctuation finale detachee (« la vaisselle . ») :
     // on la recolle. Pas avant « ! » ni « ? », qui prennent une espace en francais.
+    .replace(/\s+([.,])/g, "$1")
+    .trim();
+}
+
+/**
+ * Repetitions ecrites en clair, DANS L'ORDRE : la premiere reconnue gagne.
+ *
+ * L'ordre n'est pas cosmetique — « chaque jour ouvre » doit passer AVANT
+ * « chaque jour », sans quoi on ne verrait que le quotidien et « ouvre »
+ * resterait orphelin dans le titre.
+ *
+ * Le modele ne retient PAS le jour choisi : « chaque lundi » vaut
+ * « hebdomadaire », et c'est la date de la tache (le prochain lundi, posee par
+ * chrono) qui fixe le jour de retour. « chaque lundi et jeudi » est donc hors
+ * de portee sans changer le schema.
+ */
+const RECURRENCE_PATTERNS: { pattern: RegExp; recurrence: Recurrence }[] = [
+  // Borne finale en `(?!\p{L})` et non `\b` : en JavaScript, `\b` ne fait pas
+  // frontiere apres une lettre accentuee — « ouvré » en fin de chaine n'etait
+  // donc jamais reconnu, et l'expression retombait sur « quotidien ».
+  {
+    pattern: /\b(?:chaque|tous les|toutes les)\s+jours?\s+ouvr[eé]e?s?(?!\p{L})/iu,
+    recurrence: "weekdays",
+  },
+  { pattern: /\ben\s+semaine\b/i, recurrence: "weekdays" },
+  { pattern: /\b(?:chaque|tous les|toutes les)\s+jours?\b/i, recurrence: "daily" },
+  { pattern: /\bquotidiennes?\b|\bquotidiens?\b/i, recurrence: "daily" },
+  { pattern: /\b(?:chaque|tous les|toutes les)\s+semaines?\b/i, recurrence: "weekly" },
+  { pattern: /\b(?:chaque|tous les|toutes les)\s+(?:lundis?|mardis?|mercredis?|jeudis?|vendredis?|samedis?|dimanches?)\b/i, recurrence: "weekly" },
+  { pattern: /\bhebdomadaires?\b/i, recurrence: "weekly" },
+  { pattern: /\b(?:chaque|tous les|toutes les)\s+mois\b/i, recurrence: "monthly" },
+  { pattern: /\bmensuels?\b|\bmensuelles?\b/i, recurrence: "monthly" },
+];
+
+/**
+ * Repetition demandee dans le texte, AVEC sa position — de quoi la surligner,
+ * la rendre cliquable et la retirer du titre, comme la date ou le projet.
+ */
+export function detectRecurrenceMatchFromText(
+  text: string,
+): { recurrence: Recurrence; match: DateMatch } | null {
+  const head = text.split("//")[0];
+  for (const { pattern, recurrence } of RECURRENCE_PATTERNS) {
+    const found = pattern.exec(head);
+    if (found) return { recurrence, match: { index: found.index, text: found[0] } };
+  }
+  return null;
+}
+
+/** Retire la repetition du titre : c'est un attribut, pas un mot de la tache. */
+export function stripRecurrenceFromText(
+  text: string,
+  match: DateMatch | null,
+): string {
+  if (!match) return text;
+  return (text.slice(0, match.index) + text.slice(match.index + match.text.length))
+    .replace(/\s{2,}/g, " ")
     .replace(/\s+([.,])/g, "$1")
     .trim();
 }

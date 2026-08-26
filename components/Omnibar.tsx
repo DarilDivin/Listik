@@ -607,6 +607,43 @@ export default function Omnibar({
               }}
             />
           )}
+          {tokenEdit?.kind === "recurrence" && (
+            <div className="flex w-48 flex-col gap-px p-1">
+              {(
+                [
+                  { value: "daily", label: "Chaque jour", mot: "chaque jour" },
+                  { value: "weekdays", label: "En semaine", mot: "en semaine" },
+                  { value: "weekly", label: "Chaque semaine", mot: "chaque semaine" },
+                  { value: "monthly", label: "Chaque mois", mot: "chaque mois" },
+                  { value: "none", label: "Ne pas répéter", mot: "" },
+                ] as const
+              ).map((option) => (
+                <button
+                  key={option.value}
+                  type="button"
+                  onMouseDown={(e) => e.preventDefault()}
+                  onClick={() => {
+                    // Ici on REECRIT le texte, contrairement a la priorite :
+                    // « chaque lundi » est un complement circonstanciel, pas un
+                    // adjectif accorde — le remplacer par « chaque mois » laisse
+                    // la phrase debout.
+                    if (task.recurrenceMatch) {
+                      rewriteToken(task.recurrenceMatch, option.mot);
+                    }
+                    setTokenEdit(null);
+                    focusField();
+                  }}
+                  className={cn(
+                    "rounded-md px-2 py-1.5 text-left text-sm transition-colors hover:bg-accent",
+                    task.recurrence === option.value && "text-brand",
+                  )}
+                >
+                  {option.label}
+                </button>
+              ))}
+            </div>
+          )}
+
           {tokenEdit?.kind === "priority" && (
             <div className="flex w-44 flex-col gap-px p-1">
               {(

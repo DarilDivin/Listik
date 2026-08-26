@@ -82,6 +82,11 @@ export const usePlannerTodos = () => {
       // une échéance. Celle-ci ne se pose que dans le panneau de détail.
       scheduled_for: dueDate,
       due_date: null,
+      // Répétition écrite en clair (« chaque lundi ») : le modèle ne retient
+      // pas le jour, c'est `scheduled_for` qui le fixe.
+      ...(taskData.recurrence && taskData.recurrence !== "none"
+        ? { recurrence: taskData.recurrence }
+        : {}),
       ...(dueDate ? {} : options?.whenUndated),
       ...options?.container,
       // Un `#projet` explicitement tapé prime sur le conteneur ouvert (et exclut

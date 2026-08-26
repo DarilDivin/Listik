@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import type { Priority } from "./types";
+import type { Recurrence } from "./generated/Recurrence";
 import {
   type DateMatch,
   detectListFromText,
@@ -7,6 +8,8 @@ import {
   detectTagsFromText,
   detectPriorityFromText,
   detectPriorityMatchFromText,
+  detectRecurrenceMatchFromText,
+  stripRecurrenceFromText,
   formatDateToNaturalText,
   parseTaskDate,
   replaceDateInText,
@@ -25,6 +28,8 @@ export interface SmartTaskData {
   list?: string | null;
   /** Tags écrits `@nom` (résolus en ids par l'appelant). */
   tags?: string[];
+  /** Répétition écrite en clair (« chaque lundi »). */
+  recurrence?: Recurrence;
   /** Saisie brute, telle que tapée — la correction IA travaille dessus. */
   rawText?: string;
   /** `false` si l'utilisateur a choisi la priorité à la main : l'IA ne doit
@@ -53,6 +58,8 @@ export function useTaskMode(
   const [dateMatch, setDateMatch] = useState<DateMatch | null>(null);
   const [listMatch, setListMatch] = useState<DateMatch | null>(null);
   const [priorityMatch, setPriorityMatch] = useState<DateMatch | null>(null);
+  const [recurrence, setRecurrenceState] = useState<Recurrence>("none");
+  const [recurrenceMatch, setRecurrenceMatch] = useState<DateMatch | null>(null);
   /**
    * L'utilisateur a fixe la priorite lui-meme alors qu'un mot la portait.
    *
@@ -92,6 +99,10 @@ export function useTaskMode(
       setPriorityState(detected);
       lastDetectedPriority.current = detected;
     }
+
+    const detectedRecurrence = detectRecurrenceMatchFromText(value);
+    setRecurrenceState(detectedRecurrence?.recurrence ?? "none");
+    setRecurrenceMatch(detectedRecurrence?.match ?? null);
 
     setTagMatches(detectTagMatchesFromText(value).map((t) => t.match));
 
@@ -135,6 +146,8 @@ export function useTaskMode(
     setListMatch(null);
     setPriorityMatch(null);
     setPriorityDetached(false);
+    setRecurrenceState("none");
+    setRecurrenceMatch(null);
     setTagMatches([]);
     lastDetectedList.current = null;
   };
@@ -148,17 +161,23 @@ export function useTaskMode(
       // Retire du titre les marqueurs `#projet` et `@tag` : ce sont des
       // attributs, pas des mots de la tâche.
       const withoutMarkers = stripTagsFromText(stripListFromText(mainText));
+      // La répétition part avec son fragment entier (« chaque lundi »), AVANT
+      // la date : elle l'englobe, et l'attribut la porte désormais.
+      const withoutRecurrence = stripRecurrenceFromText(
+        withoutMarkers,
+        detectRecurrenceMatchFromText(withoutMarkers)?.match ?? null,
+      );
       // La date en est un aussi : « Réviser le CV demain » serait faux dès le
       // lendemain. On la re-détecte SUR LE TEXTE COURANT plutôt que de
       // réutiliser `dateMatch` — ses index portent sur `value`, que les deux
       // retraits précédents ont déjà décalé.
       const stripped = stripDateFromText(
-        withoutMarkers,
-        parseTaskDate(withoutMarkers)?.match ?? null,
+        withoutRecurrence,
+        parseTaskDate(withoutRecurrence)?.match ?? null,
       );
       // Une saisie qui n'est QUE une date (« demain ») donnerait un titre
       // vide : on garde alors le texte tel quel plutôt qu'une tâche sans nom.
-      const text = stripped || withoutMarkers;
+      const text = stripped || withoutRecurrence || withoutMarkers;
       const tags = detectTagsFromText(mainText);
       // Canonise vers une liste existante (à la casse près) pour éviter les doublons.
       const canonicalList = list
@@ -177,6 +196,7 @@ export function useTaskMode(
         priority,
         list: canonicalList,
         tags,
+        recurrence,
         rawText: value,
         aiPriorityAllowed: priority === lastDetectedPriority.current,
       });
@@ -206,6 +226,8 @@ export function useTaskMode(
     listMatch,
     priorityMatch,
     priorityDetached,
+    recurrence,
+    recurrenceMatch,
     tagMatches,
     isSubmitting,
     hasGlow,

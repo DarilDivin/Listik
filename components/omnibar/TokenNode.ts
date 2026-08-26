@@ -19,6 +19,7 @@ const TOKEN_CLASS: Record<TokenKind, string> = {
   project: "text-violet-500",
   tag: "text-emerald-500",
   priority: "text-rose-500",
+  recurrence: "text-cyan-600 dark:text-cyan-400",
   note: NOTE_COLOR,
   // MÊME couleur que le corps de la note : le marqueur s'en distingue par son
   // halo, pas par sa teinte. Les avoir peints de deux jaunes différents ne

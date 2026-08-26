@@ -8,6 +8,7 @@
 import {
   detectListFromText,
   detectPriorityMatchFromText,
+  detectRecurrenceMatchFromText,
   detectTagMatchesFromText,
   parseTaskDate,
   type DateMatch,
@@ -22,6 +23,7 @@ export type TokenKind =
   | "project"
   | "tag"
   | "priority"
+  | "recurrence"
   | "note"
   | "noteMarker";
 
@@ -85,6 +87,10 @@ export function tokenizeCapture(
     });
   };
 
+  // AVANT la date : « chaque lundi » englobe le « lundi » que chrono capture.
+  // Comme le premier commence en premier, il gagne le chevauchement — on lit
+  // « repetition hebdomadaire », pas « une date isolee ».
+  push("recurrence", detectRecurrenceMatchFromText(head)?.match);
   push("date", parseTaskDate(head)?.match);
   push("project", detectListFromText(head)?.match);
   for (const tag of detectTagMatchesFromText(head)) push("tag", tag.match);

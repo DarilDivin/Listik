@@ -455,7 +455,8 @@
    justement ce qui rend le signe informatif plutôt que décoratif. */
 [data-token="date"],
 [data-token="project"],
-[data-token="priority"] {
+[data-token="priority"],
+[data-token="recurrence"] {
   cursor: pointer;
   border-radius: var(--radius-sm);
   padding-inline: 0.18em;
@@ -468,7 +469,8 @@
 
 [data-token="date"]:hover,
 [data-token="project"]:hover,
-[data-token="priority"]:hover {
+[data-token="priority"]:hover,
+[data-token="recurrence"]:hover {
   background-color: color-mix(in oklch, currentColor 24%, transparent);
 }
 

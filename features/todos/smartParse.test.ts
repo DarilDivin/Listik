@@ -6,6 +6,8 @@ import {
   stripDateFromText,
   detectPriorityFromText,
   detectPriorityMatchFromText,
+  detectRecurrenceMatchFromText,
+  stripRecurrenceFromText,
   detectTagsFromText,
   formatDateToNaturalText,
   splitNote,
@@ -215,5 +217,54 @@ describe("expandDateMatchLeft", () => {
     const texte = "Acheter le pain demain";
     const match = { index: texte.indexOf("demain"), text: "demain" };
     expect(expandDateMatchLeft(texte, match)).toEqual(match);
+  });
+});
+
+describe("detectRecurrenceMatchFromText", () => {
+  const kind = (t: string) => detectRecurrenceMatchFromText(t)?.recurrence ?? null;
+  const frag = (t: string) => detectRecurrenceMatchFromText(t)?.match.text ?? null;
+
+  it("reconnaît les quatre rythmes", () => {
+    expect(kind("Sortir les poubelles chaque lundi")).toBe("weekly");
+    expect(kind("Faire le ménage tous les mardis")).toBe("weekly");
+    expect(kind("Arroser les plantes chaque semaine")).toBe("weekly");
+    expect(kind("Vider la boîte chaque jour")).toBe("daily");
+    expect(kind("Relever les mails en semaine")).toBe("weekdays");
+    expect(kind("Payer le loyer chaque mois")).toBe("monthly");
+  });
+
+  it("préfère les jours ouvrés au quotidien", () => {
+    // « chaque jour ouvré » contient « chaque jour » : sans l'ordre, on lirait
+    // « quotidien » et « ouvré » resterait orphelin dans le titre.
+    expect(kind("Relever les mails chaque jour ouvré")).toBe("weekdays");
+    expect(frag("Relever les mails chaque jour ouvré")).toBe("chaque jour ouvré");
+  });
+
+  it("capture le fragment entier, pas seulement le rythme", () => {
+    expect(frag("Sortir les poubelles chaque lundi")).toBe("chaque lundi");
+    expect(frag("Faire le ménage tous les mardis")).toBe("tous les mardis");
+  });
+
+  it("ignore ce qui suit la note", () => {
+    expect(kind("Appeler Jean // à faire chaque lundi")).toBeNull();
+  });
+
+  it("ne voit pas de répétition là où il n'y en a pas", () => {
+    expect(kind("Sortir les poubelles lundi")).toBeNull();
+    expect(kind("acheter du pain")).toBeNull();
+  });
+});
+
+describe("stripRecurrenceFromText", () => {
+  const strip = (t: string) =>
+    stripRecurrenceFromText(t, detectRecurrenceMatchFromText(t)?.match ?? null);
+
+  it("retire la répétition du titre", () => {
+    expect(strip("Sortir les poubelles chaque lundi")).toBe("Sortir les poubelles");
+    expect(strip("Payer le loyer chaque mois")).toBe("Payer le loyer");
+  });
+
+  it("laisse le texte intact sans répétition", () => {
+    expect(strip("Sortir les poubelles lundi")).toBe("Sortir les poubelles lundi");
   });
 });
