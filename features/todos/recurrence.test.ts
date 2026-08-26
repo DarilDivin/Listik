@@ -5,6 +5,8 @@ import {
   projectFutureOccurrences,
   buildGhostOccurrences,
   parseWeekdays,
+  serializeWeekdays,
+  toggleWeekday,
   type RecurrenceFields,
 } from "./recurrence";
 import type { Recurrence, Todo } from "./types";
@@ -382,5 +384,35 @@ describe("recurrenceLabel — ensembles de jours", () => {
         recur_mode: "fixed",
       }),
     ).toBe("Lundi, jeudi");
+  });
+});
+
+// Saisie de l'ensemble dans le panneau de détail (étape 4). La règle elle-même
+// est déjà couverte plus haut ; ici on ne teste que la bascule.
+describe("toggleWeekday", () => {
+  it("ajoute un jour en respectant l'ordre de la semaine", () => {
+    // Cliqué en dernier, jeudi doit malgré tout se ranger avant vendredi.
+    expect(toggleWeekday(["mon", "fri"], "thu")).toEqual(["mon", "thu", "fri"]);
+  });
+
+  it("retire un jour déjà coché", () => {
+    expect(toggleWeekday(["mon", "thu"], "mon")).toEqual(["thu"]);
+  });
+
+  it("laisse retirer le dernier jour", () => {
+    // Un ensemble vide n'est pas une erreur : c'est le retour à
+    // l'hebdomadaire simple (sémantique NULL de la migration 0015).
+    expect(toggleWeekday(["mon"], "mon")).toEqual([]);
+  });
+
+  it("écrit null quand l'ensemble se vide, jamais une chaîne vide", () => {
+    // La chaîne vide est un repli défensif côté Rust, pas le contrat : c'est
+    // `null` qui retire la colonne, comme pour tout champ annulable.
+    expect(serializeWeekdays([])).toBeNull();
+    expect(serializeWeekdays(["mon", "thu"])).toBe("mon,thu");
+  });
+
+  it("fait l'aller-retour avec parseWeekdays", () => {
+    expect(parseWeekdays(serializeWeekdays(["thu", "mon"]))).toEqual(["mon", "thu"]);
   });
 });

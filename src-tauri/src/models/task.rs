@@ -430,10 +430,10 @@ pub struct UpdateTodo {
     pub recur_interval: Option<i64>,
     #[serde(default, deserialize_with = "double_option")]
     pub recur_weekday: Option<Option<RecurWeekday>>,
-    /// Ensemble de jours d'un hebdomadaire (« mon,thu »). Chaîne vide = on
-    /// retire l'ensemble.
-    #[serde(default)]
-    pub recur_weekdays: Option<String>,
+    /// Ensemble de jours d'un hebdomadaire (« mon,thu »). `null` retire
+    /// l'ensemble, comme pour tous les autres champs annulables.
+    #[serde(default, deserialize_with = "double_option")]
+    pub recur_weekdays: Option<Option<String>>,
     #[serde(default, deserialize_with = "double_option")]
     pub recur_setpos: Option<Option<i64>>,
     #[serde(default)]

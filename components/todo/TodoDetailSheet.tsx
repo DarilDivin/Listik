@@ -32,7 +32,12 @@ import {
 } from "@/components/ui/sheet";
 import { Switch } from "@/components/ui/switch";
 import { Input } from "@/components/ui/input";
-import { RECURRENCE_OPTIONS } from "@/features/todos/recurrence";
+import {
+  RECURRENCE_OPTIONS,
+  parseWeekdays,
+  serializeWeekdays,
+  toggleWeekday,
+} from "@/features/todos/recurrence";
 import { priorityRingColor } from "@/features/todos/priority";
 import type {
   Priority,
@@ -43,14 +48,17 @@ import type {
   UpdateTodoInput,
 } from "@/features/todos/types";
 
-const WEEKDAY_OPTIONS: { value: RecurWeekday; label: string }[] = [
-  { value: "mon", label: "lundi" },
-  { value: "tue", label: "mardi" },
-  { value: "wed", label: "mercredi" },
-  { value: "thu", label: "jeudi" },
-  { value: "fri", label: "vendredi" },
-  { value: "sat", label: "samedi" },
-  { value: "sun", label: "dimanche" },
+// `short` reprend l'abréviation du calendrier (`cccccc` en fr) : un jour porte
+// le même nom partout dans l'app. On évite « L M M J V S D », où mardi et
+// mercredi se confondent.
+const WEEKDAY_OPTIONS: { value: RecurWeekday; label: string; short: string }[] = [
+  { value: "mon", label: "lundi", short: "lu" },
+  { value: "tue", label: "mardi", short: "ma" },
+  { value: "wed", label: "mercredi", short: "me" },
+  { value: "thu", label: "jeudi", short: "je" },
+  { value: "fri", label: "vendredi", short: "ve" },
+  { value: "sat", label: "samedi", short: "sa" },
+  { value: "sun", label: "dimanche", short: "di" },
 ];
 
 const PRIORITIES: { value: Priority; label: string }[] = [
@@ -101,6 +109,52 @@ function DetailRow({ icon, label, children, active = false }: DetailRowProps) {
       </motion.span>
       <span className="flex-1 text-[0.9375rem] text-foreground">{label}</span>
       <div className="shrink-0">{children}</div>
+    </div>
+  );
+}
+
+/**
+ * Ensemble de jours d'un hebdomadaire (« lundi et jeudi »), en sept pastilles
+ * plutôt qu'une liste à cocher : la semaine se lit d'un coup d'œil, et la
+ * sélection garde l'ordre de la semaine — celui que `parse_list` attend.
+ *
+ * Tout déselectionner ramène à l'hebdomadaire simple, ancré sur la date de la
+ * tâche : c'est la sémantique NULL de la migration 0015, pas un cas d'erreur.
+ * On ne bloque donc pas le retrait du dernier jour.
+ */
+function WeekdayPicker({
+  value,
+  onChange,
+}: {
+  value: RecurWeekday[];
+  onChange: (days: RecurWeekday[]) => void;
+}) {
+  const selected = new Set(value);
+  return (
+    <div className="flex items-center gap-[3px]">
+      {WEEKDAY_OPTIONS.map((day) => {
+        const on = selected.has(day.value);
+        return (
+          <button
+            key={day.value}
+            type="button"
+            aria-pressed={on}
+            aria-label={day.label}
+            onClick={() => onChange(toggleWeekday(value, day.value))}
+            className={cn(
+              // Sélection PLEINE, comme un jour choisi dans le calendrier : le
+              // lavis `brand-soft` des pastilles de statut n'a pas assez de
+              // contraste pour un interrupteur, où l'on compare sept voisines.
+              "size-7 rounded-[8px] text-xs font-medium transition-colors duration-200",
+              on
+                ? "bg-brand text-brand-foreground"
+                : "bg-foreground/[0.06] text-muted-foreground hover:bg-foreground/[0.1]",
+            )}
+          >
+            {day.short}
+          </button>
+        );
+      })}
     </div>
   );
 }
@@ -157,6 +211,8 @@ export function TodoDetailSheet({
     const next = note.trim();
     if (next !== (todo.note ?? "")) onUpdate({ note: next || null });
   };
+
+  const weekdaySet = parseWeekdays(todo.recur_weekdays);
 
   const selectedDate = todo.scheduled_for ? parseLocalISODate(todo.scheduled_for) : null;
   // Planifiée (« quand je m'y mets ») et Échéance (« pour quand ») sont deux
@@ -399,13 +455,19 @@ export function TodoDetailSheet({
                       recurrence,
                       recur_interval: 1,
                       recur_weekday: null,
+                      recur_weekdays: null,
                       recur_setpos: null,
                       recur_mode: "fixed",
                     });
                   } else if (recurrence !== "monthly") {
-                    onUpdate({ recurrence, recur_weekday: null, recur_setpos: null });
+                    onUpdate({
+                      recurrence,
+                      recur_weekday: null,
+                      recur_weekdays: null,
+                      recur_setpos: null,
+                    });
                   } else {
-                    onUpdate({ recurrence });
+                    onUpdate({ recurrence, recur_weekdays: null });
                   }
                 }}
               >
@@ -422,10 +484,27 @@ export function TodoDetailSheet({
               </Select>
             </DetailRow>
 
+            {/* Ensemble de jours — hebdomadaire seulement. */}
+            {todo.recurrence === "weekly" && (
+              <DetailRow icon={<Repeat size={15} className="opacity-0" />} label="Les jours">
+                <WeekdayPicker
+                  value={weekdaySet}
+                  onChange={(days) =>
+                    onUpdate({ recur_weekdays: serializeWeekdays(days) })
+                  }
+                />
+              </DetailRow>
+            )}
+
             {/* Intervalle « toutes les N » — pas pour les jours ouvrés
-                (« un ouvré sur deux » ne veut rien dire). */}
+                (« un ouvré sur deux » ne veut rien dire), ni quand un ensemble
+                de jours est posé : la règle IGNORE alors l'intervalle (voir la
+                migration 0015), et laisser le réglage visible ferait mentir le
+                panneau. La valeur reste en base et reparaît si l'ensemble se
+                vide. */}
             {["daily", "weekly", "monthly"].includes(todo.recurrence) &&
-              todo.recur_setpos === null && (
+              todo.recur_setpos === null &&
+              weekdaySet.length === 0 && (
                 <DetailRow icon={<Repeat size={15} className="opacity-0" />} label="Intervalle">
                   <div className="flex items-center gap-2">
                     <span className="text-sm text-muted-foreground">

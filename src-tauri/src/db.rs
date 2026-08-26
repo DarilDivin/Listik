@@ -328,9 +328,10 @@ pub async fn update(pool: &SqlitePool, id: &str, input: UpdateTodo) -> Result<To
         sep.push("recur_weekday = ").push_bind_unseparated(weekday);
     }
     if let Some(weekdays) = input.recur_weekdays.clone() {
-        // Chaîne vide = « plus d'ensemble » : on écrit NULL plutôt que "",
-        // pour que `parse_list` n'ait qu'un seul cas d'absence à connaître.
-        let stored = if weekdays.trim().is_empty() { None } else { Some(weekdays) };
+        // Une chaîne vide vaut NULL : `parse_list` n'a ainsi qu'un seul cas
+        // d'absence à connaître. C'est un repli défensif, pas le contrat —
+        // pour retirer l'ensemble, on envoie `null` comme partout ailleurs.
+        let stored = weekdays.filter(|w| !w.trim().is_empty());
         sep.push("recur_weekdays = ").push_bind_unseparated(stored);
     }
     if let Some(setpos) = input.recur_setpos {
@@ -1654,6 +1655,60 @@ mod tests {
         .await
         .unwrap();
         assert_eq!(cleared.note, None);
+    }
+
+    #[tokio::test]
+    async fn update_can_clear_the_weekday_set() {
+        use crate::models::Recurrence;
+        let pool = memory_pool().await;
+        let mut input = new_todo("Sport");
+        input.recurrence = Some(Recurrence::Weekly);
+        input.recur_weekdays = Some("mon,thu".to_string());
+        let todo = create(&pool, input).await.unwrap();
+        assert_eq!(todo.recur_weekdays.as_deref(), Some("mon,thu"));
+
+        // Champ absent : l'ensemble survit à une mise à jour qui parle
+        // d'autre chose.
+        let untouched = update(
+            &pool,
+            &todo.id,
+            UpdateTodo { text: Some("Sport du soir".to_string()), ..Default::default() },
+        )
+        .await
+        .unwrap();
+        assert_eq!(untouched.recur_weekdays.as_deref(), Some("mon,thu"));
+
+        // `null` retire l'ensemble — même convention que les autres champs
+        // annulables, et non plus la chaîne vide.
+        let cleared = update(
+            &pool,
+            &todo.id,
+            UpdateTodo { recur_weekdays: Some(None), ..Default::default() },
+        )
+        .await
+        .unwrap();
+        assert_eq!(cleared.recur_weekdays, None);
+    }
+
+    #[tokio::test]
+    async fn update_folds_an_empty_weekday_set_to_null() {
+        use crate::models::Recurrence;
+        let pool = memory_pool().await;
+        let mut input = new_todo("Sport");
+        input.recurrence = Some(Recurrence::Weekly);
+        input.recur_weekdays = Some("mon,thu".to_string());
+        let todo = create(&pool, input).await.unwrap();
+
+        // Repli défensif : une chaîne vide ne doit pas atterrir en base, sinon
+        // `parse_list` aurait deux cas d'absence à connaître.
+        let cleared = update(
+            &pool,
+            &todo.id,
+            UpdateTodo { recur_weekdays: Some(Some(String::new())), ..Default::default() },
+        )
+        .await
+        .unwrap();
+        assert_eq!(cleared.recur_weekdays, None);
     }
 
     #[tokio::test]

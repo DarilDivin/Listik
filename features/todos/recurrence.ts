@@ -171,6 +171,28 @@ export function parseWeekdays(raw: string | null | undefined): RecurWeekday[] {
   return [...seen].sort((a, b) => WEEKDAY_INDEX[a] - WEEKDAY_INDEX[b]);
 }
 
+/**
+ * Ajoute ou retire un jour d'un ensemble, en gardant l'ORDRE DE LA SEMAINE —
+ * `parse_list` trie de son côté, mais la colonne reste lisible en base et le
+ * libellé énumère les jours dans l'ordre où on les lit.
+ *
+ * Le résultat peut être vide : c'est la sémantique NULL de la migration 0015
+ * (hebdomadaire simple, ancré sur la date de la tâche), pas une erreur.
+ */
+export function toggleWeekday(
+  days: RecurWeekday[],
+  day: RecurWeekday,
+): RecurWeekday[] {
+  const next = new Set(days);
+  if (!next.delete(day)) next.add(day);
+  return [...next].sort((a, b) => WEEKDAY_INDEX[a] - WEEKDAY_INDEX[b]);
+}
+
+/** Sérialise un ensemble pour la base : vide = `null`, pas chaîne vide. */
+export function serializeWeekdays(days: RecurWeekday[]): string | null {
+  return days.length > 0 ? days.join(",") : null;
+}
+
 /** Extrait la règle d'une tâche (mêmes champs que côté Rust). */
 export interface RecurrenceFields {
   recurrence: Recurrence;
