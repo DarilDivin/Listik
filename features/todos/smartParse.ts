@@ -115,6 +115,19 @@ export function expandDateMatchLeft(text: string, match: DateMatch): DateMatch {
   return { index: start, text: text.slice(start, match.index + match.text.length) };
 }
 
+/**
+ * Mots qui annoncent une REPETITION (« chaque lundi », « tous les mardis »).
+ *
+ * La recurrence n'est pas encore reconnue a la saisie : « chaque lundi » ne
+ * pose qu'une date, au prochain lundi. Retirer cette date du titre effacerait
+ * la seule trace de l'intention — « Sortir les poubelles chaque lundi »
+ * devenait « Sortir les poubelles chaque », puis « Sortir les poubelles » si
+ * l'on emportait aussi le mot de liaison. On prefere ne rien retirer : le
+ * titre garde ce que l'utilisateur a ecrit, et il voit que la repetition n'a
+ * pas ete comprise.
+ */
+const RECURRENCE_HINTS = new Set(["chaque", "tous", "toutes"]);
+
 /** Ce qui peut suivre la date sans qu'elle cesse de terminer la saisie : rien,
  *  des espaces, au plus une ponctuation finale. */
 const TRAILING_NOISE = /^\s*[.!?;:,]?\s*$/;
@@ -133,6 +146,11 @@ const TRAILING_NOISE = /^\s*[.!?;:,]?\s*$/;
 export function stripDateFromText(text: string, match: DateMatch | null): string {
   if (!match) return text;
   const full = expandDateMatchLeft(text, match);
+  // Une date annoncee par « chaque »/« tous » exprime une repetition, que
+  // l'application ne sait pas encore poser : on laisse le texte intact plutot
+  // que d'effacer l'intention.
+  const lead = /(\S+)\s*$/.exec(text.slice(0, full.index));
+  if (lead && RECURRENCE_HINTS.has(deaccent(lead[1].toLowerCase()))) return text;
   const after = text.slice(full.index + full.text.length);
   if (!TRAILING_NOISE.test(after)) return text;
   return (text.slice(0, full.index) + after)

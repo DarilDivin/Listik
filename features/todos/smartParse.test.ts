@@ -189,6 +189,15 @@ describe("stripDateFromText", () => {
     expect(strip("Faire la vaisselle demain.")).toBe("Faire la vaisselle.");
   });
 
+  it("ne touche pas a une date qui exprime une repetition", () => {
+    // « chaque lundi » n'est pas encore compris comme une recurrence : retirer
+    // la date effacerait la seule trace de l'intention.
+    expect(strip("Sortir les poubelles chaque lundi")).toBe(
+      "Sortir les poubelles chaque lundi",
+    );
+    expect(strip("Reunion tous les mardis")).toBe("Reunion tous les mardis");
+  });
+
   it("rend le texte tel quel sans date", () => {
     expect(stripDateFromText("Acheter du pain", null)).toBe("Acheter du pain");
   });
