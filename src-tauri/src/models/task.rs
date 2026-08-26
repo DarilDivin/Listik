@@ -462,6 +462,23 @@ pub struct UpdateTodo {
 mod tests {
     use super::*;
 
+    // Les tests de `db.rs` construisent `UpdateTodo` EN RUST : ils prouvent
+    // que le builder SQL sait écrire NULL, mais sautent serde — donc jamais
+    // `double_option`, seule chose que la structure déclare. Sans ce test,
+    // un attribut manquant laisserait tout au vert pendant que `null`
+    // n'arriverait plus jamais jusqu'au SQL.
+    #[test]
+    fn un_ensemble_de_jours_null_se_lit_comme_un_retrait() {
+        let absent: UpdateTodo = serde_json::from_str("{}").unwrap();
+        assert!(absent.recur_weekdays.is_none(), "champ absent = on ne touche à rien");
+
+        let cleared: UpdateTodo = serde_json::from_str(r#"{"recur_weekdays":null}"#).unwrap();
+        assert_eq!(cleared.recur_weekdays, Some(None), "null = on vide la colonne");
+
+        let set: UpdateTodo = serde_json::from_str(r#"{"recur_weekdays":"mon,thu"}"#).unwrap();
+        assert_eq!(set.recur_weekdays, Some(Some("mon,thu".to_string())));
+    }
+
     #[test]
     fn toggled_swaps_pending_and_completed() {
         assert!(matches!(TodoStatus::Pending.toggled(), TodoStatus::Completed));
