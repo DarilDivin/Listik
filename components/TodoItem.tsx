@@ -19,9 +19,9 @@ import type { Priority, Todo, UpdateTodoInput } from "@/features/todos/types";
 import { todayLocalISODate, toLocalISODate } from "@/lib/date";
 import { TodoCheckbox } from "@/components/todo/TodoCheckbox";
 import { TodoMetaLine } from "@/components/todo/TodoMetaLine";
-import { TodoDetailSheet } from "@/components/todo/TodoDetailSheet";
 import { useSelection } from "@/features/todos/selection-context";
 import { useDuplicateTodo } from "@/features/todos/duplicate-context";
+import { useOpenTodoDetail } from "@/features/todos/detail-context";
 import {
   ContextMenu,
   ContextMenuContent,
@@ -78,7 +78,7 @@ export function TodoItem({
   const duplicateTodo = useDuplicateTodo();
 
   const [hovered, setHovered] = useState(false);
-  const [detailOpen, setDetailOpen] = useState(false);
+  const openTaskDetail = useOpenTodoDetail();
 
   // Planifier ≠ échéance depuis la Phase I : on n'écrit QUE la date planifiée.
   const reschedule = (date: string) => onUpdate?.({ scheduled_for: date });
@@ -89,7 +89,9 @@ export function TodoItem({
     return toLocalISODate(t);
   };
 
-  const openDetail = () => editable && setDetailOpen(true);
+  // Le panneau est rendu par la PAGE, pas par la ligne : celle-ci est démontée
+  // dès qu'une modification change son regroupement (voir `detail-context`).
+  const openDetail = () => editable && openTaskDetail?.(todo.id);
 
   // Clic modifié (Ctrl/Cmd, Maj) = sélectionner ; clic simple = ouvrir le
   // détail (et congédier une sélection en cours). La sélection prime toujours
@@ -295,16 +297,6 @@ export function TodoItem({
           </ContextMenuItem>
         </ContextMenuContent>
       </ContextMenu>
-
-      {editable && onUpdate && (
-        <TodoDetailSheet
-          open={detailOpen}
-          onOpenChange={setDetailOpen}
-          todo={todo}
-          onUpdate={onUpdate}
-          onDelete={onDelete}
-        />
-      )}
     </>
   );
 }

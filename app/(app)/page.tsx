@@ -12,6 +12,7 @@ import { useProjects } from "@/hooks/useProjects";
 import { useTags } from "@/hooks/useTags";
 import { TagFilterProvider } from "@/features/tags/tag-filter";
 import { DuplicateTodoProvider } from "@/features/todos/duplicate-context";
+import { TodoDetailProvider } from "@/features/todos/detail-context";
 import { useJournalMutations } from "@/features/journal/useJournalMutations";
 import { CaptureRow, type CaptureRowHandle } from "@/components/todo/CaptureRow";
 import { EmptyState } from "@/components/todo/EmptyState";
@@ -547,7 +548,9 @@ function PlannerPageContent() {
   const requestedArea = searchParams.get("area");
   const requestedTag = searchParams.get("tag");
   const requestedTask = searchParams.get("task");
-  const [deepLinkedTaskId, setDeepLinkedTaskId] = useState<string | null>(null);
+  // Tâche dont le panneau de détail est ouvert. Deux sources : le clic sur une
+  // ligne (via `TodoDetailProvider`) et le deep-link `?task=` ci-dessous.
+  const [detailTaskId, setDetailTaskId] = useState<string | null>(null);
 
   useEffect(() => {
     if (!requestedProject && !requestedArea && !requestedTag && !requestedTask) return;
@@ -565,14 +568,14 @@ function PlannerPageContent() {
       if (t) {
         if (t.project_id) changeSelection({ kind: "project", id: t.project_id });
         else if (t.area_id) changeSelection({ kind: "area", id: t.area_id });
-        setDeepLinkedTaskId(t.id);
+        setDetailTaskId(t.id);
       }
     }
     router.replace("/", { scroll: false });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [requestedProject, requestedArea, requestedTag, requestedTask, loading, todos]);
 
-  const deepLinkedTodo = todos.find((t) => t.id === deepLinkedTaskId) ?? null;
+  const detailTodo = todos.find((t) => t.id === detailTaskId) ?? null;
 
   // Échap referme la vue portail.
   useEffect(() => {
@@ -714,6 +717,7 @@ function PlannerPageContent() {
     <TagFilterProvider onFilterTag={setTagFilter}>
     <SelectionProvider value={multiSelect}>
     <DuplicateTodoProvider onDuplicate={(id) => void duplicateTodo(id)}>
+    <TodoDetailProvider onOpen={setDetailTaskId}>
     <div className="relative flex h-full">
       {/* Le rail est téléporté dans le meuble de navigation du shell
           (SidebarSlot) : son état reste ici, seul son rendu voyage. */}
@@ -975,25 +979,28 @@ function PlannerPageContent() {
 
       </div>
 
-      {/* Panneau de détail autonome pour un deep-link Quick Find (`?task=`) :
-          la tâche n'est pas forcément le rendu d'une ligne montée à l'instant
-          (elle vient d'atterrir dans SA branche), donc pas de `TodoItem` à
-          ouvrir — un `Sheet` indépendant lié à son id. */}
-      {deepLinkedTodo && (
+      {/* LE panneau de détail — un seul, ici, jamais dans la ligne. Il est lié
+          à un id, pas à un composant de liste : la tâche n'est pas forcément le
+          rendu d'une ligne montée à l'instant (deep-link `?task=` qui vient
+          d'atterrir dans SA branche), et surtout la ligne peut être démontée
+          sous lui quand une modification la change de section — c'est ce qui
+          refermait le panneau dès qu'on réglait « Répéter ». */}
+      {detailTodo && (
         <TodoDetailSheet
           open
           onOpenChange={(nextOpen) => {
-            if (!nextOpen) setDeepLinkedTaskId(null);
+            if (!nextOpen) setDetailTaskId(null);
           }}
-          todo={deepLinkedTodo}
-          onUpdate={(payload) => void updateTodo(deepLinkedTodo.id, payload)}
+          todo={detailTodo}
+          onUpdate={(payload) => void updateTodo(detailTodo.id, payload)}
           onDelete={() => {
-            void deleteTodo(deepLinkedTodo.id);
-            setDeepLinkedTaskId(null);
+            void deleteTodo(detailTodo.id);
+            setDetailTaskId(null);
           }}
         />
       )}
     </div>
+    </TodoDetailProvider>
     </DuplicateTodoProvider>
     </SelectionProvider>
     </TagFilterProvider>
