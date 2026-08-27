@@ -583,6 +583,15 @@ function PlannerPageContent() {
 
   const detailTodo = todos.find((t) => t.id === detailTaskId) ?? null;
 
+  // Le panneau doit rester MONTÉ pendant sa fermeture. Monté sous condition,
+  // il quittait le DOM à l'instant du clic (mesuré : 115 ms, sans jamais
+  // passer en `data-state="closed"`), et l'animation de sortie de Radix
+  // n'avait jamais lieu — l'ouverture glissait, la fermeture claquait. On
+  // garde donc la dernière tâche affichée le temps que `open` redescende.
+  const closingTodo = useRef<Todo | null>(null);
+  if (detailTodo) closingTodo.current = detailTodo;
+  const sheetTodo = detailTodo ?? closingTodo.current;
+
   // Échap referme la vue portail.
   useEffect(() => {
     if (!portalKey) return;
@@ -996,16 +1005,16 @@ function PlannerPageContent() {
           d'atterrir dans SA branche), et surtout la ligne peut être démontée
           sous lui quand une modification la change de section — c'est ce qui
           refermait le panneau dès qu'on réglait « Répéter ». */}
-      {detailTodo && (
+      {sheetTodo && (
         <TodoDetailSheet
-          open
+          open={detailTodo !== null}
           onOpenChange={(nextOpen) => {
             if (!nextOpen) setDetailTaskId(null);
           }}
-          todo={detailTodo}
-          onUpdate={(payload) => void updateTodo(detailTodo.id, payload)}
+          todo={sheetTodo}
+          onUpdate={(payload) => void updateTodo(sheetTodo.id, payload)}
           onDelete={() => {
-            void deleteTodo(detailTodo.id);
+            void deleteTodo(sheetTodo.id);
             setDetailTaskId(null);
           }}
         />
