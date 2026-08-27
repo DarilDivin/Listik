@@ -21,6 +21,7 @@ import { ThemeSetting } from "@/components/ThemeSetting";
 import { AccentPicker } from "@/components/settings/AccentPicker";
 import { NavSetting } from "@/components/settings/NavSetting";
 import { PulseSetting } from "@/components/settings/PulseSetting";
+import { ShortcutsSetting } from "@/components/settings/ShortcutsSetting";
 import { GroqApiKeySetting } from "@/components/settings/GroqApiKeySetting";
 import { AiProviderSetting } from "@/components/settings/AiProviderSetting";
 import { Switch } from "@/components/ui/switch";
@@ -144,16 +145,19 @@ export default function SettingsPage() {
             )}
           </SettingsGroup>
 
+          {/* Une seule ligne « Alt + Q » vivait ici, avec un `kbd` fait main
+              plutôt que le composant `Kbd`. Le groupe devient la référence
+              complète : c'est le seul endroit de l'app où l'annulation est
+              nommée depuis qu'on n'annonce plus ce qui se voit. */}
           <SettingsGroup title="Raccourcis" index={2}>
             <SettingsRow
-              label="Capture rapide"
-              description="Ouvrir la barre de capture depuis n'importe où."
+              label="Au clavier"
+              description="Ce que l'app écoute, et où."
               icon={Zap}
               iconClassName="bg-orange-500/8 text-orange-600 dark:text-orange-400"
+              stacked
             >
-              <kbd className="rounded-md border border-border bg-muted px-2 py-1 font-mono text-[11px] text-foreground/80">
-                Alt + Q
-              </kbd>
+              <ShortcutsSetting />
             </SettingsRow>
           </SettingsGroup>
 
