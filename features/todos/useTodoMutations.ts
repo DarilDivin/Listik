@@ -36,8 +36,10 @@ const UNDO_DELAY_MS = 5000;
 
 interface UndoSlot {
   id: number;
-  toastId: string | number;
+  /** `null` quand l'undo est armé sans toast (voir `armUndo`). */
+  toastId: string | number | null;
   run: () => Promise<void>;
+  timer: ReturnType<typeof setTimeout>;
 }
 
 let activeUndo: UndoSlot | null = null;
@@ -52,7 +54,8 @@ export function triggerPendingUndo(): void {
   const slot = activeUndo;
   if (!slot) return;
   activeUndo = null;
-  toast.dismiss(slot.toastId);
+  clearTimeout(slot.timer);
+  if (slot.toastId !== null) toast.dismiss(slot.toastId);
   void slot.run();
 }
 
@@ -63,27 +66,52 @@ export function triggerPendingUndo(): void {
  * pendant que le toast de A est encore visible (jusqu'à 5 s), cliquer sur
  * « Annuler » de A ne doit rien faire — sans cette garde, on aurait un undo à
  * deux niveaux qui viole la règle « à un pas ».
+ *
+ * `silent` arme l'undo SANS toast. La fenêtre d'annulation ne dépendait
+ * jusqu'ici que de l'affichage (`onAutoClose` purgeait l'emplacement) :
+ * retirer un toast, c'était retirer l'undo. L'emplacement porte donc son
+ * propre minuteur, et le toast redevient ce qu'il aurait toujours dû être —
+ * une VUE de cet état, pas l'état lui-même.
+ *
+ * Règle d'emploi : on n'annonce que ce qui ne se voit pas. Cocher une tâche,
+ * changer sa date depuis le panneau — le résultat est sous les yeux, le toast
+ * n'ajoute rien et s'accumule. Supprimer, reporter au mois prochain, agir sur
+ * un lot — là quelque chose quitte l'écran, et le toast en est la seule trace.
  */
-function armUndo(message: string, run: () => Promise<void>): void {
-  if (activeUndo) toast.dismiss(activeUndo.toastId);
+function armUndo(
+  message: string,
+  run: () => Promise<void>,
+  options?: { silent?: boolean },
+): void {
+  if (activeUndo) {
+    clearTimeout(activeUndo.timer);
+    if (activeUndo.toastId !== null) toast.dismiss(activeUndo.toastId);
+  }
   const id = ++undoCounter;
   const clearIfCurrent = () => {
-    if (activeUndo?.id === id) activeUndo = null;
+    if (activeUndo?.id === id) {
+      clearTimeout(activeUndo.timer);
+      activeUndo = null;
+    }
   };
-  const toastId = toast(message, {
-    duration: UNDO_DELAY_MS,
-    action: {
-      label: "Annuler",
-      onClick: () => {
-        if (activeUndo?.id !== id) return; // périmé : remplacé depuis
-        activeUndo = null;
-        void run();
-      },
-    },
-    onDismiss: clearIfCurrent,
-    onAutoClose: clearIfCurrent,
-  });
-  activeUndo = { id, toastId, run };
+  const timer = setTimeout(clearIfCurrent, UNDO_DELAY_MS);
+  const toastId = options?.silent
+    ? null
+    : toast(message, {
+        duration: UNDO_DELAY_MS,
+        action: {
+          label: "Annuler",
+          onClick: () => {
+            if (activeUndo?.id !== id) return; // périmé : remplacé depuis
+            clearTimeout(timer);
+            activeUndo = null;
+            void run();
+          },
+        },
+        onDismiss: clearIfCurrent,
+        onAutoClose: clearIfCurrent,
+      });
+  activeUndo = { id, toastId, run, timer };
 }
 
 /**
@@ -220,7 +248,9 @@ export function useTodoMutations() {
       : before.status === "completed"
         ? "Tâche rouverte"
         : "Tâche terminée";
-    armUndo(message, () => toggleRestoreUpdate(id, restore));
+    armUndo(message, () => toggleRestoreUpdate(id, restore), {
+      silent: !reschedules,
+    });
   };
 
   /** Applique un payload de restauration sans jamais ré-armer d'undo. */
@@ -324,8 +354,14 @@ export function useTodoMutations() {
     const keys = Object.keys(payload) as (keyof UpdateTodoInput)[];
     if (keys.length === 0) return;
     const restore = pickForRestore(before, keys);
-    armUndo(options?.undoMessage ?? "Modifié", () =>
-      updateTodo(id, restore, { skipUndo: true }),
+    // Une modification se voit toujours : dans le panneau qu'on a sous les
+    // yeux, ou par la ligne qui change de section. « Modifié » n'apprenait
+    // rien et se déclenchait à chaque clic — un jour coché dans l'éditeur de
+    // répétition en levait un, le suivant un autre.
+    armUndo(
+      options?.undoMessage ?? "Modifié",
+      () => updateTodo(id, restore, { skipUndo: true }),
+      { silent: options?.undoMessage === undefined },
     );
   };
 
