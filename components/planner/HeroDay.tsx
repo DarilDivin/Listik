@@ -44,27 +44,28 @@ export function HeroDay({ date, done, total, overdue }: HeroDayProps) {
    *
    *   1. une journée vide ;
    *   2. la célébration, qu'on ne sacrifie pas à l'économie de mots ;
-   *   3. le temps qui reste — un absolu, là où le pouls donne un rapport
-   *      (« au rythme du jour ») ;
-   *   4. le retard, en dernier recours.
+   *   3. le retard, s'il y en a ;
+   *   4. sinon, le temps qui reste.
    *
-   * Le retard passe DERRIÈRE le temps qui reste, par choix : ouvrir sa
-   * journée sur une dette est un ton, et ce n'est pas celui de l'app.
+   * Le retard passe devant le temps restant, et l'argument n'est pas le ton
+   * mais l'INFORMATION. Le rang 4 répond pendant toute la journée utile
+   * (7 h – 23 h) : tout ce qui le suit est inatteignable. La question n'est
+   * donc pas « quelle importance a le retard » mais « la légende en parle-t-elle
+   * un jour ». Placé avant, il rend l'absence signifiante : quand la légende
+   * dit « il reste 7 h », c'est qu'il n'y a rien en retard.
    *
-   * Conséquence à connaître, ce n'est pas un oubli : le rang 3 répond dès
-   * qu'on est entre 7 h et 23 h, donc le rang 4 ne s'affiche en pratique
-   * qu'en dehors de ces heures. Le retard vit dans sa section, pas dans le
-   * bandeau — c'est exactement ce que cet ordre décide.
+   * Il reste derrière la célébration : une journée peut être bouclée ET porter
+   * une dette d'avant-hier. Le geste du jour a été fait, on le dit.
    */
   const caption = (() => {
     if (total === 0) return "rien de prévu aujourd'hui";
     if (complete) return "journée bouclée, bravo";
+    if (overdue > 0) return `${overdue} tâche${overdue > 1 ? "s" : ""} en retard`;
     if (dayLeft?.kind === "left") {
       return dayLeft.minutes < 60
         ? "il reste moins d'une heure"
         : `il reste ${Math.round(dayLeft.minutes / 60)} h de journée`;
     }
-    if (overdue > 0) return `${overdue} tâche${overdue > 1 ? "s" : ""} en retard`;
     if (dayLeft?.kind === "before") return "la journée commence";
     if (dayLeft?.kind === "after") return "la journée est finie";
     return "";
