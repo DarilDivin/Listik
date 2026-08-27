@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { AnimatePresence, LayoutGroup, motion } from "motion/react";
+import { AnimatePresence, motion } from "motion/react";
 import {
   BellRing,
   Calendar,
@@ -146,36 +146,35 @@ function Tok({
  * valeur dit déjà ce qu'elle est. Le mot ne survit que là où il lèverait une
  * ambiguïté (une échéance est une date, comme la date planifiée).
  *
- * Motion : c'est LE geste du panneau. Une ligne qui arrive doit pousser ses
- * voisines, sinon rien ne raconte que le panneau grandit avec la tâche — il
- * se contenterait de sauter. `layout="position"` et pas `layout` complet : la
- * largeur du jeton change quand on édite (« Tous les mois » devient « Le 3e
- * mardi du mois »), et animer la TAILLE déformerait le texte à l'intérieur
- * (§3 du design system).
+ * Motion : la ligne S'OUVRE et se referme en hauteur, façon « chrome
+ * escamotable » du §3 — jamais par démontage sec. C'est ce qui raconte que le
+ * panneau grandit avec la tâche.
+ *
+ * La hauteur, et pas une translation : `MotionConfig reducedMotion="user"`
+ * (layout racine) coupe les animations de TRANSFORM et de LAYOUT dès que le
+ * système demande moins de mouvement — sous Windows, un simple réglage
+ * d'accessibilité. Un `y` ou un `layout` n'y survivrait pas, une hauteur si.
+ * Et les voisines suivent par le flux normal, sans rien avoir à animer.
  */
 function Fact({
   icon,
-  index,
   children,
 }: {
   icon: React.ReactNode;
-  index: number;
   children: React.ReactNode;
 }) {
   return (
     <motion.div
-      layout="position"
-      initial={{ opacity: 0, y: 6 }}
-      animate={{ opacity: 1, y: 0 }}
-      exit={{ opacity: 0, y: -4 }}
-      // La cascade du §3 (`i * 0.05`) : à l'ouverture les lignes se posent
-      // l'une après l'autre. Une ligne ajoutée plus tard hérite du même petit
-      // décalage, ce qui ne se remarque pas au-delà de la deuxième.
-      transition={{ ...spring.smooth, delay: index * 0.05 }}
-      className="flex items-start gap-3 py-1.5"
+      initial={{ opacity: 0, height: 0 }}
+      animate={{ opacity: 1, height: "auto" }}
+      exit={{ opacity: 0, height: 0 }}
+      transition={spring.smooth}
+      className="overflow-hidden"
     >
-      <span className="mt-1 flex shrink-0 text-muted-foreground">{icon}</span>
-      <div className="min-w-0 flex-1 text-[0.9375rem] leading-relaxed">{children}</div>
+      <div className="flex items-start gap-3 py-1.5">
+        <span className="mt-1 flex shrink-0 text-muted-foreground">{icon}</span>
+        <div className="min-w-0 flex-1 text-[0.9375rem] leading-relaxed">{children}</div>
+      </div>
     </motion.div>
   );
 }
@@ -668,9 +667,6 @@ export function TodoDetailSheet({
 
   const missing = (Object.keys(MISSING_LABELS) as AttrKey[]).filter((k) => !shows(k));
 
-  // Index de cascade : chaque ligne affichée entre à son tour.
-  let row = 0;
-
   const deadlineInfo = todo.due_date
     ? deadlineCountdown(todo.due_date, todayLocalISODate())
     : null;
@@ -758,10 +754,14 @@ export function TodoDetailSheet({
               séparerait plus rien, et l'en-tête en pose déjà une. Ce sont les
               icônes en gouttière qui distinguent un fait du titre. */}
           <div className="mt-4 flex flex-col px-5 pb-4">
-            <LayoutGroup>
-            <AnimatePresence mode="popLayout">
+            {/* `initial={false}` : à l'ouverture, la seule animation est le
+                glissement du panneau lui-même. Un moment, une animation — une
+                cascade jouée sous le glissement ne ferait que brouiller les
+                deux. Ce qui s'anime ici, c'est ce que l'utilisateur PROVOQUE :
+                ajouter ou retirer un fait. */}
+            <AnimatePresence initial={false}>
             {shows("scheduled") && (
-              <Fact key="scheduled" icon={<Calendar size={15} />} index={row++}>
+              <Fact key="scheduled" icon={<Calendar size={15} />}>
                 {/* modal : dans un Dialog, un popover non modal se fait voler le
                     focus par le FocusScope du dialog (champ insaisissable). */}
                 <Popover open={dateOpen} onOpenChange={setDateOpen} modal>
@@ -798,7 +798,7 @@ export function TodoDetailSheet({
             {/* « Ce soir » sans date planifiée : possible sur une donnée
                 ancienne, on ne l'escamote pas pour autant. */}
             {!shows("scheduled") && shows("evening") && (
-              <Fact key="evening" icon={<Sunset size={15} />} index={row++}>
+              <Fact key="evening" icon={<Sunset size={15} />}>
                 <Tok onClick={() => toggleEvening(false)} aria-label="Retirer « ce soir »">
                   Ce soir
                 </Tok>
@@ -806,7 +806,7 @@ export function TodoDetailSheet({
             )}
 
             {shows("deadline") && (
-              <Fact key="deadline" icon={<Flag size={15} />} index={row++}>
+              <Fact key="deadline" icon={<Flag size={15} />}>
                 <span className="text-muted-foreground">Échéance </span>
                 <Popover open={deadlineOpen} onOpenChange={setDeadlineOpen} modal>
                   <PopoverTrigger asChild>
@@ -837,7 +837,7 @@ export function TodoDetailSheet({
             )}
 
             {shows("recurrence") && (
-              <Fact key="recurrence" icon={<Repeat size={15} />} index={row++}>
+              <Fact key="recurrence" icon={<Repeat size={15} />}>
                 {/* Le libellé vient de `recurrenceLabel` : c'est la MÊME chaîne
                     que la ligne méta de la liste. Deux formulations pour une
                     seule règle, c'est une divergence en attente. */}
@@ -862,7 +862,7 @@ export function TodoDetailSheet({
             )}
 
             {(shows("project") || shows("tags")) && (
-              <Fact key="placement" icon={<FolderOpen size={15} />} index={row++}>
+              <Fact key="placement" icon={<FolderOpen size={15} />}>
                 <span className="inline-flex flex-wrap items-center gap-1.5">
                   {shows("project") && (
                     <ProjectControl
@@ -894,7 +894,7 @@ export function TodoDetailSheet({
             )}
 
             {shows("remind") && (
-              <Fact key="remind" icon={<BellRing size={15} />} index={row++}>
+              <Fact key="remind" icon={<BellRing size={15} />}>
                 <span className="text-muted-foreground">Rappel </span>
                 <Popover open={reminderOpen} onOpenChange={setReminderOpen} modal>
                   <PopoverTrigger asChild>
@@ -939,11 +939,10 @@ export function TodoDetailSheet({
 
             </AnimatePresence>
 
-            {/* La seule porte vers ce que la tâche n'a pas encore. Elle est
-                DANS le groupe de layout : sans ça, elle sauterait d'un coup
-                pendant que la ligne au-dessus glisse en douceur. */}
+            {/* La seule porte vers ce que la tâche n'a pas encore. Rien à
+                animer : la hauteur de la ligne au-dessus bouge dans le flux,
+                le bouton suit tout seul. */}
             {missing.length > 0 && (
-              <motion.div layout="position" className="w-fit">
               <Popover open={addOpen} onOpenChange={setAddOpen} modal>
                 <PopoverTrigger asChild>
                   <button
@@ -980,9 +979,7 @@ export function TodoDetailSheet({
                   </Command>
                 </PopoverContent>
               </Popover>
-              </motion.div>
             )}
-            </LayoutGroup>
           </div>
         </div>
       </SheetContent>
