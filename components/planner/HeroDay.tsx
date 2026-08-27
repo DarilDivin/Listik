@@ -40,29 +40,34 @@ export function HeroDay({ date, done, total, overdue }: HeroDayProps) {
 
   /**
    * La légende ne répète JAMAIS le pouls : celui-ci compte les tâches, elle
-   * est le sous-titre du JOUR. Échelle de priorité — on affiche le fait le
-   * plus important qui n'est pas déjà à l'écran :
+   * est le sous-titre du JOUR. Elle affiche le premier de ces faits :
    *
-   *   1. le retard, s'il y en a (sa section peut être loin plus bas, ou
-   *      repliée : c'est le seul fait qui change une décision) ;
-   *   2. une journée vide ;
-   *   3. la célébration, qu'on ne sacrifie pas à l'économie de mots ;
-   *   4. sinon, le temps qui reste — un absolu, là où le pouls donne un
-   *      rapport (« au rythme du jour »).
+   *   1. une journée vide ;
+   *   2. la célébration, qu'on ne sacrifie pas à l'économie de mots ;
+   *   3. le temps qui reste — un absolu, là où le pouls donne un rapport
+   *      (« au rythme du jour ») ;
+   *   4. le retard, en dernier recours.
    *
-   * Conséquence assumée du rang 1 : boucler la liste du jour en gardant du
-   * retard affiche le retard, pas « bravo ». L'anneau, lui, célèbre quand
-   * même — la récompense du geste n'est pas retirée.
+   * Le retard passe DERRIÈRE le temps qui reste, par choix : ouvrir sa
+   * journée sur une dette est un ton, et ce n'est pas celui de l'app.
+   *
+   * Conséquence à connaître, ce n'est pas un oubli : le rang 3 répond dès
+   * qu'on est entre 7 h et 23 h, donc le rang 4 ne s'affiche en pratique
+   * qu'en dehors de ces heures. Le retard vit dans sa section, pas dans le
+   * bandeau — c'est exactement ce que cet ordre décide.
    */
   const caption = (() => {
-    if (overdue > 0) return `${overdue} tâche${overdue > 1 ? "s" : ""} en retard`;
     if (total === 0) return "rien de prévu aujourd'hui";
     if (complete) return "journée bouclée, bravo";
-    if (!dayLeft) return "";
-    if (dayLeft.kind === "before") return "la journée commence";
-    if (dayLeft.kind === "after") return "la journée est finie";
-    if (dayLeft.minutes < 60) return "il reste moins d'une heure";
-    return `il reste ${Math.round(dayLeft.minutes / 60)} h de journée`;
+    if (dayLeft?.kind === "left") {
+      return dayLeft.minutes < 60
+        ? "il reste moins d'une heure"
+        : `il reste ${Math.round(dayLeft.minutes / 60)} h de journée`;
+    }
+    if (overdue > 0) return `${overdue} tâche${overdue > 1 ? "s" : ""} en retard`;
+    if (dayLeft?.kind === "before") return "la journée commence";
+    if (dayLeft?.kind === "after") return "la journée est finie";
+    return "";
   })();
 
   // Joue la lueur uniquement à la *transition* vers 100 % (pas au montage).
