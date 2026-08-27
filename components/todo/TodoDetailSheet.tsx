@@ -12,6 +12,7 @@ import {
   Repeat,
   Sunset,
   Trash2,
+  X,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { spring } from "@/lib/motion";
@@ -43,6 +44,7 @@ import {
 } from "@/components/ui/popover";
 import {
   Sheet,
+  SheetClose,
   SheetContent,
   SheetHeader,
   SheetTitle,
@@ -663,24 +665,39 @@ export function TodoDetailSheet({
 
   return (
     <Sheet open={open} onOpenChange={handleOpenChange}>
-      <SheetContent className="flex w-full flex-col gap-0 p-0 sm:max-w-md">
-        <SheetHeader className="flex-row items-center justify-between border-b border-border/60 py-4 pl-5 pr-14">
+      {/* `showCloseButton={false}` : le ✕ maison de `SheetContent` est en
+          `absolute top-4 right-4`, donc aligné sur le haut du panneau et pas
+          sur la rangée d'en-tête — il flottait au-dessus du titre et du ⋯. On
+          le remet dans le flux, à côté du ⋯, où le centrage vertical de la
+          rangée s'occupe de lui. */}
+      <SheetContent
+        showCloseButton={false}
+        className="flex w-full flex-col gap-0 p-0 sm:max-w-md"
+      >
+        <SheetHeader className="flex-row items-center justify-between border-b border-border/60 py-3.5 pl-5 pr-3.5">
           <SheetTitle>Détails de la tâche</SheetTitle>
-          {/* La suppression est rare : elle ne mérite pas une barre rouge
-              permanente en pied de panneau. */}
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button variant="ghost" size="icon-sm" aria-label="Autres actions">
-                <MoreHorizontal size={16} />
+          <div className="flex items-center gap-0.5">
+            {/* La suppression est rare : elle ne mérite pas une barre rouge
+                permanente en pied de panneau. */}
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="ghost" size="icon-sm" aria-label="Autres actions">
+                  <MoreHorizontal size={16} />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem variant="destructive" onSelect={handleDelete}>
+                  <Trash2 />
+                  Supprimer la tâche
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+            <SheetClose asChild>
+              <Button variant="ghost" size="icon-sm" aria-label="Fermer">
+                <X size={16} />
               </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
-              <DropdownMenuItem variant="destructive" onSelect={handleDelete}>
-                <Trash2 />
-                Supprimer la tâche
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
+            </SheetClose>
+          </div>
         </SheetHeader>
 
         <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
