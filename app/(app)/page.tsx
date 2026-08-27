@@ -319,13 +319,19 @@ function PlannerPageContent() {
 
   // Pouls du jour (global, indépendant du filtre liste) — lui réagit tout de
   // suite : l'anneau et le compteur récompensent la coche pendant la pause.
-  const { doneToday, totalToday } = useMemo(() => {
+  const { doneToday, totalToday, overdueToday } = useMemo(() => {
     const day = todos.filter((t) => t.scheduled_for === todayISO);
     return {
       doneToday: day.filter((t) => t.status === "completed").length,
       totalToday: day.length,
+      // Compté sur TOUTES les tâches, jamais sur `groups` : celui-ci est
+      // filtré par tag, et le bandeau ne doit pas changer de discours quand on
+      // filtre une liste. Et on repasse par `groupTodosByDate` plutôt que de
+      // réécrire la règle du retard ici — deux définitions du retard, c'est
+      // une divergence en attente.
+      overdueToday: groupTodosByDate(todos, todayISO, tomorrowISO).overdue.length,
     };
-  }, [todos, todayISO]);
+  }, [todos, todayISO, tomorrowISO]);
 
   // Projet/domaine sélectionné. `undefined` = supprimé entre-temps (autre
   // fenêtre, menu contextuel) → on retombe sur Aujourd'hui plutôt que
@@ -839,7 +845,12 @@ function PlannerPageContent() {
                     className={chromeClipped ? "overflow-hidden" : undefined}
                   >
                     <div className="pt-8">
-                      <HeroDay date={today} done={doneToday} total={totalToday} />
+                      <HeroDay
+                        date={today}
+                        done={doneToday}
+                        total={totalToday}
+                        overdue={overdueToday}
+                      />
                     </div>
                   </motion.div>
 

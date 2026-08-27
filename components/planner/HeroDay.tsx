@@ -4,12 +4,14 @@ import { useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
 import { DayPulse } from "@/components/planner/DayPulse";
 import { spring } from "@/lib/motion";
-import { useDayProgress } from "@/lib/day-progress";
+import { useDayProgress, useDayRemainder } from "@/lib/day-progress";
 
 interface HeroDayProps {
   date: Date;
   done: number;
   total: number;
+  /** Tâches en retard, TOUTES listes confondues (voir la page). */
+  overdue: number;
 }
 
 /**
@@ -18,7 +20,7 @@ interface HeroDayProps {
  * reste par une simple ligne hairline. Boucler la journée déclenche une lueur
  * d'accent + petit pop de l'anneau.
  */
-export function HeroDay({ date, done, total }: HeroDayProps) {
+export function HeroDay({ date, done, total, overdue }: HeroDayProps) {
   const weekday = date.toLocaleDateString("fr-FR", { weekday: "long" });
   const dayMonth = date.toLocaleDateString("fr-FR", {
     day: "numeric",
@@ -31,14 +33,37 @@ export function HeroDay({ date, done, total }: HeroDayProps) {
   // par rapport au temps qu'il me reste ».
   const dayProgress = useDayProgress();
 
+  const dayLeft = useDayRemainder();
+
   const remaining = total - done;
   const complete = total > 0 && remaining === 0;
-  const caption =
-    total === 0
-      ? "rien de prévu aujourd'hui"
-      : complete
-        ? "journée bouclée, bravo"
-        : `${remaining} tâche${remaining > 1 ? "s" : ""} à faire`;
+
+  /**
+   * La légende ne répète JAMAIS le pouls : celui-ci compte les tâches, elle
+   * est le sous-titre du JOUR. Échelle de priorité — on affiche le fait le
+   * plus important qui n'est pas déjà à l'écran :
+   *
+   *   1. le retard, s'il y en a (sa section peut être loin plus bas, ou
+   *      repliée : c'est le seul fait qui change une décision) ;
+   *   2. une journée vide ;
+   *   3. la célébration, qu'on ne sacrifie pas à l'économie de mots ;
+   *   4. sinon, le temps qui reste — un absolu, là où le pouls donne un
+   *      rapport (« au rythme du jour »).
+   *
+   * Conséquence assumée du rang 1 : boucler la liste du jour en gardant du
+   * retard affiche le retard, pas « bravo ». L'anneau, lui, célèbre quand
+   * même — la récompense du geste n'est pas retirée.
+   */
+  const caption = (() => {
+    if (overdue > 0) return `${overdue} tâche${overdue > 1 ? "s" : ""} en retard`;
+    if (total === 0) return "rien de prévu aujourd'hui";
+    if (complete) return "journée bouclée, bravo";
+    if (!dayLeft) return "";
+    if (dayLeft.kind === "before") return "la journée commence";
+    if (dayLeft.kind === "after") return "la journée est finie";
+    if (dayLeft.minutes < 60) return "il reste moins d'une heure";
+    return `il reste ${Math.round(dayLeft.minutes / 60)} h de journée`;
+  })();
 
   // Joue la lueur uniquement à la *transition* vers 100 % (pas au montage).
   const [celebrate, setCelebrate] = useState(false);

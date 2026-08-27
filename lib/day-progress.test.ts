@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { dayElapsedFraction } from "./day-progress";
+import { dayElapsedFraction, dayRemainder } from "./day-progress";
 
 /** Un instant du jour, en heure locale. */
 const at = (h: number, m = 0) => new Date(2026, 7, 25, h, m);
@@ -24,5 +24,23 @@ describe("dayElapsedFraction", () => {
     expect(dayElapsedFraction(at(3))).toBeNull();
     expect(dayElapsedFraction(at(23, 30))).toBeNull();
     expect(dayElapsedFraction(at(6, 59))).toBeNull();
+  });
+});
+
+describe("dayRemainder", () => {
+  it("distingue avant et après la journée utile", () => {
+    // `null` ne suffisait pas : 6 h et minuit ne se racontent pas pareil.
+    expect(dayRemainder(at(6)).kind).toBe("before");
+    expect(dayRemainder(at(23, 30)).kind).toBe("after");
+  });
+
+  it("compte les minutes restantes jusqu'à 23 h", () => {
+    expect(dayRemainder(at(15))).toEqual({ kind: "left", minutes: 480 });
+    expect(dayRemainder(at(22, 30))).toEqual({ kind: "left", minutes: 30 });
+  });
+
+  it("les bornes appartiennent à la journée", () => {
+    expect(dayRemainder(at(7))).toEqual({ kind: "left", minutes: 960 });
+    expect(dayRemainder(at(23))).toEqual({ kind: "left", minutes: 0 });
   });
 });
