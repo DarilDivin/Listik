@@ -142,6 +142,42 @@ function Tok({
 }
 
 /**
+ * « Ce soir » n'a pas de valeur à choisir : son seul réglage est de partir.
+ * Il ouvre quand même un menu, au lieu de disparaître au premier clic — un
+ * jeton OUVRE, il ne détruit pas. Sans ça, c'était le seul geste irréversible
+ * du panneau, déclenché par le même clic que celui qui ouvre un calendrier
+ * ailleurs.
+ */
+function EveningToken({
+  open,
+  onOpenChange,
+  onRemove,
+  children,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  onRemove: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <Popover open={open} onOpenChange={onOpenChange} modal>
+      <PopoverTrigger asChild>
+        <Tok>{children}</Tok>
+      </PopoverTrigger>
+      <PopoverContent side="bottom" align="start" className="w-52 p-1">
+        <button
+          type="button"
+          onClick={onRemove}
+          className="flex w-full items-center rounded-md px-2.5 py-1.5 text-sm outline-none transition-colors hover:bg-accent focus-visible:bg-accent"
+        >
+          Retirer « ce soir »
+        </button>
+      </PopoverContent>
+    </Popover>
+  );
+}
+
+/**
  * Une ligne de fait : icône nue + contenu. Pas de colonne de libellés — la
  * valeur dit déjà ce qu'elle est. Le mot ne survit que là où il lèverait une
  * ambiguïté (une échéance est une date, comme la date planifiée).
@@ -563,6 +599,7 @@ export function TodoDetailSheet({
   const [deadlineOpen, setDeadlineOpen] = useState(false);
   const [reminderOpen, setReminderOpen] = useState(false);
   const [recurOpen, setRecurOpen] = useState(false);
+  const [eveningOpen, setEveningOpen] = useState(false);
   const [addOpen, setAddOpen] = useState(false);
   /**
    * Attributs révélés à la demande : pas encore de valeur, mais l'utilisateur
@@ -784,12 +821,16 @@ export function TodoDetailSheet({
                 {todo.this_evening && (
                   <>
                     <span className="text-muted-foreground">, </span>
-                    <Tok
-                      onClick={() => toggleEvening(false)}
-                      aria-label="Retirer « ce soir »"
+                    <EveningToken
+                      open={eveningOpen}
+                      onOpenChange={setEveningOpen}
+                      onRemove={() => {
+                        toggleEvening(false);
+                        setEveningOpen(false);
+                      }}
                     >
                       ce soir
-                    </Tok>
+                    </EveningToken>
                   </>
                 )}
               </Fact>
@@ -799,9 +840,16 @@ export function TodoDetailSheet({
                 ancienne, on ne l'escamote pas pour autant. */}
             {!shows("scheduled") && shows("evening") && (
               <Fact key="evening" icon={<Sunset size={15} />}>
-                <Tok onClick={() => toggleEvening(false)} aria-label="Retirer « ce soir »">
+                <EveningToken
+                  open={eveningOpen}
+                  onOpenChange={setEveningOpen}
+                  onRemove={() => {
+                    toggleEvening(false);
+                    setEveningOpen(false);
+                  }}
+                >
                   Ce soir
-                </Tok>
+                </EveningToken>
               </Fact>
             )}
 
