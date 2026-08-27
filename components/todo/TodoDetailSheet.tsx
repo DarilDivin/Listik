@@ -737,8 +737,15 @@ export function TodoDetailSheet({
             </div>
           </div>
 
-          {/* Les faits : ce que la tâche PORTE, rien d'autre. */}
-          <div className="mt-4 flex flex-col border-t border-border/60 px-5 py-3">
+          {/* Les faits : ce que la tâche PORTE, rien d'autre.
+
+              Pas de hairline avant ce bloc. Elle venait de l'ancien
+              formulaire, où elle séparait la priorité des attributs — deux
+              sections de nature différente. Ici le titre, la note et les faits
+              sont une seule chose, le portrait de la tâche : la règle ne
+              séparerait plus rien, et l'en-tête en pose déjà une. Ce sont les
+              icônes en gouttière qui distinguent un fait du titre. */}
+          <div className="mt-4 flex flex-col px-5 pb-4">
             {shows("scheduled") && (
               <Fact icon={<Calendar size={15} />} index={row++}>
                 {/* modal : dans un Dialog, un popover non modal se fait voler le
