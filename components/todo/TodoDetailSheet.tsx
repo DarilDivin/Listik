@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { motion } from "motion/react";
+import { AnimatePresence, LayoutGroup, motion } from "motion/react";
 import {
   BellRing,
   Calendar,
@@ -145,6 +145,13 @@ function Tok({
  * Une ligne de fait : icône nue + contenu. Pas de colonne de libellés — la
  * valeur dit déjà ce qu'elle est. Le mot ne survit que là où il lèverait une
  * ambiguïté (une échéance est une date, comme la date planifiée).
+ *
+ * Motion : c'est LE geste du panneau. Une ligne qui arrive doit pousser ses
+ * voisines, sinon rien ne raconte que le panneau grandit avec la tâche — il
+ * se contenterait de sauter. `layout="position"` et pas `layout` complet : la
+ * largeur du jeton change quand on édite (« Tous les mois » devient « Le 3e
+ * mardi du mois »), et animer la TAILLE déformerait le texte à l'intérieur
+ * (§3 du design system).
  */
 function Fact({
   icon,
@@ -157,9 +164,14 @@ function Fact({
 }) {
   return (
     <motion.div
-      initial={{ opacity: 0, y: 4 }}
+      layout="position"
+      initial={{ opacity: 0, y: 6 }}
       animate={{ opacity: 1, y: 0 }}
-      transition={{ ...spring.smooth, delay: index * 0.04 }}
+      exit={{ opacity: 0, y: -4 }}
+      // La cascade du §3 (`i * 0.05`) : à l'ouverture les lignes se posent
+      // l'une après l'autre. Une ligne ajoutée plus tard hérite du même petit
+      // décalage, ce qui ne se remarque pas au-delà de la deuxième.
+      transition={{ ...spring.smooth, delay: index * 0.05 }}
       className="flex items-start gap-3 py-1.5"
     >
       <span className="mt-1 flex shrink-0 text-muted-foreground">{icon}</span>
@@ -746,8 +758,10 @@ export function TodoDetailSheet({
               séparerait plus rien, et l'en-tête en pose déjà une. Ce sont les
               icônes en gouttière qui distinguent un fait du titre. */}
           <div className="mt-4 flex flex-col px-5 pb-4">
+            <LayoutGroup>
+            <AnimatePresence mode="popLayout">
             {shows("scheduled") && (
-              <Fact icon={<Calendar size={15} />} index={row++}>
+              <Fact key="scheduled" icon={<Calendar size={15} />} index={row++}>
                 {/* modal : dans un Dialog, un popover non modal se fait voler le
                     focus par le FocusScope du dialog (champ insaisissable). */}
                 <Popover open={dateOpen} onOpenChange={setDateOpen} modal>
@@ -784,7 +798,7 @@ export function TodoDetailSheet({
             {/* « Ce soir » sans date planifiée : possible sur une donnée
                 ancienne, on ne l'escamote pas pour autant. */}
             {!shows("scheduled") && shows("evening") && (
-              <Fact icon={<Sunset size={15} />} index={row++}>
+              <Fact key="evening" icon={<Sunset size={15} />} index={row++}>
                 <Tok onClick={() => toggleEvening(false)} aria-label="Retirer « ce soir »">
                   Ce soir
                 </Tok>
@@ -792,7 +806,7 @@ export function TodoDetailSheet({
             )}
 
             {shows("deadline") && (
-              <Fact icon={<Flag size={15} />} index={row++}>
+              <Fact key="deadline" icon={<Flag size={15} />} index={row++}>
                 <span className="text-muted-foreground">Échéance </span>
                 <Popover open={deadlineOpen} onOpenChange={setDeadlineOpen} modal>
                   <PopoverTrigger asChild>
@@ -823,7 +837,7 @@ export function TodoDetailSheet({
             )}
 
             {shows("recurrence") && (
-              <Fact icon={<Repeat size={15} />} index={row++}>
+              <Fact key="recurrence" icon={<Repeat size={15} />} index={row++}>
                 {/* Le libellé vient de `recurrenceLabel` : c'est la MÊME chaîne
                     que la ligne méta de la liste. Deux formulations pour une
                     seule règle, c'est une divergence en attente. */}
@@ -848,7 +862,7 @@ export function TodoDetailSheet({
             )}
 
             {(shows("project") || shows("tags")) && (
-              <Fact icon={<FolderOpen size={15} />} index={row++}>
+              <Fact key="placement" icon={<FolderOpen size={15} />} index={row++}>
                 <span className="inline-flex flex-wrap items-center gap-1.5">
                   {shows("project") && (
                     <ProjectControl
@@ -880,7 +894,7 @@ export function TodoDetailSheet({
             )}
 
             {shows("remind") && (
-              <Fact icon={<BellRing size={15} />} index={row++}>
+              <Fact key="remind" icon={<BellRing size={15} />} index={row++}>
                 <span className="text-muted-foreground">Rappel </span>
                 <Popover open={reminderOpen} onOpenChange={setReminderOpen} modal>
                   <PopoverTrigger asChild>
@@ -923,8 +937,13 @@ export function TodoDetailSheet({
               </Fact>
             )}
 
-            {/* La seule porte vers ce que la tâche n'a pas encore. */}
+            </AnimatePresence>
+
+            {/* La seule porte vers ce que la tâche n'a pas encore. Elle est
+                DANS le groupe de layout : sans ça, elle sauterait d'un coup
+                pendant que la ligne au-dessus glisse en douceur. */}
             {missing.length > 0 && (
+              <motion.div layout="position" className="w-fit">
               <Popover open={addOpen} onOpenChange={setAddOpen} modal>
                 <PopoverTrigger asChild>
                   <button
@@ -961,7 +980,9 @@ export function TodoDetailSheet({
                   </Command>
                 </PopoverContent>
               </Popover>
+              </motion.div>
             )}
+            </LayoutGroup>
           </div>
         </div>
       </SheetContent>
