@@ -452,7 +452,13 @@
    pour les trois.
 
    Les fragments non cliquables (tag, note) n'en reçoivent pas : c'est
-   justement ce qui rend le signe informatif plutôt que décoratif. */
+   justement ce qui rend le signe informatif plutôt que décoratif.
+
+   `.token-affordance` est la MÊME recette, nommée, pour les surfaces qui
+   posent un jeton ailleurs que dans l'éditeur Lexical — le panneau de détail,
+   dont la phrase de répétition s'édite au clic exactement comme ici. Une seule
+   règle : le jour où le signe change, il change partout. */
+.token-affordance,
 [data-token="date"],
 [data-token="project"],
 [data-token="priority"],
@@ -467,6 +473,7 @@
   box-decoration-break: clone;
 }
 
+.token-affordance:hover,
 [data-token="date"]:hover,
 [data-token="project"]:hover,
 [data-token="priority"]:hover,

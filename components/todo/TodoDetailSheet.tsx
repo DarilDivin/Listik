@@ -2,8 +2,19 @@
 
 import { useEffect, useState } from "react";
 import { motion } from "motion/react";
-import { BellRing, Calendar, Flag, FolderOpen, Hash, Repeat, Sunset, Trash2, X } from "lucide-react";
+import {
+  BellRing,
+  Calendar,
+  Flag,
+  FolderOpen,
+  MoreHorizontal,
+  Plus,
+  Repeat,
+  Sunset,
+  Trash2,
+} from "lucide-react";
 import { cn } from "@/lib/utils";
+import { spring } from "@/lib/motion";
 import { deadlineCountdown, toLocalISODate, todayLocalISODate } from "@/lib/date";
 import { DatePickerCalendar } from "@/components/date-picker-calendar";
 import { TimePicker } from "@/components/ui/time-picker";
@@ -13,28 +24,33 @@ import { useProjects } from "@/hooks/useProjects";
 import { useTags } from "@/hooks/useTags";
 import { Button } from "@/components/ui/button";
 import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandItem,
+  CommandList,
+} from "@/components/ui/command";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import {
   Popover,
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import {
   Sheet,
   SheetContent,
   SheetHeader,
   SheetTitle,
 } from "@/components/ui/sheet";
-import { Switch } from "@/components/ui/switch";
-import { Input } from "@/components/ui/input";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import {
-  RECURRENCE_OPTIONS,
   parseWeekdays,
+  recurrenceLabel,
   serializeWeekdays,
   toggleWeekday,
 } from "@/features/todos/recurrence";
@@ -67,6 +83,14 @@ const PRIORITIES: { value: Priority; label: string }[] = [
   { value: "high", label: "Haute" },
 ];
 
+const FREQUENCIES: { value: Recurrence; label: string }[] = [
+  { value: "none", label: "Jamais" },
+  { value: "daily", label: "Tous les jours" },
+  { value: "weekdays", label: "Jours ouvrés" },
+  { value: "weekly", label: "Toutes les semaines" },
+  { value: "monthly", label: "Tous les mois" },
+];
+
 const DEFAULT_REMINDER_TIME = "09:00";
 
 function parseLocalISODate(value: string): Date {
@@ -82,82 +106,410 @@ function formatShortDate(date: string): string {
   });
 }
 
-interface DetailRowProps {
-  icon: React.ReactNode;
-  label: string;
-  children: React.ReactNode;
-  /** Teinte le badge d'icône en accent (façon Things : l'icône « vit » avec
-   *  la donnée) et lui fait un petit pop, comme la coche. Réservé aux lignes
-   *  dont l'icône a un sens booléen clair (récurrence, rappel) — les autres
-   *  gardent le badge neutre par défaut. */
-  active?: boolean;
-}
-
-/** Ligne d'attribut : pastille d'icône + libellé à gauche, contrôle à droite. */
-function DetailRow({ icon, label, children, active = false }: DetailRowProps) {
+/**
+ * Un mot de la phrase qui s'ouvre au clic. `token-affordance` est la recette
+ * PARTAGÉE avec les jetons de la barre de capture (voir `globals.css`) : le
+ * panneau et l'Omnibar signalent l'éditabilité de la même façon, parce que
+ * c'est le même geste.
+ */
+function Tok({
+  children,
+  muted = false,
+  className,
+  ...props
+}: React.ComponentProps<"button"> & { muted?: boolean }) {
   return (
-    <div className="flex min-h-11 items-center gap-3 border-t border-border/60 py-2 first:border-t-0">
-      <motion.span
-        animate={{ scale: active ? [1, 1.15, 1] : 1 }}
-        transition={{ duration: 0.32, ease: [0.16, 1, 0.3, 1], times: [0, 0.4, 1] }}
-        className={cn(
-          "flex size-7 shrink-0 items-center justify-center rounded-[8px] transition-colors duration-200",
-          active ? "bg-brand-soft text-brand" : "bg-foreground/[0.06] text-muted-foreground",
-        )}
-      >
-        {icon}
-      </motion.span>
-      <span className="flex-1 text-[0.9375rem] text-foreground">{label}</span>
-      <div className="shrink-0">{children}</div>
-    </div>
+    <button
+      type="button"
+      className={cn(
+        "token-affordance text-left outline-none focus-visible:ring-2 focus-visible:ring-ring",
+        muted && "text-muted-foreground",
+        className,
+      )}
+      {...props}
+    >
+      {children}
+    </button>
   );
 }
 
 /**
- * Ensemble de jours d'un hebdomadaire (« lundi et jeudi »), en sept pastilles
- * plutôt qu'une liste à cocher : la semaine se lit d'un coup d'œil, et la
- * sélection garde l'ordre de la semaine — celui que `parse_list` attend.
- *
- * Tout déselectionner ramène à l'hebdomadaire simple, ancré sur la date de la
- * tâche : c'est la sémantique NULL de la migration 0015, pas un cas d'erreur.
- * On ne bloque donc pas le retrait du dernier jour.
+ * Une ligne de fait : icône nue + contenu. Pas de colonne de libellés — la
+ * valeur dit déjà ce qu'elle est. Le mot ne survit que là où il lèverait une
+ * ambiguïté (une échéance est une date, comme la date planifiée).
  */
-function WeekdayPicker({
-  value,
+function Fact({
+  icon,
+  index,
+  children,
+}: {
+  icon: React.ReactNode;
+  index: number;
+  children: React.ReactNode;
+}) {
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 4 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ ...spring.smooth, delay: index * 0.04 }}
+      className="flex items-start gap-3 py-1.5"
+    >
+      <span className="mt-1 flex shrink-0 text-muted-foreground">{icon}</span>
+      <div className="min-w-0 flex-1 text-[0.9375rem] leading-relaxed">{children}</div>
+    </motion.div>
+  );
+}
+
+/**
+ * Priorité : l'anneau de la case à cocher, posé devant le titre. Dans la liste,
+ * cette couleur EST déjà celle de l'anneau de la coche (`priorityRingColor`) —
+ * le panneau lui donne enfin un nom au lieu d'en faire un code secret.
+ *
+ * La cible fait 28 px pour le pointeur ; l'anneau n'en fait que 20, par
+ * remplissage. C'est le seul chemin vers la priorité, il ne peut pas être plus
+ * petit que le minimum d'une cible.
+ */
+function PriorityRing({
+  priority,
   onChange,
 }: {
-  value: RecurWeekday[];
-  onChange: (days: RecurWeekday[]) => void;
+  priority: Priority;
+  onChange: (next: Priority) => void;
 }) {
-  const selected = new Set(value);
+  const [open, setOpen] = useState(false);
+  const label = PRIORITIES.find((p) => p.value === priority)?.label ?? "Normale";
+
   return (
-    <div className="flex items-center gap-[3px]">
-      {WEEKDAY_OPTIONS.map((day) => {
-        const on = selected.has(day.value);
-        return (
+    <Popover open={open} onOpenChange={setOpen} modal>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <PopoverTrigger asChild>
+            <button
+              type="button"
+              aria-label={`Priorité : ${label}`}
+              className="flex size-7 shrink-0 items-center justify-center rounded-full outline-none transition-transform hover:scale-110 focus-visible:ring-2 focus-visible:ring-ring"
+            >
+              <span
+                className="size-5 rounded-full border-2 transition-colors duration-200"
+                style={{ borderColor: priorityRingColor(priority) }}
+              />
+            </button>
+          </PopoverTrigger>
+        </TooltipTrigger>
+        {/* Sans l'infobulle, rien ne dit qu'un anneau s'ouvre : c'est le prix
+            assumé de ce traitement, et il se paie ici. */}
+        <TooltipContent side="bottom">Priorité : {label}</TooltipContent>
+      </Tooltip>
+
+      <PopoverContent side="bottom" align="start" className="w-44 p-1">
+        {PRIORITIES.map((p) => (
           <button
-            key={day.value}
+            key={p.value}
             type="button"
-            aria-pressed={on}
-            aria-label={day.label}
-            onClick={() => onChange(toggleWeekday(value, day.value))}
+            onClick={() => {
+              onChange(p.value);
+              setOpen(false);
+            }}
             className={cn(
-              // Sélection PLEINE, comme un jour choisi dans le calendrier : le
-              // lavis `brand-soft` des pastilles de statut n'a pas assez de
-              // contraste pour un interrupteur, où l'on compare sept voisines.
-              "size-7 rounded-[8px] text-xs font-medium transition-colors duration-200",
-              on
-                ? "bg-brand text-brand-foreground"
-                : "bg-foreground/[0.06] text-muted-foreground hover:bg-foreground/[0.1]",
+              "flex w-full items-center gap-2.5 rounded-md px-2.5 py-1.5 text-sm outline-none transition-colors hover:bg-accent focus-visible:bg-accent",
+              p.value === priority && "font-medium",
             )}
           >
-            {day.short}
+            <span
+              className="size-2 rounded-full"
+              style={{ backgroundColor: priorityRingColor(p.value) }}
+            />
+            {p.label}
           </button>
-        );
-      })}
+        ))}
+      </PopoverContent>
+    </Popover>
+  );
+}
+
+/** Bouton d'une grille de choix, dans l'éditeur de répétition. */
+function GridChoice({
+  active,
+  className,
+  ...props
+}: React.ComponentProps<"button"> & { active: boolean }) {
+  return (
+    <button
+      type="button"
+      className={cn(
+        "rounded-lg px-2 py-1.5 text-[13px] outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring",
+        active
+          ? "bg-brand font-medium text-brand-foreground"
+          : "bg-foreground/[0.06] text-foreground hover:bg-foreground/[0.1]",
+        className,
+      )}
+      {...props}
+    />
+  );
+}
+
+/**
+ * Tout le rythme dans UN popover, contextuel : on n'y voit que ce qui
+ * s'applique à la fréquence choisie. Il remplace à lui seul les quatre rangées
+ * « Répéter / Intervalle / Le / À partir de » de l'ancien formulaire.
+ *
+ * Que des boutons : un `Select` Radix ici ferait une TROISIÈME pile de
+ * `FocusScope` (Sheet → Popover → Select), et le §4.4 du design system raconte
+ * déjà ce que coûtent deux piles.
+ */
+function RecurrenceEditor({
+  todo,
+  onUpdate,
+}: {
+  todo: Todo;
+  onUpdate: (payload: UpdateTodoInput) => void;
+}) {
+  const weekdaySet = parseWeekdays(todo.recur_weekdays);
+  const positional = todo.recurrence === "monthly" && todo.recur_setpos !== null;
+  // L'intervalle n'a de sens ni avec un ensemble de jours ni en positionnel :
+  // « un lundi sur deux et un jeudi sur deux » n'a pas de lecture unique
+  // (migration 0015), et le positionnel force déjà le mode fixe.
+  const intervalApplies =
+    ["daily", "weekly", "monthly"].includes(todo.recurrence) &&
+    weekdaySet.length === 0 &&
+    !positional;
+  const modeApplies =
+    ["daily", "weekly", "monthly"].includes(todo.recurrence) && !positional;
+
+  const unit =
+    todo.recurrence === "daily"
+      ? "jour"
+      : todo.recurrence === "weekly"
+        ? "semaine"
+        : "mois";
+  const interval = Math.max(1, Number(todo.recur_interval));
+  const plural = interval > 1 && unit !== "mois" ? `${unit}s` : unit;
+
+  const setFrequency = (recurrence: Recurrence) => {
+    // Changer de fréquence normalise les modificateurs : ce qui n'a pas de
+    // sens pour la nouvelle fréquence est remis à zéro.
+    if (recurrence === "none" || recurrence === "weekdays") {
+      onUpdate({
+        recurrence,
+        recur_interval: 1,
+        recur_weekday: null,
+        recur_weekdays: null,
+        recur_setpos: null,
+        recur_mode: "fixed",
+      });
+    } else {
+      onUpdate({
+        recurrence,
+        recur_weekday: null,
+        recur_weekdays: null,
+        recur_setpos: null,
+      });
+    }
+  };
+
+  const positionalValue = !positional
+    ? "anchor"
+    : todo.recur_weekday === null
+      ? "lastday"
+      : String(todo.recur_setpos);
+
+  return (
+    <div className="flex flex-col py-1">
+      <div className="px-1">
+        {FREQUENCIES.map((f) => (
+          <button
+            key={f.value}
+            type="button"
+            onClick={() => setFrequency(f.value)}
+            className={cn(
+              "flex w-full items-center justify-between rounded-md px-2.5 py-1.5 text-sm outline-none transition-colors hover:bg-accent focus-visible:bg-accent",
+              f.value === todo.recurrence && "font-medium text-brand",
+            )}
+          >
+            {f.label}
+            {f.value === todo.recurrence && <span aria-hidden>✓</span>}
+          </button>
+        ))}
+      </div>
+
+      {todo.recurrence === "weekly" && (
+        <>
+          <div className="my-1 h-px bg-border" />
+          <span className="px-3 pb-1.5 pt-1 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+            Certains jours
+          </span>
+          <div className="grid grid-cols-7 gap-[3px] px-2 pb-1">
+            {WEEKDAY_OPTIONS.map((d) => (
+              <GridChoice
+                key={d.value}
+                active={weekdaySet.includes(d.value)}
+                aria-pressed={weekdaySet.includes(d.value)}
+                aria-label={d.label}
+                onClick={() =>
+                  onUpdate({
+                    recur_weekdays: serializeWeekdays(
+                      toggleWeekday(weekdaySet, d.value),
+                    ),
+                  })
+                }
+                className="px-0 text-xs"
+              >
+                {d.short}
+              </GridChoice>
+            ))}
+          </div>
+        </>
+      )}
+
+      {todo.recurrence === "monthly" && (
+        <>
+          <div className="my-1 h-px bg-border" />
+          <span className="px-3 pb-1.5 pt-1 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+            Le
+          </span>
+          <div className="grid grid-cols-2 gap-[3px] px-2 pb-1">
+            <GridChoice
+              active={positionalValue === "anchor"}
+              onClick={() => onUpdate({ recur_setpos: null, recur_weekday: null })}
+              className="col-span-2"
+            >
+              Jour d&apos;ancrage
+            </GridChoice>
+            {[
+              { v: 1, l: "1er" },
+              { v: 2, l: "2e" },
+              { v: 3, l: "3e" },
+              { v: 4, l: "4e" },
+              { v: -1, l: "Dernier" },
+            ].map((o) => (
+              <GridChoice
+                key={o.v}
+                active={positionalValue === String(o.v)}
+                onClick={() =>
+                  // Positionnel → mode fixe forcé : « le prochain 1er lundi au
+                  // moins N mois après complétion » n'est un planning pour
+                  // personne.
+                  onUpdate({
+                    recur_setpos: o.v,
+                    recur_weekday: todo.recur_weekday ?? "mon",
+                    recur_mode: "fixed",
+                  })
+                }
+              >
+                {o.l}
+              </GridChoice>
+            ))}
+            <GridChoice
+              active={positionalValue === "lastday"}
+              onClick={() =>
+                onUpdate({ recur_setpos: -1, recur_weekday: null, recur_mode: "fixed" })
+              }
+            >
+              Dernier jour
+            </GridChoice>
+          </div>
+
+          {positional && todo.recur_weekday !== null && (
+            <div className="grid grid-cols-7 gap-[3px] px-2 pb-1">
+              {WEEKDAY_OPTIONS.map((d) => (
+                <GridChoice
+                  key={d.value}
+                  active={todo.recur_weekday === d.value}
+                  aria-label={d.label}
+                  onClick={() => onUpdate({ recur_weekday: d.value })}
+                  className="px-0 text-xs"
+                >
+                  {d.short}
+                </GridChoice>
+              ))}
+            </div>
+          )}
+        </>
+      )}
+
+      {intervalApplies && (
+        <>
+          <div className="my-1 h-px bg-border" />
+          <div className="flex items-center gap-2 px-3 py-1.5 text-sm text-muted-foreground">
+            <span>{todo.recurrence === "weekly" ? "toutes les" : "tous les"}</span>
+            <span className="inline-flex items-center overflow-hidden rounded-md border border-border">
+              <button
+                type="button"
+                aria-label="Diminuer l'intervalle"
+                onClick={() => onUpdate({ recur_interval: Math.max(1, interval - 1) })}
+                className="flex size-7 items-center justify-center text-foreground outline-none transition-colors hover:bg-accent focus-visible:bg-accent"
+              >
+                −
+              </button>
+              <span className="min-w-8 border-x border-border py-1 text-center font-mono text-[13px] tabular-nums text-foreground">
+                {interval}
+              </span>
+              <button
+                type="button"
+                aria-label="Augmenter l'intervalle"
+                onClick={() => onUpdate({ recur_interval: Math.min(99, interval + 1) })}
+                className="flex size-7 items-center justify-center text-foreground outline-none transition-colors hover:bg-accent focus-visible:bg-accent"
+              >
+                +
+              </button>
+            </span>
+            <span>{plural}</span>
+          </div>
+        </>
+      )}
+
+      {modeApplies && (
+        <>
+          <div className="my-1 h-px bg-border" />
+          <span className="px-3 pb-1.5 pt-1 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+            À partir de
+          </span>
+          <div className="px-1 pb-1">
+            {(
+              [
+                { v: "fixed", l: "La date planifiée" },
+                { v: "after_completion", l: "La complétion" },
+              ] as { v: RecurMode; l: string }[]
+            ).map((o) => (
+              <button
+                key={o.v}
+                type="button"
+                onClick={() => onUpdate({ recur_mode: o.v })}
+                className={cn(
+                  "flex w-full items-center justify-between rounded-md px-2.5 py-1.5 text-sm outline-none transition-colors hover:bg-accent focus-visible:bg-accent",
+                  todo.recur_mode === o.v && "font-medium text-brand",
+                )}
+              >
+                {o.l}
+                {todo.recur_mode === o.v && <span aria-hidden>✓</span>}
+              </button>
+            ))}
+          </div>
+        </>
+      )}
     </div>
   );
 }
+
+/** Attributs que le panneau sait porter, dans l'ordre où ils se lisent. */
+type AttrKey =
+  | "scheduled"
+  | "evening"
+  | "deadline"
+  | "recurrence"
+  | "project"
+  | "tags"
+  | "remind";
+
+const MISSING_LABELS: Record<AttrKey, string> = {
+  scheduled: "Une date",
+  evening: "Ce soir",
+  deadline: "Une échéance",
+  recurrence: "Une répétition",
+  project: "Un projet",
+  tags: "Un tag",
+  remind: "Un rappel",
+};
 
 interface TodoDetailSheetProps {
   open: boolean;
@@ -168,15 +520,14 @@ interface TodoDetailSheetProps {
 }
 
 /**
- * Formulaire complet d'une tâche, dans un panneau latéral (au lieu de l'ancienne
- * édition au clic directement dans la ligne) : titre, note, priorité, date,
- * liste, récurrence, rappel, suppression. La ligne de la liste (`TodoItem`)
- * reste ainsi purement d'affichage — sa structure ne bouge plus jamais au
- * survol ou en édition, seule source de la « saccade » précédente.
+ * Panneau de détail d'une tâche : il montre LA TÂCHE, pas le schéma d'une
+ * tâche. Un attribut vide n'occupe pas de ligne ; ce qui est posé se lit comme
+ * une phrase dont les mots s'ouvrent au clic, exactement comme dans la barre
+ * de capture. Ce qui manque s'ajoute par une seule porte, « Ajouter ».
  *
  * Padding : `SheetContent` remis à plat (`p-0 gap-0`), chaque bande gère son
- * propre `px-5` — en-tête et pied clos par des hairlines, un seul rail
- * vertical pour le titre, la note, la priorité et les attributs.
+ * propre `px-5` et est close par une hairline. Titre et note restent sur un
+ * unique rail, avec l'anneau de priorité devant eux.
  */
 export function TodoDetailSheet({
   open,
@@ -192,12 +543,22 @@ export function TodoDetailSheet({
   const [dateOpen, setDateOpen] = useState(false);
   const [deadlineOpen, setDeadlineOpen] = useState(false);
   const [reminderOpen, setReminderOpen] = useState(false);
+  const [recurOpen, setRecurOpen] = useState(false);
+  const [addOpen, setAddOpen] = useState(false);
+  /**
+   * Attributs révélés à la demande : pas encore de valeur, mais l'utilisateur
+   * vient de les demander par « Ajouter ». On n'écrit PAS de valeur par défaut
+   * en base pour ça — un panneau ne doit pas inventer une échéance parce qu'on
+   * a cliqué « Une échéance ».
+   */
+  const [revealed, setRevealed] = useState<AttrKey[]>([]);
 
   // Resynchronise à chaque ouverture (la tâche a pu changer côté serveur).
   useEffect(() => {
     if (open) {
       setTitle(todo.text);
       setNote(todo.note ?? "");
+      setRevealed([]);
     }
   }, [open, todo.text, todo.note]);
 
@@ -212,14 +573,11 @@ export function TodoDetailSheet({
     if (next !== (todo.note ?? "")) onUpdate({ note: next || null });
   };
 
-  const weekdaySet = parseWeekdays(todo.recur_weekdays);
-
   const selectedDate = todo.scheduled_for ? parseLocalISODate(todo.scheduled_for) : null;
   // Planifiée (« quand je m'y mets ») et Échéance (« pour quand ») sont deux
   // dates DISTINCTES depuis la Phase I — plus jamais écrites ensemble.
   const pickDate = (next: Date | undefined) => {
-    const iso = next ? toLocalISODate(next) : null;
-    onUpdate({ scheduled_for: iso });
+    onUpdate({ scheduled_for: next ? toLocalISODate(next) : null });
     setDateOpen(false);
   };
 
@@ -250,13 +608,9 @@ export function TodoDetailSheet({
     setReminderOpen(false);
   };
 
-  const handleDelete = () => {
-    onOpenChange(false);
-    onDelete();
-  };
-
-  // Échap / clic dehors : les champs n'émettent pas de blur au démontage —
-  // on committe donc les brouillons AVANT de fermer, sinon l'édition est perdue.
+  // Échap / clic dehors / ✕ : les champs n'émettent pas de blur au démontage —
+  // on committe donc les brouillons AVANT de fermer, sinon l'édition est
+  // perdue. TOUTE fermeture passe par ici, la suppression comprise.
   const handleOpenChange = (next: boolean) => {
     if (!next) {
       saveTitle();
@@ -265,384 +619,250 @@ export function TodoDetailSheet({
     onOpenChange(next);
   };
 
+  const handleDelete = () => {
+    handleOpenChange(false);
+    onDelete();
+  };
+
+  const has = (key: AttrKey): boolean => {
+    switch (key) {
+      case "scheduled":
+        return todo.scheduled_for !== null;
+      case "evening":
+        return todo.this_evening;
+      case "deadline":
+        return todo.due_date !== null;
+      case "recurrence":
+        return todo.recurrence !== "none";
+      case "project":
+        return todo.project_id !== null;
+      case "tags":
+        return todo.tags.length > 0;
+      case "remind":
+        return todo.remind_at !== null;
+    }
+  };
+  const shows = (key: AttrKey) => has(key) || revealed.includes(key);
+  const reveal = (key: AttrKey) =>
+    setRevealed((prev) => (prev.includes(key) ? prev : [...prev, key]));
+
+  const missing = (Object.keys(MISSING_LABELS) as AttrKey[]).filter((k) => !shows(k));
+
+  // Index de cascade : chaque ligne affichée entre à son tour.
+  let row = 0;
+
+  const deadlineInfo = todo.due_date
+    ? deadlineCountdown(todo.due_date, todayLocalISODate())
+    : null;
+
   return (
     <Sheet open={open} onOpenChange={handleOpenChange}>
       <SheetContent className="flex w-full flex-col gap-0 p-0 sm:max-w-md">
-        <SheetHeader className="flex-row items-center border-b border-border/60 px-5 py-4">
+        <SheetHeader className="flex-row items-center justify-between border-b border-border/60 py-4 pl-5 pr-14">
           <SheetTitle>Détails de la tâche</SheetTitle>
+          {/* La suppression est rare : elle ne mérite pas une barre rouge
+              permanente en pied de panneau. */}
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="ghost" size="icon-sm" aria-label="Autres actions">
+                <MoreHorizontal size={16} />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem variant="destructive" onSelect={handleDelete}>
+                <Trash2 />
+                Supprimer la tâche
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </SheetHeader>
 
         <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
-          {/* Titre + note : un seul rail px-5, pas de bordure de champ. */}
-          <div className="px-5 pt-5">
-            <textarea
-              value={title}
-              rows={1}
-              onChange={(e) => setTitle(e.target.value)}
-              onBlur={saveTitle}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") {
-                  e.preventDefault();
-                  (e.target as HTMLTextAreaElement).blur();
-                }
-              }}
-              placeholder="Titre de la tâche"
-              className="w-full resize-none bg-transparent text-lg font-semibold tracking-[-0.01em] text-foreground outline-none placeholder:text-muted-foreground/50 field-sizing-content"
-            />
-            {/* textarea nu (pas le Textarea shadcn : son `dark:bg-input/30`
-                survivrait au bg-transparent et dessinerait une boîte teintée). */}
-            <textarea
-              value={note}
-              rows={2}
-              onChange={(e) => setNote(e.target.value)}
-              onBlur={saveNote}
-              placeholder="Ajouter une note…"
-              className="mt-1.5 w-full resize-none bg-transparent text-sm leading-relaxed text-muted-foreground outline-none placeholder:text-muted-foreground/50 field-sizing-content"
-            />
-          </div>
-
-          {/* Priorité : segmented à pouce glissant, comme les autres groupes. */}
-          <div className="px-5 pt-4 pb-5">
-            <div className="inline-flex w-fit items-center gap-0.5 rounded-xl bg-foreground/[0.05] p-[3px] dark:bg-foreground/[0.08]">
-              {PRIORITIES.map(({ value, label }) => {
-                const active = todo.priority === value;
-                return (
-                  <button
-                    key={value}
-                    type="button"
-                    onClick={() => onUpdate({ priority: value })}
-                    className={cn(
-                      "relative rounded-[10px] px-3 py-1.5 text-[13px] transition-colors duration-200",
-                      active ? "font-medium text-foreground" : "text-muted-foreground hover:text-foreground/80",
-                    )}
-                  >
-                    {active && (
-                      <span
-                        aria-hidden
-                        className="absolute inset-0 rounded-[10px] bg-card shadow-[0_1px_3px_rgba(0,0,0,0.08)] ring-1 ring-black/[0.04] dark:bg-accent dark:ring-white/[0.07]"
-                      />
-                    )}
-                    <span className="relative z-10 inline-flex items-center gap-1.5">
-                      <span
-                        className="size-2 rounded-full"
-                        style={{ backgroundColor: priorityRingColor(value) }}
-                      />
-                      {label}
-                    </span>
-                  </button>
-                );
-              })}
+          {/* Anneau + titre + note : un seul rail px-5, pas de bordure de champ. */}
+          <div className="flex gap-3 px-5 pt-5">
+            <div className="pt-0.5">
+              <PriorityRing
+                priority={todo.priority}
+                onChange={(priority) => onUpdate({ priority })}
+              />
+            </div>
+            <div className="min-w-0 flex-1">
+              <textarea
+                value={title}
+                rows={1}
+                onChange={(e) => setTitle(e.target.value)}
+                onBlur={saveTitle}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    (e.target as HTMLTextAreaElement).blur();
+                  }
+                }}
+                placeholder="Titre de la tâche"
+                className="w-full resize-none bg-transparent text-lg font-semibold tracking-[-0.01em] text-foreground outline-none placeholder:text-muted-foreground/50 field-sizing-content"
+              />
+              {/* textarea nu (pas le Textarea shadcn : son `dark:bg-input/30`
+                  survivrait au bg-transparent et dessinerait une boîte teintée). */}
+              <textarea
+                value={note}
+                rows={2}
+                onChange={(e) => setNote(e.target.value)}
+                onBlur={saveNote}
+                placeholder="Ajouter une note…"
+                className="mt-1.5 w-full resize-none bg-transparent text-sm leading-relaxed text-muted-foreground outline-none placeholder:text-muted-foreground/50 field-sizing-content"
+              />
             </div>
           </div>
 
-          {/* Attributs : rail px-5, hairlines internes. */}
-          <div className="border-t border-border/60 px-5">
-            <DetailRow icon={<Calendar size={15} />} label="Planifiée">
-              {/* modal : dans un Dialog, un popover non modal se fait voler le
-                  focus par le FocusScope du dialog (champ insaisissable). */}
-              <Popover open={dateOpen} onOpenChange={setDateOpen} modal>
-                <PopoverTrigger asChild>
-                  <Button variant="outline" size="sm" className="font-normal">
-                    {todo.scheduled_for ? formatShortDate(todo.scheduled_for) : "Choisir…"}
-                  </Button>
-                </PopoverTrigger>
-                <PopoverContent
-                  side="bottom"
-                  align="end"
-                  collisionPadding={8}
-                  className="max-h-[var(--radix-popover-content-available-height)] w-auto overflow-y-auto p-0"
-                >
-                  <DatePickerCalendar date={selectedDate} onPick={pickDate} />
-                </PopoverContent>
-              </Popover>
-            </DetailRow>
-
-            <DetailRow icon={<Sunset size={15} />} label="Ce soir">
-              <Switch
-                checked={todo.this_evening}
-                onCheckedChange={toggleEvening}
-                aria-label="Ranger dans Ce soir"
-              />
-            </DetailRow>
-
-            <DetailRow icon={<Flag size={15} />} label="Échéance">
-              <div className="flex items-center gap-1">
-                <Popover open={deadlineOpen} onOpenChange={setDeadlineOpen} modal>
+          {/* Les faits : ce que la tâche PORTE, rien d'autre. */}
+          <div className="mt-4 flex flex-col border-t border-border/60 px-5 py-3">
+            {shows("scheduled") && (
+              <Fact icon={<Calendar size={15} />} index={row++}>
+                {/* modal : dans un Dialog, un popover non modal se fait voler le
+                    focus par le FocusScope du dialog (champ insaisissable). */}
+                <Popover open={dateOpen} onOpenChange={setDateOpen} modal>
                   <PopoverTrigger asChild>
-                    <Button variant="outline" size="sm" className="font-normal">
-                      {todo.due_date ? (
-                        <span className="inline-flex items-center gap-1.5">
-                          {formatShortDate(todo.due_date)}
-                          <span
-                            className={cn(
-                              "text-[11px] tabular-nums",
-                              deadlineCountdown(todo.due_date, todayLocalISODate())
-                                .reached
-                                ? "text-destructive"
-                                : "text-muted-foreground",
-                            )}
-                          >
-                            {
-                              deadlineCountdown(todo.due_date, todayLocalISODate())
-                                .label
-                            }
-                          </span>
-                        </span>
-                      ) : (
-                        "Choisir…"
-                      )}
-                    </Button>
+                    <Tok muted={!todo.scheduled_for}>
+                      {todo.scheduled_for
+                        ? formatShortDate(todo.scheduled_for)
+                        : "Choisir une date…"}
+                    </Tok>
                   </PopoverTrigger>
                   <PopoverContent
                     side="bottom"
-                    align="end"
+                    align="start"
+                    collisionPadding={8}
+                    className="max-h-[var(--radix-popover-content-available-height)] w-auto overflow-y-auto p-0"
+                  >
+                    <DatePickerCalendar date={selectedDate} onPick={pickDate} />
+                  </PopoverContent>
+                </Popover>
+                {todo.this_evening && (
+                  <>
+                    <span className="text-muted-foreground">, </span>
+                    <Tok
+                      onClick={() => toggleEvening(false)}
+                      aria-label="Retirer « ce soir »"
+                    >
+                      ce soir
+                    </Tok>
+                  </>
+                )}
+              </Fact>
+            )}
+
+            {/* « Ce soir » sans date planifiée : possible sur une donnée
+                ancienne, on ne l'escamote pas pour autant. */}
+            {!shows("scheduled") && shows("evening") && (
+              <Fact icon={<Sunset size={15} />} index={row++}>
+                <Tok onClick={() => toggleEvening(false)} aria-label="Retirer « ce soir »">
+                  Ce soir
+                </Tok>
+              </Fact>
+            )}
+
+            {shows("deadline") && (
+              <Fact icon={<Flag size={15} />} index={row++}>
+                <span className="text-muted-foreground">Échéance </span>
+                <Popover open={deadlineOpen} onOpenChange={setDeadlineOpen} modal>
+                  <PopoverTrigger asChild>
+                    <Tok muted={!todo.due_date}>
+                      {todo.due_date ? formatShortDate(todo.due_date) : "Choisir une date…"}
+                    </Tok>
+                  </PopoverTrigger>
+                  <PopoverContent
+                    side="bottom"
+                    align="start"
                     collisionPadding={8}
                     className="max-h-[var(--radix-popover-content-available-height)] w-auto overflow-y-auto p-0"
                   >
                     <DatePickerCalendar date={selectedDeadline} onPick={pickDeadline} />
                   </PopoverContent>
                 </Popover>
-                {todo.due_date && (
-                  <Button
-                    variant="ghost"
-                    size="icon-sm"
-                    aria-label="Retirer l'échéance"
-                    onClick={() => onUpdate({ due_date: null })}
+                {deadlineInfo && (
+                  <span
+                    className={cn(
+                      "ml-1.5 text-[11px] tabular-nums",
+                      deadlineInfo.reached ? "text-destructive" : "text-muted-foreground",
+                    )}
                   >
-                    <X size={14} />
-                  </Button>
+                    {deadlineInfo.label}
+                  </span>
                 )}
-              </div>
-            </DetailRow>
-
-            <DetailRow icon={<FolderOpen size={15} />} label="Projet">
-              <ProjectControl
-                projectId={todo.project_id}
-                projects={projects}
-                areas={areas}
-                modal
-                // Purge la « liste » héritée en même temps : le projet devient
-                // l'unique source de vérité pour cette tâche (la colonne `list`
-                // se vide ainsi progressivement, sans migration brutale).
-                onChange={(project_id) => onUpdate({ project_id, list: null })}
-                onCreate={async (name) => (await createProject({ name })).id}
-              />
-            </DetailRow>
-
-            <DetailRow icon={<Hash size={15} />} label="Tags">
-              <TagControl
-                value={todo.tags}
-                tags={tags}
-                modal
-                onChange={(tagIds) => void setTodoTags(todo.id, tagIds)}
-                onCreate={async (name) => (await createTag({ name })).id}
-              />
-            </DetailRow>
-
-            <DetailRow
-              icon={<Repeat size={15} />}
-              label="Répéter"
-              active={todo.recurrence !== "none"}
-            >
-              <Select
-                value={todo.recurrence}
-                onValueChange={(value) => {
-                  const recurrence = value as Recurrence;
-                  // Changer de fréquence normalise les modificateurs : ce qui
-                  // n'a pas de sens pour la nouvelle fréquence est remis à zéro.
-                  if (recurrence === "none" || recurrence === "weekdays") {
-                    onUpdate({
-                      recurrence,
-                      recur_interval: 1,
-                      recur_weekday: null,
-                      recur_weekdays: null,
-                      recur_setpos: null,
-                      recur_mode: "fixed",
-                    });
-                  } else if (recurrence !== "monthly") {
-                    onUpdate({
-                      recurrence,
-                      recur_weekday: null,
-                      recur_weekdays: null,
-                      recur_setpos: null,
-                    });
-                  } else {
-                    onUpdate({ recurrence, recur_weekdays: null });
-                  }
-                }}
-              >
-                <SelectTrigger size="sm" className="w-40">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent align="end">
-                  {RECURRENCE_OPTIONS.map((option) => (
-                    <SelectItem key={option.value} value={option.value}>
-                      {option.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </DetailRow>
-
-            {/* Ensemble de jours — hebdomadaire seulement. */}
-            {todo.recurrence === "weekly" && (
-              <DetailRow icon={<Repeat size={15} className="opacity-0" />} label="Les jours">
-                <WeekdayPicker
-                  value={weekdaySet}
-                  onChange={(days) =>
-                    onUpdate({ recur_weekdays: serializeWeekdays(days) })
-                  }
-                />
-              </DetailRow>
+              </Fact>
             )}
 
-            {/* Intervalle « toutes les N » — pas pour les jours ouvrés
-                (« un ouvré sur deux » ne veut rien dire), ni quand un ensemble
-                de jours est posé : la règle IGNORE alors l'intervalle (voir la
-                migration 0015), et laisser le réglage visible ferait mentir le
-                panneau. La valeur reste en base et reparaît si l'ensemble se
-                vide. */}
-            {["daily", "weekly", "monthly"].includes(todo.recurrence) &&
-              todo.recur_setpos === null &&
-              weekdaySet.length === 0 && (
-                <DetailRow icon={<Repeat size={15} className="opacity-0" />} label="Intervalle">
-                  <div className="flex items-center gap-2">
-                    <span className="text-sm text-muted-foreground">
-                      {todo.recurrence === "daily"
-                        ? "tous les"
-                        : todo.recurrence === "weekly"
-                          ? "toutes les"
-                          : "tous les"}
-                    </span>
-                    <Input
-                      type="number"
-                      min={1}
-                      max={99}
-                      value={Number(todo.recur_interval)}
-                      onChange={(e) => {
-                        const n = Math.max(1, Math.min(99, Number(e.target.value) || 1));
-                        onUpdate({ recur_interval: n });
-                      }}
-                      className="h-8 w-16 text-center"
-                      aria-label="Intervalle de répétition"
-                    />
-                    <span className="text-sm text-muted-foreground">
-                      {todo.recurrence === "daily"
-                        ? "jours"
-                        : todo.recurrence === "weekly"
-                          ? "semaines"
-                          : "mois"}
-                    </span>
-                  </div>
-                </DetailRow>
-              )}
-
-            {/* Positionnel mensuel : jour d'ancrage / Ne jour de semaine /
-                dernier jour du mois. */}
-            {todo.recurrence === "monthly" && (
-              <DetailRow icon={<Repeat size={15} className="opacity-0" />} label="Le">
-                <div className="flex items-center gap-1.5">
-                  <Select
-                    value={
-                      todo.recur_setpos === null
-                        ? "anchor"
-                        : todo.recur_weekday === null
-                          ? "lastday"
-                          : String(todo.recur_setpos)
-                    }
-                    onValueChange={(value) => {
-                      if (value === "anchor") {
-                        onUpdate({ recur_setpos: null, recur_weekday: null });
-                      } else if (value === "lastday") {
-                        onUpdate({ recur_setpos: -1, recur_weekday: null });
-                      } else {
-                        // Positionnel → mode fixe forcé : « le prochain 1er
-                        // lundi au moins N mois après complétion » n'est un
-                        // planning pour personne.
-                        onUpdate({
-                          recur_setpos: Number(value),
-                          recur_weekday: todo.recur_weekday ?? "mon",
-                          recur_mode: "fixed",
-                        });
-                      }
-                    }}
-                  >
-                    <SelectTrigger size="sm" className="w-32">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent align="end">
-                      <SelectItem value="anchor">Jour d&apos;ancrage</SelectItem>
-                      <SelectItem value="1">1er</SelectItem>
-                      <SelectItem value="2">2e</SelectItem>
-                      <SelectItem value="3">3e</SelectItem>
-                      <SelectItem value="4">4e</SelectItem>
-                      <SelectItem value="-1">Dernier</SelectItem>
-                      <SelectItem value="lastday">Dernier jour du mois</SelectItem>
-                    </SelectContent>
-                  </Select>
-
-                  {todo.recur_setpos !== null && todo.recur_weekday !== null && (
-                    <Select
-                      value={todo.recur_weekday}
-                      onValueChange={(value) =>
-                        onUpdate({ recur_weekday: value as RecurWeekday })
-                      }
-                    >
-                      <SelectTrigger size="sm" className="w-28">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent align="end">
-                        {WEEKDAY_OPTIONS.map((o) => (
-                          <SelectItem key={o.value} value={o.value}>
-                            {o.label}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  )}
-                </div>
-              </DetailRow>
-            )}
-
-            {/* Base du report : date fixe ou après complétion — réservé aux
-                règles simples (façon Things). */}
-            {["daily", "weekly", "monthly"].includes(todo.recurrence) &&
-              todo.recur_setpos === null && (
-                <DetailRow icon={<Repeat size={15} className="opacity-0" />} label="À partir de">
-                  <Select
-                    value={todo.recur_mode}
-                    onValueChange={(value) =>
-                      onUpdate({ recur_mode: value as RecurMode })
-                    }
-                  >
-                    <SelectTrigger size="sm" className="w-44">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent align="end">
-                      <SelectItem value="fixed">La date planifiée</SelectItem>
-                      <SelectItem value="after_completion">La complétion</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </DetailRow>
-              )}
-
-            <DetailRow
-              icon={<BellRing size={15} />}
-              label="Rappel"
-              active={todo.remind_at !== null}
-            >
-              <div className="flex items-center gap-1">
-                <Popover open={reminderOpen} onOpenChange={setReminderOpen} modal>
+            {shows("recurrence") && (
+              <Fact icon={<Repeat size={15} />} index={row++}>
+                {/* Le libellé vient de `recurrenceLabel` : c'est la MÊME chaîne
+                    que la ligne méta de la liste. Deux formulations pour une
+                    seule règle, c'est une divergence en attente. */}
+                <Popover open={recurOpen} onOpenChange={setRecurOpen} modal>
                   <PopoverTrigger asChild>
-                    <Button variant="outline" size="sm" className="font-normal">
-                      {todo.remind_at
-                        ? `${formatShortDate(remindDatePart)} · ${remindTimePart}`
-                        : "Ajouter…"}
-                    </Button>
+                    <Tok muted={todo.recurrence === "none"}>
+                      {todo.recurrence === "none"
+                        ? "Choisir un rythme…"
+                        : recurrenceLabel(todo)}
+                    </Tok>
                   </PopoverTrigger>
                   <PopoverContent
                     side="bottom"
-                    align="end"
+                    align="start"
+                    collisionPadding={8}
+                    className="max-h-[var(--radix-popover-content-available-height)] w-64 overflow-y-auto p-0"
+                  >
+                    <RecurrenceEditor todo={todo} onUpdate={onUpdate} />
+                  </PopoverContent>
+                </Popover>
+              </Fact>
+            )}
+
+            {(shows("project") || shows("tags")) && (
+              <Fact icon={<FolderOpen size={15} />} index={row++}>
+                <span className="inline-flex flex-wrap items-center gap-1.5">
+                  {shows("project") && (
+                    <ProjectControl
+                      projectId={todo.project_id}
+                      projects={projects}
+                      areas={areas}
+                      modal
+                      compact
+                      // Purge la « liste » héritée en même temps : le projet
+                      // devient l'unique source de vérité pour cette tâche (la
+                      // colonne `list` se vide ainsi progressivement, sans
+                      // migration brutale).
+                      onChange={(project_id) => onUpdate({ project_id, list: null })}
+                      onCreate={async (name) => (await createProject({ name })).id}
+                    />
+                  )}
+                  {shows("tags") && (
+                    <TagControl
+                      value={todo.tags}
+                      tags={tags}
+                      modal
+                      compact
+                      onChange={(tagIds) => void setTodoTags(todo.id, tagIds)}
+                      onCreate={async (name) => (await createTag({ name })).id}
+                    />
+                  )}
+                </span>
+              </Fact>
+            )}
+
+            {shows("remind") && (
+              <Fact icon={<BellRing size={15} />} index={row++}>
+                <span className="text-muted-foreground">Rappel </span>
+                <Popover open={reminderOpen} onOpenChange={setReminderOpen} modal>
+                  <PopoverTrigger asChild>
+                    <Tok muted={!todo.remind_at}>
+                      {todo.remind_at
+                        ? `${formatShortDate(remindDatePart)} · ${remindTimePart}`
+                        : "Choisir une heure…"}
+                    </Tok>
+                  </PopoverTrigger>
+                  <PopoverContent
+                    side="bottom"
+                    align="start"
                     collisionPadding={8}
                     className="max-h-[var(--radix-popover-content-available-height)] w-72 overflow-y-auto p-0"
                   >
@@ -662,30 +882,57 @@ export function TodoDetailSheet({
                   </PopoverContent>
                 </Popover>
                 {todo.remind_at && (
-                  <Button
-                    variant="ghost"
-                    size="icon-sm"
-                    aria-label="Retirer le rappel"
+                  <button
+                    type="button"
                     onClick={clearReminder}
+                    className="ml-1.5 text-[11px] text-muted-foreground underline-offset-2 outline-none hover:underline focus-visible:underline"
                   >
-                    <X size={14} />
-                  </Button>
+                    retirer
+                  </button>
                 )}
-              </div>
-            </DetailRow>
-          </div>
-        </div>
+              </Fact>
+            )}
 
-        {/* Pied : suppression, séparée par une hairline. */}
-        <div className="border-t border-border/60 px-5 py-4">
-          <Button
-            variant="ghost"
-            className="w-full justify-center text-destructive hover:bg-destructive/10 hover:text-destructive"
-            onClick={handleDelete}
-          >
-            <Trash2 />
-            Supprimer la tâche
-          </Button>
+            {/* La seule porte vers ce que la tâche n'a pas encore. */}
+            {missing.length > 0 && (
+              <Popover open={addOpen} onOpenChange={setAddOpen} modal>
+                <PopoverTrigger asChild>
+                  <button
+                    type="button"
+                    className="-ml-2 mt-1 inline-flex w-fit items-center gap-2.5 rounded-lg px-2 py-1.5 text-[0.9375rem] text-muted-foreground outline-none transition-colors hover:bg-foreground/[0.06] hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+                  >
+                    <Plus size={15} />
+                    Ajouter
+                  </button>
+                </PopoverTrigger>
+                <PopoverContent align="start" className="w-56 p-0">
+                  <Command>
+                    <CommandList>
+                      <CommandEmpty>Tout est déjà posé.</CommandEmpty>
+                      <CommandGroup>
+                        {missing.map((key) => (
+                          <CommandItem
+                            key={key}
+                            value={MISSING_LABELS[key]}
+                            onSelect={() => {
+                              // « Ce soir » n'a pas de valeur à saisir : il
+                              // s'applique tout de suite, avec son effet de
+                              // bord (planifier à aujourd'hui).
+                              if (key === "evening") toggleEvening(true);
+                              else reveal(key);
+                              setAddOpen(false);
+                            }}
+                          >
+                            {MISSING_LABELS[key]}
+                          </CommandItem>
+                        ))}
+                      </CommandGroup>
+                    </CommandList>
+                  </Command>
+                </PopoverContent>
+              </Popover>
+            )}
+          </div>
         </div>
       </SheetContent>
     </Sheet>

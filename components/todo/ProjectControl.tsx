@@ -23,6 +23,13 @@ interface ProjectControlProps {
    * rapatrie le focus et le champ « Nouveau projet… » est insaisissable.
    */
   modal?: boolean;
+  /**
+   * Déclencheur en pastille, posé dans une phrase plutôt que dans une rangée
+   * de formulaire (panneau de détail). Reprend la pastille mate de
+   * `TodoMetaLine` : le même objet garde la même forme dans la liste et dans
+   * le panneau.
+   */
+  compact?: boolean;
   onChange: (projectId: string | null) => void;
   /** Crée un projet et renvoie son id (pour l'assigner dans la foulée). */
   onCreate: (name: string) => Promise<string>;
@@ -41,6 +48,7 @@ export function ProjectControl({
   areas,
   dimmed = false,
   modal = false,
+  compact = false,
   onChange,
   onCreate,
 }: ProjectControlProps) {
@@ -95,15 +103,19 @@ export function ProjectControl({
           type="button"
           aria-label={current ? "Changer de projet" : "Assigner un projet"}
           className={cn(
-            "flex h-9 max-w-[12rem] items-center gap-1.5 rounded-lg bg-muted px-2.5 text-sm font-medium text-foreground transition-colors hover:bg-muted/80 outline-none",
+            compact
+              ? "inline-flex max-w-[12rem] items-center gap-1.5 rounded-full bg-foreground/[0.06] px-2.5 py-0.5 text-[0.9375rem] text-foreground outline-none transition-colors hover:bg-foreground/[0.1]"
+              : "flex h-9 max-w-[12rem] items-center gap-1.5 rounded-lg bg-muted px-2.5 text-sm font-medium text-foreground transition-colors hover:bg-muted/80 outline-none",
             !current && "text-muted-foreground",
             dimmed && "opacity-60",
           )}
         >
-          <FolderOpen
-            size={14}
-            className="shrink-0 text-muted-foreground opacity-70"
-          />
+          {!compact && (
+            <FolderOpen
+              size={14}
+              className="shrink-0 text-muted-foreground opacity-70"
+            />
+          )}
           <span className="truncate">{current?.name ?? "Projet"}</span>
         </button>
       </PopoverTrigger>

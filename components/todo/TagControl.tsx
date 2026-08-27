@@ -23,6 +23,11 @@ interface TagControlProps {
    * rapatrie le focus et le champ « Nouveau tag… » est insaisissable.
    */
   modal?: boolean;
+  /**
+   * Déclencheur en pastille, posé dans une phrase plutôt que dans une rangée
+   * de formulaire (panneau de détail). Même pastille mate que `TodoMetaLine`.
+   */
+  compact?: boolean;
   /** Remplace l'intégralité des tags de la tâche. */
   onChange: (tagIds: string[]) => void;
   /** Crée un tag et renvoie son id (get-or-create côté backend). */
@@ -39,6 +44,7 @@ export function TagControl({
   tags,
   dimmed = false,
   modal = false,
+  compact = false,
   onChange,
   onCreate,
 }: TagControlProps) {
@@ -87,13 +93,17 @@ export function TagControl({
           type="button"
           aria-label={value.length ? "Modifier les tags" : "Ajouter des tags"}
           className={cn(
-            "flex h-9 max-w-[12rem] items-center gap-1.5 rounded-lg bg-muted px-2.5 text-sm font-medium text-foreground transition-colors hover:bg-muted/80 outline-none",
+            compact
+              ? "inline-flex max-w-[12rem] items-center gap-1.5 rounded-full bg-foreground/[0.06] px-2.5 py-0.5 text-[0.9375rem] text-foreground outline-none transition-colors hover:bg-foreground/[0.1]"
+              : "flex h-9 max-w-[12rem] items-center gap-1.5 rounded-lg bg-muted px-2.5 text-sm font-medium text-foreground transition-colors hover:bg-muted/80 outline-none",
             value.length === 0 && "text-muted-foreground",
             dimmed && "opacity-60",
           )}
         >
-          <Hash size={14} className="shrink-0 text-muted-foreground opacity-70" />
-          <span className="truncate">{label}</span>
+          {!compact && (
+            <Hash size={14} className="shrink-0 text-muted-foreground opacity-70" />
+          )}
+          <span className="truncate">{compact ? `#${label}` : label}</span>
         </button>
       </PopoverTrigger>
 
