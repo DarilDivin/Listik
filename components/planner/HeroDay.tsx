@@ -2,8 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
-import { AnimatedNumber } from "@/components/ui/animated-number";
-import { ProgressRing } from "@/components/planner/ProgressRing";
+import { DayPulse } from "@/components/planner/DayPulse";
 import { spring } from "@/lib/motion";
 import { useDayProgress } from "@/lib/day-progress";
 
@@ -88,7 +87,8 @@ export function HeroDay({ date, done, total }: HeroDayProps) {
         </div>
       </motion.div>
 
-      {/* Widget progression — anneau fin en satellite du chiffre, pas l'inverse. */}
+      {/* Le pouls du jour — quatre traitements au choix (Réglages →
+          Personnalisation) ; la célébration, elle, les enveloppe tous. */}
       <motion.div
         initial={{ opacity: 0, y: 10 }}
         animate={{ opacity: 1, y: 0 }}
@@ -113,27 +113,8 @@ export function HeroDay({ date, done, total }: HeroDayProps) {
           animate={celebrate ? { scale: [1, 1.15, 1] } : { scale: 1 }}
           transition={{ duration: 0.5, ease: [0.16, 1, 0.3, 1] }}
         >
-          <ProgressRing
-            progress={total > 0 ? done / total : 0}
-            size={40}
-            strokeWidth={3}
-            // Rien à situer sur le cadran s'il n'y a rien à faire aujourd'hui.
-            marker={total > 0 ? dayProgress ?? undefined : undefined}
-          />
+          <DayPulse done={done} total={total} dayProgress={dayProgress} />
         </motion.div>
-
-        <div className="flex flex-col gap-0.5 pr-1">
-          <span className="flex items-baseline gap-1 tabular-nums">
-            <AnimatedNumber
-              value={done}
-              className="text-2xl font-semibold text-foreground"
-            />
-            <span className="text-sm text-muted-foreground/60">/ {total}</span>
-          </span>
-          <span className="text-xs text-muted-foreground">
-            aujourd&apos;hui
-          </span>
-        </div>
       </motion.div>
     </div>
   );

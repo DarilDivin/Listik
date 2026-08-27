@@ -91,11 +91,30 @@ export const SECTION_STYLES_LOCKED: Record<SectionKey, SectionStyleId> = {
   completed: "list",
 };
 
+/**
+ * Traitements du widget de progression du Planificateur. Quatre finis, un seul
+ * endroit : c'est la leçon des styles de section (six styles × dix sections,
+ * débranchés en Phase O faute d'être tenables). Ici la combinatoire est nulle.
+ */
+export const PULSE_STYLES = [
+  { id: "ring", label: "Anneau" },
+  { id: "dial", label: "Cadran" },
+  { id: "bar", label: "Barre" },
+  { id: "countdown", label: "Compte" },
+] as const;
+
+export type PulseStyleId = (typeof PULSE_STYLES)[number]["id"];
+
 const ACCENT_KEY = "listik.accent";
 const NAV_KEY = "listik.nav";
 const OLED_KEY = "listik.oled";
+const PULSE_KEY = "listik.pulse";
 const DEFAULT_ACCENT: AccentId = "teal";
 const DEFAULT_NAV: NavStyle = "dock";
+// L'anneau reste le défaut : il est la signature de la page et du dock, et
+// changer ce qu'un utilisateur voit déjà n'est pas au programme d'un réglage
+// qui sert justement à lui laisser le choix.
+const DEFAULT_PULSE: PulseStyleId = "ring";
 
 interface UIPrefs {
   accent: AccentId;
@@ -106,12 +125,19 @@ interface UIPrefs {
    *  combiné à `.dark` (voir `.dark[data-oled]` dans globals.css). */
   oled: boolean;
   setOled: (oled: boolean) => void;
+  /** Traitement du widget de progression du Planificateur. */
+  pulse: PulseStyleId;
+  setPulse: (pulse: PulseStyleId) => void;
 }
 
 const UIPrefsContext = createContext<UIPrefs | null>(null);
 
 function isAccent(value: string | null): value is AccentId {
   return ACCENTS.some((a) => a.id === value);
+}
+
+function isPulse(value: string | null): value is PulseStyleId {
+  return PULSE_STYLES.some((p) => p.id === value);
 }
 
 /**
@@ -124,6 +150,7 @@ export function UIPrefsProvider({ children }: { children: ReactNode }) {
   const [accent, setAccentState] = useState<AccentId>(DEFAULT_ACCENT);
   const [nav, setNavState] = useState<NavStyle>(DEFAULT_NAV);
   const [oled, setOledState] = useState(false);
+  const [pulse, setPulseState] = useState<PulseStyleId>(DEFAULT_PULSE);
 
   // Lecture au montage (client uniquement — évite tout mismatch SSG).
   useEffect(() => {
@@ -132,6 +159,8 @@ export function UIPrefsProvider({ children }: { children: ReactNode }) {
     const storedNav = localStorage.getItem(NAV_KEY);
     if (storedNav === "dock" || storedNav === "sidebar") setNavState(storedNav);
     setOledState(localStorage.getItem(OLED_KEY) === "1");
+    const storedPulse = localStorage.getItem(PULSE_KEY);
+    if (isPulse(storedPulse)) setPulseState(storedPulse);
   }, []);
 
   // Application de l'accent sur <html>.
@@ -161,8 +190,15 @@ export function UIPrefsProvider({ children }: { children: ReactNode }) {
     localStorage.setItem(NAV_KEY, next);
   }, []);
 
+  const setPulse = useCallback((next: PulseStyleId) => {
+    setPulseState(next);
+    localStorage.setItem(PULSE_KEY, next);
+  }, []);
+
   return (
-    <UIPrefsContext.Provider value={{ accent, setAccent, nav, setNav, oled, setOled }}>
+    <UIPrefsContext.Provider
+      value={{ accent, setAccent, nav, setNav, oled, setOled, pulse, setPulse }}
+    >
       {children}
     </UIPrefsContext.Provider>
   );

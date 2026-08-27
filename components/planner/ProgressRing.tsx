@@ -18,6 +18,16 @@ interface ProgressRingProps {
    * peut pas dire. Omis, l'anneau reste exactement ce qu'il était.
    */
   marker?: number;
+  /**
+   * Variante du repère : au lieu d'un point, la part de journée écoulée est
+   * peinte sur la PISTE elle-même, en arc discret. L'anneau n'est alors jamais
+   * creux — l'état « zéro fait », qui est celui de tout début de journée,
+   * cesse de ressembler à un chargement.
+   *
+   * `marker` et `dayArc` disent la même chose de deux façons : on n'en pose
+   * qu'un à la fois.
+   */
+  dayArc?: number;
   /** Contenu centré dans l'anneau (pourcentage, icône…). */
   children?: ReactNode;
 }
@@ -31,6 +41,7 @@ export function ProgressRing({
   size = 92,
   strokeWidth = 9,
   marker,
+  dayArc,
   children,
 }: ProgressRingProps) {
   const clamped = Math.min(Math.max(progress, 0), 1);
@@ -59,6 +70,23 @@ export function ProgressRing({
           stroke="var(--border)"
           strokeWidth={strokeWidth}
         />
+        {dayArc !== undefined && (
+          // Sous la valeur, jamais au-dessus : le temps situe, il ne prétend
+          // pas au même poids que ce qui est fait.
+          <motion.circle
+            aria-hidden
+            cx={size / 2}
+            cy={size / 2}
+            r={radius}
+            fill="none"
+            stroke="color-mix(in oklch, var(--muted-foreground) 32%, transparent)"
+            strokeWidth={strokeWidth}
+            strokeLinecap="round"
+            initial={false}
+            animate={{ pathLength: Math.max(Math.min(Math.max(dayArc, 0), 1), 0.0001) }}
+            transition={spring.gentle}
+          />
+        )}
         <motion.circle
           cx={size / 2}
           cy={size / 2}

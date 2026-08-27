@@ -9,6 +9,7 @@ import {
   Info,
   Keyboard,
   List,
+  Activity,
   Navigation,
   Paintbrush,
   Palette,
@@ -19,6 +20,7 @@ import { useSettings } from "@/hooks/useSettings";
 import { ThemeSetting } from "@/components/ThemeSetting";
 import { AccentPicker } from "@/components/settings/AccentPicker";
 import { NavSetting } from "@/components/settings/NavSetting";
+import { PulseSetting } from "@/components/settings/PulseSetting";
 import { GroqApiKeySetting } from "@/components/settings/GroqApiKeySetting";
 import { AiProviderSetting } from "@/components/settings/AiProviderSetting";
 import { Switch } from "@/components/ui/switch";
@@ -95,6 +97,15 @@ export default function SettingsPage() {
               stacked
             >
               <NavSetting />
+            </SettingsRow>
+            <SettingsRow
+              label="Pouls du jour"
+              description="Anneau : ce qui est fait. Cadran : l'écart avec le temps qui passe. Barre : une cellule par tâche. Compte : ce qui reste, en gros."
+              icon={Activity}
+              iconClassName="bg-emerald-500/8 text-emerald-600 dark:text-emerald-400"
+              stacked
+            >
+              <PulseSetting />
             </SettingsRow>
             <SettingsRow
               label="Thème"
