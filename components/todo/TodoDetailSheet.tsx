@@ -107,10 +107,14 @@ function formatShortDate(date: string): string {
 }
 
 /**
- * Un mot de la phrase qui s'ouvre au clic. `token-affordance` est la recette
- * PARTAGÉE avec les jetons de la barre de capture (voir `globals.css`) : le
- * panneau et l'Omnibar signalent l'éditabilité de la même façon, parce que
- * c'est le même geste.
+ * Un mot de la phrase qui s'ouvre au clic. La FORME (`token-affordance`) est
+ * partagée avec les jetons de la barre de capture — même geste, même pastille
+ * posée dans le texte. La TEINTE, elle, est l'accent de l'utilisateur : ici on
+ * surligne l'éditabilité, pas le type de fragment, donc une seule couleur
+ * suffit. Voir le bloc jeton de `globals.css`.
+ *
+ * Un jeton encore vide (« Choisir une date… ») reste en gris : peindre en
+ * accent un mot qui ne dit rien encore le ferait passer pour une valeur.
  */
 function Tok({
   children,
@@ -123,7 +127,9 @@ function Tok({
       type="button"
       className={cn(
         "token-affordance text-left outline-none focus-visible:ring-2 focus-visible:ring-ring",
-        muted && "text-muted-foreground",
+        muted
+          ? "bg-foreground/[0.06] text-muted-foreground hover:bg-foreground/[0.1]"
+          : "token-affordance-accent text-brand",
         className,
       )}
       {...props}

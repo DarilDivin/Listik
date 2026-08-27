@@ -454,10 +454,13 @@
    Les fragments non cliquables (tag, note) n'en reçoivent pas : c'est
    justement ce qui rend le signe informatif plutôt que décoratif.
 
-   `.token-affordance` est la MÊME recette, nommée, pour les surfaces qui
-   posent un jeton ailleurs que dans l'éditeur Lexical — le panneau de détail,
-   dont la phrase de répétition s'édite au clic exactement comme ici. Une seule
-   règle : le jour où le signe change, il change partout. */
+   La FORME est partagée avec les surfaces qui posent un jeton hors de
+   l'éditeur Lexical (`.token-affordance` — le panneau de détail, dont la
+   phrase de répétition s'édite au clic exactement comme ici). La TEINTE, elle,
+   ne l'est pas : l'Omnibar surligne par TYPE (chaque fragment a sa couleur,
+   c'est de la coloration syntaxique), le panneau surligne par ÉDITABILITÉ et
+   n'a donc qu'une teinte, l'accent de l'utilisateur. Même geste, même
+   pastille, deux palettes parce que deux métiers. */
 .token-affordance,
 [data-token="date"],
 [data-token="project"],
@@ -466,19 +469,38 @@
   cursor: pointer;
   border-radius: var(--radius-sm);
   padding-inline: 0.18em;
-  background-color: color-mix(in oklch, currentColor 12%, transparent);
   transition: background-color 140ms ease;
   /* Un fragment qui s'enroule en fin de ligne garde son fond des deux côtés. */
   -webkit-box-decoration-break: clone;
   box-decoration-break: clone;
 }
 
-.token-affordance:hover,
+/* Omnibar : le lavis dérive de la PROPRE couleur du fragment. */
+[data-token="date"],
+[data-token="project"],
+[data-token="priority"],
+[data-token="recurrence"] {
+  background-color: color-mix(in oklch, currentColor 12%, transparent);
+}
+
 [data-token="date"]:hover,
 [data-token="project"]:hover,
 [data-token="priority"]:hover,
 [data-token="recurrence"]:hover {
   background-color: color-mix(in oklch, currentColor 24%, transparent);
+}
+
+/* Panneau de détail : l'accent choisi par l'utilisateur. `--brand-soft` est le
+   lavis canonique du système (§2.2), celui des pastilles actives de la nav et
+   des réglages — un jeton éditable est un état actif comme un autre. Le
+   survol le pousse un peu, sans passer à l'aplat plein qui, lui, dit
+   « sélectionné ». */
+.token-affordance-accent {
+  background-color: var(--brand-soft);
+}
+
+.token-affordance-accent:hover {
+  background-color: color-mix(in oklch, var(--brand) 24%, transparent);
 }
 
 @keyframes capture-token-in {
