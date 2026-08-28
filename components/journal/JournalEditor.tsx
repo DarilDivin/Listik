@@ -12,13 +12,8 @@ import { LinkPlugin } from "@lexical/react/LexicalLinkPlugin";
 import { MarkdownShortcutPlugin } from "@lexical/react/LexicalMarkdownShortcutPlugin";
 import {
   $convertFromMarkdownString,
-  $convertToMarkdownString,
   TRANSFORMERS,
 } from "@lexical/markdown";
-import { HeadingNode, QuoteNode } from "@lexical/rich-text";
-import { ListItemNode, ListNode } from "@lexical/list";
-import { LinkNode } from "@lexical/link";
-import { CodeHighlightNode, CodeNode } from "@lexical/code";
 import {
   $getRoot,
   $getSelection,
@@ -28,22 +23,18 @@ import {
   KEY_ARROW_UP_COMMAND,
   KEY_BACKSPACE_COMMAND,
   KEY_ENTER_COMMAND,
-  type LexicalEditor,
 } from "lexical";
+import {
+  $aLaMain,
+  couper,
+  lireMarkdown,
+  longueurTexte,
+  NOEUDS,
+} from "@/features/journal/decoupe";
 import { cn } from "@/lib/utils";
 
 /** Où poser le curseur quand la page rend la main à ce bloc. */
 export type Caret = "start" | "end" | "junction";
-
-const NOEUDS = [
-  HeadingNode,
-  QuoteNode,
-  ListNode,
-  ListItemNode,
-  LinkNode,
-  CodeNode,
-  CodeHighlightNode,
-];
 
 /**
  * Le thème pointe vers les MÊMES classes que `.note-markdown` stylise déjà
@@ -73,74 +64,6 @@ const THEME = {
 
 // ---------------------------------------------------------------------------
 
-/** Markdown courant de l'éditeur. */
-function lireMarkdown(editor: LexicalEditor): string {
-  let md = "";
-  editor.getEditorState().read(() => {
-    md = $convertToMarkdownString(TRANSFORMERS);
-  });
-  return md;
-}
-
-/** Longueur du texte brut — sert à retrouver la jointure après une fusion. */
-function longueurTexte(editor: LexicalEditor): number {
-  let n = 0;
-  editor.getEditorState().read(() => {
-    n = $getRoot().getTextContent().length;
-  });
-  return n;
-}
-
-/**
- * Coupe au curseur et rend les deux moitiés en markdown.
- *
- * `$convertToMarkdownString` sérialise les ENFANTS d'un élément : on ne peut
- * donc pas sérialiser un sous-arbre à la volée. On passe par deux mises à jour
- * JETABLES — couper, supprimer une moitié, lire — en restaurant l'état entre
- * les deux. C'est Lexical qui fait le travail délicat de la coupe, formats
- * compris : couper au milieu d'un mot en gras garde le gras des deux côtés.
- */
-function couper(editor: LexicalEditor): { avant: string; apres: string } {
-  const depart = editor.getEditorState();
-
-  // `EditorState.clone()` sans argument met la selection a NULL. Restaurer
-  // l'etat entre les deux moities perdait donc le curseur : `insertParagraph`
-  // ne coupait rien, les deux moities valaient le texte entier, et Entree
-  // DUPLIQUAIT le bloc au lieu d'en creer un vide.
-  const curseur = depart.read(() => {
-    const sel = $getSelection();
-    return $isRangeSelection(sel) ? sel.clone() : null;
-  });
-
-  // Sans curseur, on ne coupe pas : on se comporte comme une Entree en fin de
-  // bloc. Echouer en creant un bloc vide vaut mieux qu'en dupliquant.
-  if (!curseur) return { avant: lireMarkdown(editor), apres: "" };
-
-  const moitie = (garder: "avant" | "apres"): string => {
-    editor.setEditorState(depart.clone(curseur.clone()));
-    editor.update(
-      () => {
-        const sel = $getSelection();
-        if (!$isRangeSelection(sel)) return;
-        sel.insertParagraph();
-        const nouveau = $getSelection();
-        if (!$isRangeSelection(nouveau)) return;
-        const bloc = nouveau.anchor.getNode().getTopLevelElementOrThrow();
-        const i = bloc.getIndexWithinParent();
-        const enfants = $getRoot().getChildren();
-        const aJeter = garder === "avant" ? enfants.slice(i) : enfants.slice(0, i);
-        aJeter.forEach((n) => n.remove());
-      },
-      { discrete: true },
-    );
-    return lireMarkdown(editor);
-  };
-
-  const avant = moitie("avant");
-  const apres = moitie("apres");
-  editor.setEditorState(depart.clone(curseur.clone()));
-  return { avant, apres };
-}
 
 // ---------------------------------------------------------------------------
 
@@ -192,6 +115,12 @@ function ClavierPlugin({ onSplit, onMergeUp, onStep }: ClavierProps) {
         KEY_ENTER_COMMAND,
         (e) => {
           if (e?.shiftKey) return false; // Maj+Entrée : retour à la ligne
+          // Dans une LISTE (ou du code), Entrée ne nous appartient pas : elle
+          // ajoute la puce suivante, et sort de la liste sur une puce vide.
+          // L'intercepter cassait les deux — et pire, la coupe se trompait de
+          // cible : `getTopLevelElementOrThrow` renvoie la liste ENTIÈRE, pas
+          // la puce où est le curseur, donc la liste se dupliquait.
+          if ($aLaMain()) return false;
           e?.preventDefault();
           // Un gestionnaire de commande s'execute DEJA dans une mise a jour,
           // ou setEditorState est interdit — la coupe s'y faisait donc dans
@@ -210,7 +139,7 @@ function ClavierPlugin({ onSplit, onMergeUp, onStep }: ClavierProps) {
         (e) => {
           let colle = false;
           editor.getEditorState().read(() => {
-            colle = auDebut();
+            colle = auDebut() && !$aLaMain();
           });
           if (!colle) return false;
           e?.preventDefault();
@@ -311,10 +240,13 @@ function SauvegardePlugin({ origine, onChange, onBlur }: SauvegardeProps) {
     };
   }, [editor, onChange, onBlur]);
 
-  // `origine` change quand la page réécrit ce bloc (fusion) : on repart de là.
+  // `origine` change quand la page réécrit ce bloc : ce qu'elle dit devient
+  // le dernier accord connu. Remettre les repères à `null` faisait pousser
+  // AVEUGLÉMENT ce que l'éditeur affichait encore — du texte périmé, qui
+  // écrasait la réécriture. C'est ainsi qu'une scission se défaisait.
   useEffect(() => {
-    referenceRef.current = null;
-    dernierRef.current = null;
+    referenceRef.current = origine;
+    dernierRef.current = origine;
   }, [origine]);
 
   return null;
