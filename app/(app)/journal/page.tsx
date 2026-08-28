@@ -70,7 +70,11 @@ export default function JournalPage() {
     useJournal(day);
   const { tags, createTag, setJournalEntryTags } = useTags();
 
-  const [focus, setFocus] = useState<{ id: string; caret: Caret } | null>(null);
+  const [focus, setFocus] = useState<{
+    id: string;
+    caret: Caret;
+    contenu?: string;
+  } | null>(null);
   const [saving, setSaving] = useState<Saving>("idle");
 
   // Le même jour, un an plus tôt. Une seule requête, la même commande que la
@@ -175,11 +179,15 @@ export default function JournalPage() {
     if (index === 0) return;
     const entry = entries[index];
     const precedent = entries[index - 1];
-    const jointure = precedent.content.length;
+    // Deux paragraphes se recollent avec une ligne vide entre eux, sinon le
+    // markdown les souderait en un seul.
+    const fusionne = precedent.content
+      ? contenu
+        ? `${precedent.content}\n\n${contenu}`
+        : precedent.content
+      : contenu;
 
-    await track(
-      updateEntry(precedent.id, { content: precedent.content + contenu }),
-    );
+    await track(updateEntry(precedent.id, { content: fusionne }));
     if (entry.tags.length > 0) {
       const fusion = [
         ...new Set([
@@ -190,7 +198,11 @@ export default function JournalPage() {
       await track(setJournalEntryTags(precedent.id, fusion));
     }
     await track(deleteEntry(entry.id));
-    setFocus({ id: precedent.id, caret: jointure });
+    // On donne le texte fusionné AVEC la demande de focus : l'éditeur du bloc
+    // précédent est déjà monté, il ne se rechargerait pas tout seul. Et lui
+    // seul sait où est la jointure — la page ne voit que du markdown, dont la
+    // longueur n'est pas celle du texte affiché.
+    setFocus({ id: precedent.id, caret: "junction", contenu: fusionne });
   };
 
   const traverser = (index: number, dir: -1 | 1) => {
@@ -292,11 +304,21 @@ export default function JournalPage() {
                       targetDay={day}
                       sessionStart={reprises[i]}
                       allTags={tags}
-                      focus={focus?.id === entry.id ? focus.caret : null}
+                      focus={
+                        focus?.id === entry.id
+                          ? { caret: focus.caret, contenu: focus.contenu }
+                          : null
+                      }
                       onFocused={() => setFocus(null)}
                       onChange={(content) =>
                         void track(updateEntry(entry.id, { content }))
                       }
+                      // Un bloc vide qu'on quitte n'a rien à dire : il part.
+                      // Sinon la page accumulerait les lignes créées par une
+                      // Entrée de trop.
+                      onBlur={(content) => {
+                        if (!content.trim()) void track(deleteEntry(entry.id));
+                      }}
                       onSplit={(avant, apres) => void scinder(entry, avant, apres)}
                       onMergeUp={(contenu) => void fusionner(i, contenu)}
                       onStep={(dir) => traverser(i, dir)}

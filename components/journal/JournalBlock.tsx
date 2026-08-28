@@ -1,8 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
-import ReactMarkdown from "react-markdown";
-import remarkGfm from "remark-gfm";
+import dynamic from "next/dynamic";
 import { format } from "date-fns";
 import { fr } from "date-fns/locale";
 import { Trash2 } from "lucide-react";
@@ -21,11 +19,24 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
+import type { Caret } from "@/components/journal/JournalEditor";
 import type { JournalEntry } from "@/features/journal/types";
 import type { Tag } from "@/features/tags/types";
 
-/** Où poser le curseur quand la page donne le focus à ce bloc. */
-export type Caret = "start" | "end" | number;
+export type { Caret };
+
+/**
+ * L'éditeur n'est chargé que par la page Journal — même parti que l'Omnibar
+ * avec `CaptureField` : rich-text, markdown, listes et liens n'ont rien à
+ * faire dans le lot commun.
+ */
+const JournalEditor = dynamic(
+  () => import("@/components/journal/JournalEditor").then((m) => m.JournalEditor),
+  {
+    ssr: false,
+    loading: () => <div className="journal-prose opacity-0">&nbsp;</div>,
+  },
+);
 
 interface JournalBlockProps {
   entry: JournalEntry;
@@ -38,15 +49,13 @@ interface JournalBlockProps {
    */
   sessionStart: boolean;
   allTags: Tag[];
-  /** Demande de focus venue de la page (navigation au clavier, scission). */
-  focus: Caret | null;
+  /** Demande de focus venue de la page (fusion, scission, flèches). */
+  focus: { caret: Caret; contenu?: string } | null;
   onFocused: () => void;
   onChange: (content: string) => void;
-  /** Entrée : ce qui suit le curseur part dans un nouveau bloc. */
-  onSplit: (before: string, after: string) => void;
-  /** Retour arrière en tête : ce bloc rejoint le précédent. */
-  onMergeUp: (content: string) => void;
-  /** Flèches en bord de bloc : passer au voisin. */
+  onBlur: (content: string) => void;
+  onSplit: (avant: string, apres: string) => void;
+  onMergeUp: (contenu: string) => void;
   onStep: (dir: -1 | 1) => void;
   onChangeTags: (tagIds: string[]) => void;
   onCreateTag: (name: string) => Promise<string>;
@@ -56,12 +65,10 @@ interface JournalBlockProps {
 /**
  * Un bloc de la page-jour. Il n'a ni cadre, ni fond, ni séparateur : la page
  * doit se lire comme un texte suivi, pas comme une liste de cartes. Ce qui
- * distingue un bloc du suivant, c'est son heure dans la gouttière — et rien
- * d'autre.
+ * distingue un bloc du suivant, c'est son heure dans la gouttière.
  *
- * Markdown rendu au repos, champ brut au focus (même parti que
- * `JournalEntryRow`) : aucun éditeur monté pour les blocs qu'on ne touche pas,
- * et le rendu reste fidèle à ce qui est enregistré.
+ * Le texte est en édition PERMANENTE (voir `JournalEditor`) : plus de bascule
+ * entre rendu et brut, donc plus d'astérisques qui apparaissent au clic.
  */
 export function JournalBlock({
   entry,
@@ -71,6 +78,7 @@ export function JournalBlock({
   focus,
   onFocused,
   onChange,
+  onBlur,
   onSplit,
   onMergeUp,
   onStep,
@@ -78,51 +86,6 @@ export function JournalBlock({
   onCreateTag,
   onDelete,
 }: JournalBlockProps) {
-  const [editing, setEditing] = useState(false);
-  const [draft, setDraft] = useState(entry.content);
-  const savedRef = useRef(entry.content);
-  const fieldRef = useRef<HTMLTextAreaElement>(null);
-
-  // Tant qu'on écrit, on ignore ce qui vient du serveur : la revalidation de
-  // `journal:changed` remplacerait le texte sous le curseur.
-  useEffect(() => {
-    if (!editing) {
-      setDraft(entry.content);
-      savedRef.current = entry.content;
-    }
-  }, [entry.content, editing]);
-
-  // La page demande le focus (scission, fusion, flèches) : on le prend et on
-  // pose le curseur du bon côté.
-  useEffect(() => {
-    if (!focus) return;
-    const el = fieldRef.current;
-    setEditing(true);
-    const place = () => {
-      const node = fieldRef.current;
-      if (!node) return;
-      node.focus();
-      // Un nombre sert a la fusion : le curseur doit atterrir a la
-      // JOINTURE des deux textes, pas a la fin du bloc fusionne.
-      const at =
-        typeof focus === "number"
-          ? Math.min(focus, node.value.length)
-          : focus === "start"
-            ? 0
-            : node.value.length;
-      node.setSelectionRange(at, at);
-      onFocused();
-    };
-    if (el) place();
-    else requestAnimationFrame(place);
-  }, [focus, onFocused]);
-
-  const flush = () => {
-    if (draft === savedRef.current) return;
-    savedRef.current = draft;
-    onChange(draft);
-  };
-
   // `written_at` est un instant UTC : en tirer le JOUR passe par
   // `toLocalISODate`, jamais par un `slice(0, 10)` sur la chaîne brute (faux
   // près de minuit hors UTC — même piège que dans `lib/date.ts`).
@@ -133,43 +96,13 @@ export function JournalBlock({
   // le début d'une reprise, ou un bloc écrit un autre jour.
   const heureFixe = sessionStart || ailleurs;
 
-  const onKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    const el = e.currentTarget;
-    const { selectionStart: start, selectionEnd: end, value } = el;
-
-    // Entrée coupe le bloc ; Maj+Entrée reste un simple retour à la ligne.
-    if (e.key === "Enter" && !e.shiftKey) {
-      e.preventDefault();
-      flush();
-      onSplit(value.slice(0, start), value.slice(end));
-      return;
-    }
-    // Retour arrière collé au début : le bloc rejoint le précédent.
-    if (e.key === "Backspace" && start === 0 && end === 0) {
-      e.preventDefault();
-      onMergeUp(value);
-      return;
-    }
-    // Les flèches traversent les blocs quand on est au bord : c'est ce qui
-    // fait de la pile une page.
-    if (e.key === "ArrowUp" && value.lastIndexOf("\n", start - 1) === -1) {
-      e.preventDefault();
-      onStep(-1);
-      return;
-    }
-    if (e.key === "ArrowDown" && value.indexOf("\n", start) === -1) {
-      e.preventDefault();
-      onStep(1);
-    }
-  };
-
   return (
     <div className="group/bloc relative">
       {/* L'heure vit dans la gouttière, jamais dans le texte. */}
       <span
         aria-hidden
         className={cn(
-          "pointer-events-none absolute -left-[104px] top-[0.3em] hidden w-[88px] select-none text-right font-mono text-[11px] tabular-nums text-muted-foreground transition-opacity duration-300 md:block",
+          "pointer-events-none absolute -left-[104px] top-[0.45em] hidden w-[88px] select-none text-right font-mono text-[11px] tabular-nums text-muted-foreground transition-opacity duration-300 md:block",
           heureFixe ? "opacity-50" : "opacity-0 group-hover/bloc:opacity-80",
         )}
       >
@@ -179,7 +112,7 @@ export function JournalBlock({
       {ailleurs && (
         <span
           aria-hidden
-          className="pointer-events-none absolute -left-[104px] top-[1.9em] hidden w-[88px] select-none text-right text-[10px] leading-tight text-muted-foreground opacity-40 md:block"
+          className="pointer-events-none absolute -left-[104px] top-[2em] hidden w-[88px] select-none text-right text-[10px] leading-tight text-muted-foreground opacity-40 md:block"
         >
           écrit le {format(writtenAt, "d MMM", { locale: fr })}
         </span>
@@ -231,45 +164,19 @@ export function JournalBlock({
         </AlertDialog>
       </span>
 
-      {editing ? (
-        <textarea
-          ref={fieldRef}
-          value={draft}
-          rows={1}
-          onChange={(e) => setDraft(e.target.value)}
-          onKeyDown={onKeyDown}
-          onBlur={() => {
-            setEditing(false);
-            // Un bloc vide qu'on quitte n'a rien a dire : il part. Sinon la
-            // page accumulerait les lignes creees par une Entree de trop.
-            if (!draft.trim()) {
-              onDelete();
-              return;
-            }
-            flush();
-          }}
-          spellCheck={false}
-          className="field-sizing-content w-full resize-none bg-transparent p-0 text-[1.0625rem] leading-[1.78] text-foreground outline-none"
+      <div className="relative">
+        <JournalEditor
+          markdown={entry.content}
+          placeholder={entry.content ? undefined : "Écrire…"}
+          focus={focus}
+          onFocused={onFocused}
+          onChange={onChange}
+          onBlur={onBlur}
+          onSplit={onSplit}
+          onMergeUp={onMergeUp}
+          onStep={onStep}
         />
-      ) : (
-        <div
-          role="button"
-          tabIndex={0}
-          onClick={() => setEditing(true)}
-          onFocus={() => setEditing(true)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter" || e.key === " ") {
-              e.preventDefault();
-              setEditing(true);
-            }
-          }}
-          className="note-markdown cursor-text text-[1.0625rem] leading-[1.78] outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
-        >
-          <ReactMarkdown remarkPlugins={[remarkGfm]}>
-            {entry.content || "_Bloc vide_"}
-          </ReactMarkdown>
-        </div>
-      )}
+      </div>
     </div>
   );
 }

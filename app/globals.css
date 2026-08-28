@@ -321,6 +321,84 @@
 }
 
 /* Rendu Markdown des notes (react-markdown + remark-gfm). */
+/* ──────────────────────────────────────────────────────────────────────────
+ * Journal : la prose de la page-jour.
+ *
+ * `.note-markdown` fixe 0.95rem — une taille d'INTERFACE, et comme il vit
+ * hors des couches Tailwind il battait l'utilitaire posé sur le conteneur :
+ * la page se rendait donc en 15 px alors qu'elle visait 17. Ici on assume la
+ * différence : le reste de l'app s'inventorie, cette page se LIT.
+ *
+ * Les classes `journal-*` sont celles du thème Lexical (voir `JournalEditor`).
+ * Elles reproduisent la mise en forme de `.note-markdown` pour que le même
+ * bloc ait la même allure dans l'éditeur et dans le widget du planificateur,
+ * qui lui passe par react-markdown.
+ * ────────────────────────────────────────────────────────────────────────── */
+.journal-prose {
+  font-size: 1.0625rem;
+  line-height: 1.78;
+  color: var(--color-foreground);
+}
+.journal-prose > :first-child {
+  margin-top: 0;
+}
+.journal-prose > :last-child {
+  margin-bottom: 0;
+}
+.journal-p,
+.journal-prose p {
+  margin: 0.5em 0;
+}
+.journal-h1,
+.journal-h2,
+.journal-h3 {
+  font-weight: 600;
+  line-height: 1.3;
+  margin: 1.1em 0 0.4em;
+  letter-spacing: -0.015em;
+}
+.journal-h1 { font-size: 1.45rem; }
+.journal-h2 { font-size: 1.22rem; }
+.journal-h3 { font-size: 1.08rem; }
+.journal-ul,
+.journal-ol {
+  margin: 0.5em 0;
+  padding-left: 1.4em;
+}
+.journal-ul { list-style: disc; }
+.journal-ol { list-style: decimal; }
+.journal-li { margin: 0.15em 0; }
+.journal-li-nested { list-style: none; }
+.journal-a {
+  color: var(--color-brand);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.journal-quote {
+  margin: 0.6em 0;
+  padding-left: 0.9em;
+  border-left: 2px solid var(--color-border);
+  color: var(--color-muted-foreground);
+}
+.journal-code {
+  border-radius: var(--radius-sm);
+  background-color: color-mix(in oklch, var(--color-foreground) 7%, transparent);
+  padding: 0.1em 0.32em;
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 0.88em;
+}
+.journal-pre {
+  display: block;
+  margin: 0.6em 0;
+  border-radius: var(--radius-md);
+  background-color: color-mix(in oklch, var(--color-foreground) 6%, transparent);
+  padding: 0.7em 0.9em;
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 0.88em;
+  line-height: 1.55;
+  white-space: pre-wrap;
+}
+
 .note-markdown {
   color: var(--color-foreground);
   font-size: 0.95rem;
