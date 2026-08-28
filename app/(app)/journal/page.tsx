@@ -4,7 +4,7 @@ import { useCallback, useMemo, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
 import { format } from "date-fns";
 import { fr } from "date-fns/locale";
-import { ChevronLeft, ChevronRight, NotebookPen } from "lucide-react";
+import { ChevronLeft, ChevronRight } from "lucide-react";
 import { useJournal } from "@/hooks/useJournal";
 import { useTags } from "@/hooks/useTags";
 import { JournalBlock, type Caret } from "@/components/journal/JournalBlock";
@@ -58,20 +58,30 @@ export default function JournalPage() {
   const [saving, setSaving] = useState<Saving>("idle");
 
   const isToday = day === today;
-  const dateLabel = format(parseLocalISODate(day), "EEEE d MMMM yyyy", {
-    locale: fr,
-  });
+  const date = parseLocalISODate(day);
+  // La date se lit en trois temps, comme dans le hero du planificateur : le
+  // jour de la semaine en accent, la date en grand, l'année en retrait.
+  const jourSemaine = format(date, "EEEE", { locale: fr });
+  const jourMois = format(date, "d MMMM", { locale: fr });
+  const annee = format(date, "yyyy");
 
-  /** Enveloppe une mutation pour que l'indicateur d'enregistrement la suive. */
-  const track = useCallback(async <T,>(work: Promise<T>): Promise<T> => {
+  /**
+   * Enveloppe une mutation pour que l'indicateur d'enregistrement la suive.
+   *
+   * Ne rejette JAMAIS : tous les appels d'ici sont en `void` (on écrit, on
+   * n'attend pas), donc re-lever ne ferait qu'un rejet non capturé de plus.
+   * `useJournalMutations` a déjà prévenu par un toast — le seul travail qui
+   * reste est de rendre l'échec lisible à l'appelant, d'où le `null`.
+   */
+  const track = useCallback(async <T,>(work: Promise<T>): Promise<T | null> => {
     setSaving("saving");
     try {
       const result = await work;
       setSaving("saved");
       return result;
-    } catch (error) {
+    } catch {
       setSaving("idle");
-      throw error;
+      return null;
     }
   }, []);
 
@@ -91,7 +101,7 @@ export default function JournalPage() {
 
   const ecrireIci = async () => {
     const entry = await track(createEntry({ target_day: day, content: "" }));
-    setFocus({ id: entry.id, caret: "start" });
+    if (entry) setFocus({ id: entry.id, caret: "start" });
   };
 
   /**
@@ -117,7 +127,7 @@ export default function JournalPage() {
         ...(apres ? { written_at: entry.written_at } : {}),
       }),
     );
-    setFocus({ id: cree.id, caret: "start" });
+    if (cree) setFocus({ id: cree.id, caret: "start" });
   };
 
   /**
@@ -159,42 +169,57 @@ export default function JournalPage() {
   return (
     <div className="mx-auto flex h-full w-full max-w-3xl flex-col overflow-hidden px-8">
       {/* Le SEUL filet de la page : il sépare le chrome du texte. */}
-      <div className="flex items-center gap-2 border-b border-border/60 pb-4 pt-8">
-        <Button
-          variant="ghost"
-          size="icon-sm"
-          aria-label="Jour précédent"
-          onClick={() => setDay((d) => shiftDay(d, -1))}
-        >
-          <ChevronLeft />
-        </Button>
-        <div className="min-w-0 flex-1">
-          <h1 className="truncate text-title-2 capitalize text-foreground">
-            {dateLabel}
-          </h1>
+      <div className="flex items-start justify-between gap-4 border-b border-border/60 pb-5 pt-8">
+        <div className="min-w-0">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-brand">
+            {jourSemaine}
+          </p>
+          <div className="mt-1.5 flex items-baseline gap-2.5">
+            <h1 className="text-[1.75rem] font-bold leading-none tracking-[-0.025em] text-foreground">
+              {jourMois}
+              <span className="ml-2 font-medium text-muted-foreground/55">
+                {annee}
+              </span>
+            </h1>
+            {/* Les flèches suivent la date au lieu de l'encadrer : elles la
+                font défiler, elles ne la contiennent pas. */}
+            <span className="flex items-center">
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                aria-label="Jour précédent"
+                onClick={() => setDay((d) => shiftDay(d, -1))}
+              >
+                <ChevronLeft />
+              </Button>
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                aria-label="Jour suivant"
+                onClick={() => setDay((d) => shiftDay(d, 1))}
+              >
+                <ChevronRight />
+              </Button>
+            </span>
+          </div>
         </div>
-        {/* Il se pose, il ne clignote pas : un journal ne se soumet pas. */}
-        <span
-          className={cn(
-            "shrink-0 text-xs text-muted-foreground transition-opacity duration-300",
-            saving === "idle" ? "opacity-0" : "opacity-100",
+
+        <div className="flex shrink-0 items-center gap-3 pt-1">
+          {/* Il se pose, il ne clignote pas : un journal ne se soumet pas. */}
+          <span
+            className={cn(
+              "text-xs text-muted-foreground transition-opacity duration-300",
+              saving === "idle" ? "opacity-0" : "opacity-100",
+            )}
+          >
+            {saving === "saving" ? "Enregistrement…" : "Enregistré"}
+          </span>
+          {!isToday && (
+            <Button variant="outline" size="sm" onClick={() => setDay(today)}>
+              Aujourd&apos;hui
+            </Button>
           )}
-        >
-          {saving === "saving" ? "Enregistrement…" : "Enregistré"}
-        </span>
-        {!isToday && (
-          <Button variant="outline" size="sm" onClick={() => setDay(today)}>
-            Aujourd&apos;hui
-          </Button>
-        )}
-        <Button
-          variant="ghost"
-          size="icon-sm"
-          aria-label="Jour suivant"
-          onClick={() => setDay((d) => shiftDay(d, 1))}
-        >
-          <ChevronRight />
-        </Button>
+        </div>
       </div>
 
       <div className="min-h-0 flex-1 overflow-y-auto pb-10 pt-6">
@@ -255,12 +280,13 @@ export default function JournalPage() {
               )}
 
               {/* Écrire ici : la porte, quand le clavier ne suffit pas. */}
+              {/* Pas d'icône, pas de cadre : c'est la ligne suivante de la
+                  page, pas un bouton. */}
               <button
                 type="button"
                 onClick={() => void ecrireIci()}
-                className="mt-3 flex w-full items-center gap-2.5 rounded-lg py-1.5 text-left text-[1.0625rem] leading-[1.78] text-muted-foreground/60 outline-none transition-colors hover:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring"
+                className="w-full rounded-sm py-0.5 text-left text-[1.0625rem] leading-[1.78] text-muted-foreground/50 outline-none transition-colors hover:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring"
               >
-                <NotebookPen size={16} className="shrink-0" />
                 Écrire…
               </button>
             </>
