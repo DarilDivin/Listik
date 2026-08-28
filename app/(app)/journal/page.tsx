@@ -1,11 +1,14 @@
 "use client";
 
 import { useCallback, useMemo, useState } from "react";
+import useSWR from "swr";
 import { AnimatePresence, motion } from "motion/react";
 import { format } from "date-fns";
 import { fr } from "date-fns/locale";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { useJournal } from "@/hooks/useJournal";
+import { journalApi } from "@/features/journal/api";
+import { SWR_KEYS } from "@/lib/swr-config";
 import { useTags } from "@/hooks/useTags";
 import { JournalBlock, type Caret } from "@/components/journal/JournalBlock";
 import { Button } from "@/components/ui/button";
@@ -27,6 +30,18 @@ function shiftDay(day: string, delta: number): string {
   const month = String(date.getMonth() + 1).padStart(2, "0");
   const d = String(date.getDate()).padStart(2, "0");
   return `${year}-${month}-${d}`;
+}
+
+/**
+ * Même jour, un an plus tôt. Le 29 février n'existe pas tous les ans : on
+ * retombe alors sur le 28, plutôt que de laisser JavaScript glisser au
+ * 1er mars sans le dire.
+ */
+function unAnAvant(day: string): string {
+  const [y, m, d] = day.split("-").map(Number);
+  const cible = new Date(y - 1, m - 1, d);
+  const jour = cible.getMonth() === m - 1 ? d : 28;
+  return `${y - 1}-${String(m).padStart(2, "0")}-${String(jour).padStart(2, "0")}`;
 }
 
 /**
@@ -56,6 +71,15 @@ export default function JournalPage() {
 
   const [focus, setFocus] = useState<{ id: string; caret: Caret } | null>(null);
   const [saving, setSaving] = useState<Saving>("idle");
+
+  // Le même jour, un an plus tôt. Une seule requête, la même commande que la
+  // page — et la section disparaît quand il n'y avait rien.
+  const jourDAvant = unAnAvant(day);
+  const { data: ilYaUnAn = [] } = useSWR(
+    SWR_KEYS.JOURNAL_DAY(jourDAvant),
+    () => journalApi.listForDay(jourDAvant),
+    { revalidateOnFocus: false, dedupingInterval: 60_000 },
+  );
 
   const isToday = day === today;
   const date = parseLocalISODate(day);
@@ -167,7 +191,7 @@ export default function JournalPage() {
   };
 
   return (
-    <div className="mx-auto flex h-full w-full max-w-3xl flex-col overflow-hidden px-8">
+    <div className="mx-auto flex h-full w-full max-w-4xl flex-col overflow-hidden px-8">
       {/* Le SEUL filet de la page : il sépare le chrome du texte. */}
       <div className="flex items-start justify-between gap-4 border-b border-border/60 pb-5 pt-8">
         <div className="min-w-0">
@@ -224,7 +248,7 @@ export default function JournalPage() {
 
       <div className="min-h-0 flex-1 overflow-y-auto pb-10 pt-6">
         {/* La colonne de texte, décalée pour laisser sa gouttière aux heures. */}
-        <div className="max-w-[62ch] md:ml-[104px]">
+        <div className="max-w-[68ch] md:ml-[104px]">
           {loading ? (
             <div className="flex flex-col gap-4">
               {[0.9, 0.6].map((opacity) => (
@@ -290,6 +314,41 @@ export default function JournalPage() {
                 Écrire…
               </button>
             </>
+          )}
+
+          {/* Il y a un an. Séparé par de l'ESPACE, pas par un filet : le gris
+              et la distance disent déjà que ce n'est plus aujourd'hui. */}
+          {ilYaUnAn.length > 0 && (
+            <section className="mt-16">
+              <h2 className="text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+                Il y a un an
+                <span className="ml-2.5 font-mono text-[11px] font-normal normal-case tracking-normal">
+                  {format(parseLocalISODate(jourDAvant), "d MMMM yyyy", {
+                    locale: fr,
+                  })}
+                </span>
+              </h2>
+              <button
+                type="button"
+                onClick={() => setDay(jourDAvant)}
+                className="mt-2.5 flex w-full flex-col gap-2 rounded-lg text-left outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              >
+                {ilYaUnAn.slice(0, 3).map((bloc) => (
+                  <p
+                    key={bloc.id}
+                    className="text-[0.9375rem] leading-relaxed text-foreground/65"
+                  >
+                    {bloc.content.split("\n")[0] || "Bloc vide"}
+                  </p>
+                ))}
+                {ilYaUnAn.length > 3 && (
+                  <span className="text-xs text-muted-foreground">
+                    et {ilYaUnAn.length - 3} autre
+                    {ilYaUnAn.length - 3 > 1 ? "s" : ""}…
+                  </span>
+                )}
+              </button>
+            </section>
           )}
 
           {/* Seulement sur aujourd'hui : sur un autre jour, un bloc à venir
