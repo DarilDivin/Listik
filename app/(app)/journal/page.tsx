@@ -144,10 +144,13 @@ export default function JournalPage() {
   /**
    * Entrée : ce qui suit le curseur part dans un nouveau bloc.
    *
-   * L'heure du nouveau bloc n'est PAS toujours maintenant. Couper un bloc en
-   * deux ne crée pas une écriture nouvelle : la seconde moitié est du texte
-   * déjà écrit, elle hérite donc de l'heure de son origine. Sans ça, couper le
-   * bloc de 8 h à 14 h enverrait sa moitié en bas de la page.
+   * Le nouveau bloc hérite TOUJOURS de l'heure de son origine, et le tri par
+   * `created_at` le pose juste après elle.
+   *
+   * Parce qu'Entrée veut dire « je continue ICI ». Daté de maintenant, il
+   * partait en bas de la page : on ne pouvait plus rien intercaler dans sa
+   * journée. Écrire… en pied de page reste le geste qui crée un bloc à
+   * l'heure réelle — les deux intentions ont chacune leur porte.
    */
   const scinder = async (
     entry: (typeof entries)[number],
@@ -161,7 +164,7 @@ export default function JournalPage() {
       createEntry({
         target_day: day,
         content: apres,
-        ...(apres ? { written_at: entry.written_at } : {}),
+        written_at: entry.written_at,
       }),
     );
     if (cree) setFocus({ id: cree.id, caret: "start" });

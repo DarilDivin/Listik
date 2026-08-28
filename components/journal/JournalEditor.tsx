@@ -103,8 +103,21 @@ function longueurTexte(editor: LexicalEditor): number {
 function couper(editor: LexicalEditor): { avant: string; apres: string } {
   const depart = editor.getEditorState();
 
+  // `EditorState.clone()` sans argument met la selection a NULL. Restaurer
+  // l'etat entre les deux moities perdait donc le curseur : `insertParagraph`
+  // ne coupait rien, les deux moities valaient le texte entier, et Entree
+  // DUPLIQUAIT le bloc au lieu d'en creer un vide.
+  const curseur = depart.read(() => {
+    const sel = $getSelection();
+    return $isRangeSelection(sel) ? sel.clone() : null;
+  });
+
+  // Sans curseur, on ne coupe pas : on se comporte comme une Entree en fin de
+  // bloc. Echouer en creant un bloc vide vaut mieux qu'en dupliquant.
+  if (!curseur) return { avant: lireMarkdown(editor), apres: "" };
+
   const moitie = (garder: "avant" | "apres"): string => {
-    editor.setEditorState(depart.clone());
+    editor.setEditorState(depart.clone(curseur.clone()));
     editor.update(
       () => {
         const sel = $getSelection();
@@ -125,7 +138,7 @@ function couper(editor: LexicalEditor): { avant: string; apres: string } {
 
   const avant = moitie("avant");
   const apres = moitie("apres");
-  editor.setEditorState(depart.clone());
+  editor.setEditorState(depart.clone(curseur.clone()));
   return { avant, apres };
 }
 
@@ -166,7 +179,10 @@ function ClavierPlugin({ onSplit, onMergeUp, onStep }: ClavierProps) {
       if (!dom || !s || s.rangeCount === 0) return false;
       const r = s.getRangeAt(0).getBoundingClientRect();
       const z = dom.getBoundingClientRect();
-      if (r.height === 0 && r.top === 0) return true; // bloc vide
+      // Un rectangle nul ne veut PAS dire « bloc vide » : une selection
+      // repliee en renvoie parfois un. On ne conclut que si le bloc est
+      // reellement vide, sinon les fleches sauteraient de bloc a chaque fois.
+      if (r.height === 0 && r.top === 0) return dom.textContent?.length === 0;
       const marge = 6;
       return bord === "haut" ? r.top - z.top < marge : z.bottom - r.bottom < marge;
     };
@@ -177,8 +193,14 @@ function ClavierPlugin({ onSplit, onMergeUp, onStep }: ClavierProps) {
         (e) => {
           if (e?.shiftKey) return false; // Maj+Entrée : retour à la ligne
           e?.preventDefault();
-          const { avant, apres } = couper(editor);
-          onSplit(avant, apres);
+          // Un gestionnaire de commande s'execute DEJA dans une mise a jour,
+          // ou setEditorState est interdit — la coupe s'y faisait donc dans
+          // le vide et Entree DUPLIQUAIT le bloc. On attend que la mise a
+          // jour soit close, l'etat commite portant alors le curseur.
+          setTimeout(() => {
+            const { avant, apres } = couper(editor);
+            onSplit(avant, apres);
+          }, 0);
           return true;
         },
         COMMAND_PRIORITY_LOW,
@@ -294,6 +316,46 @@ function SauvegardePlugin({ origine, onChange, onBlur }: SauvegardeProps) {
     referenceRef.current = null;
     dernierRef.current = null;
   }, [origine]);
+
+  return null;
+}
+
+// ---------------------------------------------------------------------------
+
+/**
+ * Le contenu a change EN DEHORS de cet editeur : la page l'a reecrit.
+ *
+ * Le cas qui l'impose est la scission : le bloc d'origine retrecit pendant
+ * que le focus part vers le nouveau. Sans ca, son editeur continuait
+ * d'afficher le texte entier — Lexical ne relit son etat initial qu'au
+ * montage.
+ *
+ * On ne touche jamais un editeur qui a le focus, ni un qui attend une demande
+ * de focus (la fusion, elle, apporte son texte avec la demande) : ce serait
+ * remplacer le texte sous le curseur.
+ */
+function SyncPlugin({
+  markdown,
+  focusEnAttente,
+}: {
+  markdown: string;
+  focusEnAttente: boolean;
+}) {
+  const [editor] = useLexicalComposerContext();
+
+  useEffect(() => {
+    if (focusEnAttente) return;
+    const dom = editor.getRootElement();
+    if (dom && document.activeElement === dom) return;
+    if (lireMarkdown(editor) === markdown) return;
+    editor.update(
+      () => {
+        $getRoot().clear();
+        $convertFromMarkdownString(markdown, TRANSFORMERS);
+      },
+      { discrete: true },
+    );
+  }, [markdown, focusEnAttente, editor]);
 
   return null;
 }
@@ -427,6 +489,7 @@ export function JournalEditor({
       <MarkdownShortcutPlugin transformers={TRANSFORMERS} />
       <ClavierPlugin onSplit={onSplit} onMergeUp={onMergeUp} onStep={onStep} />
       <SauvegardePlugin origine={markdown} onChange={onChange} onBlur={onBlur} />
+      <SyncPlugin markdown={markdown} focusEnAttente={focus !== null} />
       <FocusPlugin demande={focus} onFocused={onFocused} />
     </LexicalComposer>
   );
