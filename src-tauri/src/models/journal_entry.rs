@@ -26,11 +26,21 @@ pub struct JournalEntry {
 // le frontend (résolu via `todayLocalISODate()`/le sélecteur de date, jamais
 // côté serveur) — le calendrier journal, comme `scheduled_for` des tâches,
 // raisonne en jour LOCAL, que `chrono::Utc::now()` ne peut pas fournir sans
-// risque de décalage. `written_at`, lui, est toujours résolu côté serveur.
+// risque de décalage.
 #[derive(Debug, Clone, Deserialize)]
 pub struct CreateJournalEntry {
     pub target_day: String,
     pub content: String,
+    /// Moment d'écriture. Résolu côté serveur quand il est absent — c'est le
+    /// cas normal.
+    ///
+    /// Fourni dans un seul cas : la SCISSION d'un bloc existant. Le texte qui
+    /// suit le curseur n'est pas une écriture nouvelle, c'est la moitié d'un
+    /// passage déjà écrit : il hérite donc de l'heure de son origine. Sans
+    /// ça, couper le bloc de 8 h à 14 h enverrait sa seconde moitié en bas de
+    /// la page, à 14 h, séparée de sa première.
+    #[serde(default)]
+    pub written_at: Option<String>,
 }
 
 // Mise à jour partielle : seuls les champs fournis sont écrits.

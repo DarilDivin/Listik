@@ -8,6 +8,15 @@ export interface CreateJournalEntryInput {
   /** Jour d'appartenance de la page (YYYY-MM-DD), toujours fourni. */
   target_day: string;
   content: string;
+  /**
+   * Moment d'ecriture. Absent = resolu par le serveur, et c'est le cas normal.
+   *
+   * Fourni dans un seul cas : la SCISSION d'un bloc. Le texte qui suit le
+   * curseur n'est pas une ecriture nouvelle, c'est la moitie d'un passage deja
+   * ecrit — il herite donc de l'heure de son origine, sinon couper le bloc de
+   * 8 h a 14 h enverrait sa seconde moitie en bas de la page.
+   */
+  written_at?: string;
 }
 
 export interface UpdateJournalEntryInput {

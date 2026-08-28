@@ -374,6 +374,9 @@ impl ToolExecutor for DbExecutor {
                     CreateJournalEntry {
                         target_day: required_str(&arguments, "target_day")?,
                         content: required_str(&arguments, "content")?,
+                        // L'agent ecrit toujours maintenant : la scission est
+                        // un geste d'edition, pas une commande.
+                        written_at: None,
                     },
                 )
                 .await

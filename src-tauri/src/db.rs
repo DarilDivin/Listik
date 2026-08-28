@@ -901,8 +901,11 @@ pub async fn list_journal_entries_for_day(
     day: &str,
 ) -> Result<Vec<JournalEntry>, sqlx::Error> {
     let query = format!(
+        // `created_at` départage : une scission donne à la seconde moitié
+        // l'heure de la première, et deux blocs à la même heure doivent
+        // malgré tout garder un ordre stable — celui de leur apparition.
         "SELECT {JOURNAL_ENTRY_COLUMNS} FROM journal_entries WHERE target_day = ? \
-         ORDER BY written_at ASC"
+         ORDER BY written_at ASC, created_at ASC"
     );
     let entries = sqlx::query_as::<_, JournalEntry>(&query)
         .bind(day)
@@ -918,7 +921,7 @@ pub async fn list_upcoming_journal_entries(
 ) -> Result<Vec<JournalEntry>, sqlx::Error> {
     let query = format!(
         "SELECT {JOURNAL_ENTRY_COLUMNS} FROM journal_entries WHERE target_day > ? \
-         ORDER BY target_day ASC, written_at ASC"
+         ORDER BY target_day ASC, written_at ASC, created_at ASC"
     );
     let entries = sqlx::query_as::<_, JournalEntry>(&query)
         .bind(after_day)
@@ -953,7 +956,7 @@ pub async fn create_journal_entry(
     let entry = JournalEntry {
         id: Uuid::new_v4().to_string(),
         target_day: input.target_day,
-        written_at: now.clone(),
+        written_at: input.written_at.unwrap_or_else(|| now.clone()),
         content: input.content,
         created_at: now.clone(),
         updated_at: now,
