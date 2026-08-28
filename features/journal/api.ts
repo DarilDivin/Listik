@@ -2,6 +2,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import type {
   CreateJournalEntryInput,
+  JournalDayCount,
   JournalEntry,
   UpdateJournalEntryInput,
 } from "./types";
@@ -14,6 +15,9 @@ export const journalApi = {
     invoke<JournalEntry[]>("list_journal_entries_for_day", { day }),
   listUpcoming: (afterDay: string) =>
     invoke<JournalEntry[]>("list_upcoming_journal_entries", { afterDay }),
+  /** Blocs par jour sur un mois (`YYYY-MM`) — les jours vides sont absents. */
+  countByMonth: (month: string) =>
+    invoke<JournalDayCount[]>("count_journal_entries_by_month", { month }),
   create: (payload: CreateJournalEntryInput) =>
     invoke<JournalEntry>("create_journal_entry", { payload }),
   update: (id: string, payload: UpdateJournalEntryInput) =>

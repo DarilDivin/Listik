@@ -2,6 +2,7 @@
 // via ts-rs. → source de vérité ; régénérer avec `cargo test` (ne pas éditer
 // ./generated).
 export type { JournalEntry } from "./generated/JournalEntry";
+export type { JournalDayCount } from "./generated/JournalDayCount";
 
 // Types d'ENTRÉE (construits côté frontend), écrits à la main.
 export interface CreateJournalEntryInput {

@@ -9,6 +9,7 @@ export const SWR_KEYS = {
   ALL_NOTES: "notes/all",
   JOURNAL_DAY: (day: string) => `journal/day/${day}`,
   JOURNAL_UPCOMING: "journal/upcoming",
+  JOURNAL_MONTH: (month: string) => `journal/month/${month}`,
   ALL_PROJECTS: "projects/all",
   ALL_AREAS: "projects/areas",
   ALL_TAGS: "tags/all",

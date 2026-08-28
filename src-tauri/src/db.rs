@@ -1,6 +1,7 @@
 use crate::models::{
     Area, CreateArea, CreateJournalEntry, CreateNote, CreateProject, CreateSubTask, CreateTag,
-    CreateTodo, JournalEntry, Note, Project, Recurrence, Settings, SubTask, Tag, Todo, TodoStatus,
+    CreateTodo, JournalDayCount, JournalEntry, Note, Project, Recurrence, Settings, SubTask, Tag,
+    Todo, TodoStatus,
     UpdateArea, UpdateJournalEntry, UpdateNote, UpdateProject, UpdateSettings, UpdateSubTask,
     UpdateTag, UpdateTodo,
 };
@@ -928,6 +929,27 @@ pub async fn list_upcoming_journal_entries(
         .fetch_all(pool)
         .await?;
     attach_journal_relations(pool, entries).await
+}
+
+/// Compte les blocs par jour sur un mois (`YYYY-MM`).
+///
+/// Bornes de chaîne plutôt qu'un `LIKE` : `target_day` est un `YYYY-MM-DD`
+/// trié lexicographiquement comme chronologiquement, l'index de la colonne
+/// sert donc l'intervalle. Les jours SANS bloc ne sont pas renvoyés — c'est à
+/// l'appelant de dessiner les creux, il connaît la longueur du mois.
+pub async fn count_journal_entries_by_month(
+    pool: &SqlitePool,
+    month: &str,
+) -> Result<Vec<JournalDayCount>, sqlx::Error> {
+    sqlx::query_as::<_, JournalDayCount>(
+        "SELECT target_day AS day, COUNT(*) AS count FROM journal_entries \
+         WHERE target_day >= ? AND target_day <= ? \
+         GROUP BY target_day ORDER BY target_day ASC",
+    )
+    .bind(format!("{month}-01"))
+    .bind(format!("{month}-31"))
+    .fetch_all(pool)
+    .await
 }
 
 pub async fn get_journal_entry(

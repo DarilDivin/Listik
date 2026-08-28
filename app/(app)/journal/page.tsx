@@ -11,6 +11,7 @@ import { journalApi } from "@/features/journal/api";
 import { SWR_KEYS } from "@/lib/swr-config";
 import { useTags } from "@/hooks/useTags";
 import { JournalBlock, type Caret } from "@/components/journal/JournalBlock";
+import { JournalDensity } from "@/components/journal/JournalDensity";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
@@ -74,6 +75,14 @@ export default function JournalPage() {
 
   // Le même jour, un an plus tôt. Une seule requête, la même commande que la
   // page — et la section disparaît quand il n'y avait rien.
+  // Le mois affiche, pour la bande de densite de l'en-tete.
+  const mois = day.slice(0, 7);
+  const { data: densite = [] } = useSWR(
+    SWR_KEYS.JOURNAL_MONTH(mois),
+    () => journalApi.countByMonth(mois),
+    { revalidateOnFocus: true, dedupingInterval: 5000 },
+  );
+
   const jourDAvant = unAnAvant(day);
   const { data: ilYaUnAn = [] } = useSWR(
     SWR_KEYS.JOURNAL_DAY(jourDAvant),
@@ -225,6 +234,14 @@ export default function JournalPage() {
                 <ChevronRight />
               </Button>
             </span>
+          </div>
+          <div className="mt-3">
+            <JournalDensity
+              month={mois}
+              counts={densite}
+              selected={day}
+              onPick={setDay}
+            />
           </div>
         </div>
 

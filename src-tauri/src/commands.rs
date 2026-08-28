@@ -1,7 +1,8 @@
 use crate::db::{self, AppState};
 use crate::models::{
     AiChatMessage, AiParsedTask, Area, CreateArea, CreateJournalEntry, CreateNote, CreateProject,
-    CreateSubTask, CreateTag, CreateTodo, JournalEntry, Note, Project, Settings, SubTask, Tag,
+    CreateSubTask, CreateTag, CreateTodo, JournalDayCount, JournalEntry, Note, Project, Settings,
+    SubTask, Tag,
     Todo, UpdateArea, UpdateJournalEntry, UpdateNote, UpdateProject, UpdateSettings, UpdateSubTask,
     UpdateTag, UpdateTodo,
 };
@@ -205,6 +206,17 @@ pub async fn list_upcoming_journal_entries(
     after_day: String,
 ) -> Result<Vec<JournalEntry>, String> {
     db::list_upcoming_journal_entries(&state.pool, &after_day)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// Densité d'écriture du mois (`YYYY-MM`), pour le calendrier de l'en-tête.
+#[tauri::command]
+pub async fn count_journal_entries_by_month(
+    state: State<'_, AppState>,
+    month: String,
+) -> Result<Vec<JournalDayCount>, String> {
+    db::count_journal_entries_by_month(&state.pool, &month)
         .await
         .map_err(|e| e.to_string())
 }

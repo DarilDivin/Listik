@@ -22,6 +22,16 @@ pub struct JournalEntry {
     pub tags: Vec<super::Tag>,
 }
 
+/// Densité d'écriture d'UN jour. Sert au calendrier du mois : on ne
+/// remonte pas les blocs eux-mêmes pour savoir s'il y en a — trente jours de
+/// contenu pour dessiner trente points serait absurde.
+#[derive(Debug, Clone, Serialize, sqlx::FromRow, TS)]
+#[ts(export, export_to = "../../features/journal/generated/")]
+pub struct JournalDayCount {
+    pub day: String,
+    pub count: i64,
+}
+
 // Données d'entrée pour créer un bloc. `target_day` est TOUJOURS fourni par
 // le frontend (résolu via `todayLocalISODate()`/le sélecteur de date, jamais
 // côté serveur) — le calendrier journal, comme `scheduled_for` des tâches,

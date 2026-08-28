@@ -182,6 +182,7 @@ fn main() {
             commands::update_note,
             commands::delete_note,
             commands::list_journal_entries_for_day,
+            commands::count_journal_entries_by_month,
             commands::list_upcoming_journal_entries,
             commands::create_journal_entry,
             commands::update_journal_entry,

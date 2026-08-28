@@ -11,7 +11,9 @@ pub mod task;
 
 pub use ai::{AiChatMessage, AiParsedTask};
 pub use area::{Area, CreateArea, UpdateArea};
-pub use journal_entry::{CreateJournalEntry, JournalEntry, UpdateJournalEntry};
+pub use journal_entry::{
+    CreateJournalEntry, JournalDayCount, JournalEntry, UpdateJournalEntry,
+};
 pub use note::{CreateNote, Note, UpdateNote};
 pub use project::{CreateProject, Project, ProjectStatus, UpdateProject};
 pub use settings::{Settings, UpdateSettings};
