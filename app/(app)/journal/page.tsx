@@ -68,11 +68,7 @@ export default function JournalPage() {
   const { entries, upcoming, loading, appendEntry, updateEntry, deleteEntry } =
     useJournal(day);
 
-  const [focus, setFocus] = useState<{
-    id: string;
-    caret: Caret;
-    contenu?: string;
-  } | null>(null);
+  const [focus, setFocus] = useState<{ id: string; caret: Caret } | null>(null);
   const [saving, setSaving] = useState<Saving>("idle");
 
   // Le même jour, un an plus tôt. Une seule requête, la même commande que la
@@ -236,11 +232,7 @@ export default function JournalPage() {
                     <JournalBlock
                       entry={entry}
                       targetDay={day}
-                      focus={
-                        focus?.id === entry.id
-                          ? { caret: focus.caret, contenu: focus.contenu }
-                          : null
-                      }
+                      focus={focus?.id === entry.id ? { caret: focus.caret } : null}
                       onFocused={() => setFocus(null)}
                       onChange={(content) =>
                         void track(updateEntry(entry.id, { content }))

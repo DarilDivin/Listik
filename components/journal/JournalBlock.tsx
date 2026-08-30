@@ -30,7 +30,7 @@ interface JournalBlockProps {
   /** Jour de la page — pour savoir si le bloc a été écrit un AUTRE jour. */
   targetDay: string;
   /** Demande de focus venue de la page (les flèches, d'une reprise à l'autre). */
-  focus: { caret: Caret; contenu?: string } | null;
+  focus: { caret: Caret } | null;
   onFocused: () => void;
   onChange: (content: string) => void;
   onBlur: (content: string) => void;
@@ -63,10 +63,6 @@ export function JournalBlock({
   const writtenAt = new Date(entry.written_at);
   const heure = format(writtenAt, "HH:mm");
   const ailleurs = toLocalISODate(writtenAt) !== targetDay;
-  // Chaque bloc EST une reprise : son heure dit quand on s'est remis à
-  // écrire, et c'est la seule chose qui distingue un bloc du suivant. Elle
-  // reste donc posée, sans qu'on ait à promener la souris.
-  const heureFixe = true;
 
   // La fermeture du bloc : il passe de vide à écrit, donc il vient d'être
   // enregistré. On le dit une fois, par un mouvement — pas par un message.
@@ -85,12 +81,13 @@ export function JournalBlock({
 
   return (
     <div className={cn("group/bloc relative", ferme && "journal-commit")}>
-      {/* L'heure vit dans la gouttière, jamais dans le texte. */}
+      {/* L'heure vit dans la gouttière, jamais dans le texte — et elle y reste
+          posée : c'est la SEULE chose qui distingue une reprise de la suivante.
+          La cacher jusqu'au survol reviendrait à effacer le rythme du jour. */}
       <span
         aria-hidden
         className={cn(
-          "pointer-events-none absolute -left-[104px] top-[0.45em] hidden w-[88px] select-none text-right font-mono text-[11px] tabular-nums text-muted-foreground transition-opacity duration-300 md:block",
-          heureFixe ? "opacity-50" : "opacity-0 group-hover/bloc:opacity-80",
+          "pointer-events-none absolute -left-[104px] top-[0.45em] hidden w-[88px] select-none text-right font-mono text-[11px] tabular-nums text-muted-foreground opacity-50 transition-opacity duration-300 md:block",
           // À la fermeture, l'heure tombe dans la gouttière puis s'en remet à
           // sa règle : c'est le seul moment où on la montre sans la demander.
           ferme && "journal-commit-heure",

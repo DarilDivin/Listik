@@ -23,13 +23,12 @@ import {
 } from "lexical";
 import {
   lireMarkdown,
-  longueurTexte,
   NOEUDS,
 } from "@/features/journal/decoupe";
 import { cn } from "@/lib/utils";
 
 /** Où poser le curseur quand la page rend la main à ce bloc. */
-export type Caret = "start" | "end" | "suite" | "junction";
+export type Caret = "start" | "end" | "suite";
 
 /**
  * Le thème pointe vers les MÊMES classes que `.note-markdown` stylise déjà
@@ -207,16 +206,14 @@ function SauvegardePlugin({ origine, onChange, onBlur }: SauvegardeProps) {
 // ---------------------------------------------------------------------------
 
 /**
- * Le contenu a change EN DEHORS de cet editeur : la page l'a reecrit.
+ * Le contenu a changé EN DEHORS de cet éditeur : la page l'a réécrit.
  *
- * Le cas qui l'impose est la scission : le bloc d'origine retrecit pendant
- * que le focus part vers le nouveau. Sans ca, son editeur continuait
- * d'afficher le texte entier — Lexical ne relit son etat initial qu'au
- * montage.
+ * Lexical ne relit son état initial qu'au MONTAGE ; sans ça, une reprise
+ * prolongée depuis la capture rapide (`/note`) resterait affichée telle
+ * qu'elle était à l'ouverture de la page.
  *
- * On ne touche jamais un editeur qui a le focus, ni un qui attend une demande
- * de focus (la fusion, elle, apporte son texte avec la demande) : ce serait
- * remplacer le texte sous le curseur.
+ * On ne touche jamais un éditeur qui a le focus, ni un qui attend une demande
+ * de focus : ce serait remplacer le texte sous le curseur.
  */
 function SyncPlugin({
   markdown,
@@ -247,28 +244,20 @@ function SyncPlugin({
 // ---------------------------------------------------------------------------
 
 interface FocusProps {
-  demande: { caret: Caret; contenu?: string } | null;
+  demande: { caret: Caret } | null;
   onFocused: () => void;
 }
 
-/** La page rend la main à ce bloc : on remplace son texte au besoin, puis on
- *  pose le curseur. */
+/** La page rend la main à ce bloc : on y pose le curseur. */
 function FocusPlugin({ demande, onFocused }: FocusProps) {
   const [editor] = useLexicalComposerContext();
 
   useEffect(() => {
     if (!demande) return;
-    const { caret, contenu } = demande;
-    // La jointure d'une fusion est la fin du texte d'AVANT le remplacement :
-    // seul l'éditeur la connaît, la page ne voit que du markdown.
-    const jointure = longueurTexte(editor);
+    const { caret } = demande;
 
     editor.update(
       () => {
-        if (contenu !== undefined) {
-          $getRoot().clear();
-          $convertFromMarkdownString(contenu, TRANSFORMERS);
-        }
         const racine = $getRoot();
         if (caret === "start") {
           racine.selectStart();
@@ -286,20 +275,6 @@ function FocusPlugin({ demande, onFocused }: FocusProps) {
           } else {
             racine.selectEnd();
           }
-        } else {
-          // On avance de `jointure` caractères dans les nœuds de texte.
-          let reste = jointure;
-          let pose = false;
-          for (const n of racine.getAllTextNodes()) {
-            const taille = n.getTextContentSize();
-            if (reste <= taille) {
-              n.select(reste, reste);
-              pose = true;
-              break;
-            }
-            reste -= taille;
-          }
-          if (!pose) racine.selectEnd();
         }
       },
       { discrete: true },
@@ -316,7 +291,7 @@ function FocusPlugin({ demande, onFocused }: FocusProps) {
 interface JournalEditorProps {
   markdown: string;
   placeholder?: string;
-  focus: { caret: Caret; contenu?: string } | null;
+  focus: { caret: Caret } | null;
   onFocused: () => void;
   onChange: (markdown: string) => void;
   onBlur: (markdown: string) => void;
