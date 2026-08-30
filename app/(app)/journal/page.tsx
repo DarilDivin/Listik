@@ -1,21 +1,19 @@
 "use client";
 
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import useSWR from "swr";
-import { AnimatePresence, motion } from "motion/react";
 import { format } from "date-fns";
 import { fr } from "date-fns/locale";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { useJournal } from "@/hooks/useJournal";
 import { journalApi } from "@/features/journal/api";
 import { SWR_KEYS } from "@/lib/swr-config";
-import { JournalBlock, type Caret } from "@/components/journal/JournalBlock";
+import { JournalSheet, type Reprise } from "@/components/journal/JournalSheet";
 import { JournalDensity } from "@/components/journal/JournalDensity";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
-import { spring } from "@/lib/motion";
-import { estVide } from "@/features/journal/decoupe";
+import { estVide, type Segment } from "@/features/journal/feuille";
 import { todayLocalISODate } from "@/lib/date";
 
 /** Parse une date « jour seul » en Date locale (évite le décalage UTC). */
@@ -45,6 +43,14 @@ function unAnAvant(day: string): string {
   return `${y - 1}-${String(m).padStart(2, "0")}-${String(jour).padStart(2, "0")}`;
 }
 
+/**
+ * Au-delà d'une heure sans écrire, on est REVENU : la phrase suivante ouvre un
+ * autre moment de la journée. La même règle vit en Rust (`db::REPRISE`), qui
+ * reste l'arbitre — ici elle ne sert qu'à savoir s'il faut montrer un repère
+ * vierge au bas de la feuille.
+ */
+const REPRISE_MS = 60 * 60 * 1000;
+
 type Saving = "idle" | "saving" | "saved";
 
 /**
@@ -68,7 +74,10 @@ export default function JournalPage() {
   const { entries, upcoming, loading, appendEntry, updateEntry, deleteEntry } =
     useJournal(day);
 
-  const [focus, setFocus] = useState<{ id: string; caret: Caret } | null>(null);
+  // L'identité à poser sur le repère encore vierge, une fois sa ligne créée.
+  const [aStamper, setAStamper] = useState<{ id: string; heure: string } | null>(
+    null,
+  );
   const [saving, setSaving] = useState<Saving>("idle");
 
   // Le même jour, un an plus tôt. Une seule requête, la même commande que la
@@ -116,28 +125,86 @@ export default function JournalPage() {
     }
   }, []);
 
-  /** Un bloc vide attend déjà au bas de la page : c'est là qu'on écrit. */
-  const dernierVide =
-    entries.length > 0 && estVide(entries[entries.length - 1].content);
+
+  const heureDe = (iso: string) => format(new Date(iso), "HH:mm");
 
   /**
-   * Écrire. Pas « créer un bloc » : on reprend la session en cours, et il n'y
-   * en a une nouvelle que si la dernière écriture remonte à plus d'une heure.
+   * La dernière reprise est-elle encore ouverte ? On mesure sur `updated_at`,
+   * la dernière écriture RÉELLE — rester une heure et demie sur un même
+   * moment ne doit pas le fermer sous les doigts.
    *
-   * C'est Rust qui tranche — la capture rapide écrit dans le même journal, et
-   * deux fenêtres décidant chacune sur sa copie de la liste auraient coupé un
-   * même moment en deux.
+   * Ce calcul double celui de Rust, qui reste l'arbitre : ici il ne sert qu'à
+   * savoir s'il faut MONTRER un repère vierge au bas de la feuille.
    */
-  const ecrireIci = async () => {
-    const entry = await track(appendEntry(day, ""));
-    if (entry) setFocus({ id: entry.id, caret: "suite" });
-  };
+  const derniere = entries[entries.length - 1];
+  const ouverte =
+    derniere !== undefined &&
+    Date.now() - new Date(derniere.updated_at).getTime() < REPRISE_MS;
 
-  const traverser = (index: number, dir: -1 | 1) => {
-    const voisin = entries[index + dir];
-    if (!voisin) return;
-    setFocus({ id: voisin.id, caret: dir === -1 ? "end" : "start" });
-  };
+  // L'heure du repère vierge se fige à son apparition : la recalculer à chaque
+  // rendu changerait la feuille toutes les minutes, et la rechargerait.
+  const [heureVierge, setHeureVierge] = useState<string | null>(null);
+  useEffect(() => {
+    if (isToday && !ouverte) {
+      setHeureVierge((h) => h ?? format(new Date(), "HH:mm"));
+    } else {
+      setHeureVierge(null);
+    }
+  }, [isToday, ouverte]);
+
+  const reprises = useMemo<Reprise[]>(() => {
+    const posees = entries.map((e) => ({
+      id: e.id,
+      heure: heureDe(e.written_at),
+      markdown: e.content,
+    }));
+    // « Ici commence maintenant » : une promesse, pas encore une ligne en base.
+    if (heureVierge !== null) posees.push({ id: "", heure: heureVierge, markdown: "" });
+    return posees;
+  }, [entries, heureVierge]);
+
+  // La sauvegarde compare aux entrées SANS se réabonner à chaque frappe.
+  const entriesRef = useRef(entries);
+  entriesRef.current = entries;
+
+  /**
+   * La feuille a changé : on écrit ce qui a bougé, reprise par reprise.
+   *
+   * Une reprise vidée s'en va — c'est le seul geste de suppression, et il ne
+   * demande rien de plus que d'effacer son texte. Un repère disparu (Retour
+   * arrière sur la frontière) fait de même : sa ligne part, son texte ayant
+   * déjà rejoint celle d'avant.
+   */
+  const enregistrer = useCallback(
+    async (segments: Segment[]) => {
+      const connues = entriesRef.current;
+      const vues = new Set<string>();
+
+      for (const s of segments) {
+        if (s.entryId === "") {
+          if (estVide(s.markdown)) continue;
+          const cree = await track(appendEntry(day, s.markdown));
+          if (cree) setAStamper({ id: cree.id, heure: heureDe(cree.written_at) });
+          continue;
+        }
+        vues.add(s.entryId);
+        const avant = connues.find((e) => e.id === s.entryId);
+        if (avant === undefined) continue;
+        if (estVide(s.markdown)) {
+          await track(deleteEntry(s.entryId));
+          continue;
+        }
+        if (s.markdown !== avant.content) {
+          await track(updateEntry(s.entryId, { content: s.markdown }));
+        }
+      }
+
+      for (const e of connues) {
+        if (!vues.has(e.id)) await track(deleteEntry(e.id));
+      }
+    },
+    [day, track, appendEntry, updateEntry, deleteEntry],
+  );
 
   return (
     <div className="mx-auto flex h-full w-full max-w-4xl flex-col overflow-hidden px-8">
@@ -213,70 +280,12 @@ export default function JournalPage() {
               ))}
             </div>
           ) : (
-            <>
-              <AnimatePresence initial={false}>
-                {entries.map((entry, i) => (
-                  <motion.div
-                    key={entry.id}
-                    layout="position"
-                    initial={{ opacity: 0 }}
-                    animate={{ opacity: 1 }}
-                    exit={{ opacity: 0, transition: { duration: 0.12 } }}
-                    transition={spring.smooth}
-                    // Des paragraphes, pas des cartes : l'espacement d'un
-                    // texte suivi, un peu d'air seulement à une reprise.
-                    // Deux reprises sont séparées par de l'AIR, pas par un
-                    // trait : c'est le seul signe qu'on est revenu plus tard.
-                    className={cn(i > 0 && "mt-[1.6em]")}
-                  >
-                    <JournalBlock
-                      entry={entry}
-                      targetDay={day}
-                      focus={focus?.id === entry.id ? { caret: focus.caret } : null}
-                      onFocused={() => setFocus(null)}
-                      onChange={(content) =>
-                        void track(updateEntry(entry.id, { content }))
-                      }
-                      // Un bloc vide qu'on quitte n'a rien à dire : il part.
-                      // Sinon la page accumulerait les lignes créées par une
-                      // Entrée de trop.
-                      onBlur={(content) => {
-                        if (estVide(content)) void track(deleteEntry(entry.id));
-                      }}
-                      onStep={(dir) => traverser(i, dir)}
-                    />
-                  </motion.div>
-                ))}
-              </AnimatePresence>
-
-              {/* Une page blanche est intimidante là où une barre d'une ligne
-                  ne l'est pas : elle ne reste jamais nue. */}
-              {entries.length === 0 && (
-                <p className="text-[1.0625rem] leading-[1.78] text-muted-foreground/80">
-                  {isToday
-                    ? "Rien pour l'instant. Cette page t'attend."
-                    : "Rien écrit ce jour-là — tu peux l'écrire maintenant, l'heure réelle sera gardée."}
-                </p>
-              )}
-
-              {/* Écrire ici : la porte, quand le clavier ne suffit pas.
-                  Pas d'icône, pas de cadre : c'est la ligne suivante de la
-                  page, pas un bouton.
-
-                  Elle s'efface quand le dernier bloc est déjà vide : ce bloc
-                  EST l'endroit où écrire, et il porte le même « Écrire… ». On
-                  voyait l'invitation en double, une fois en place de curseur
-                  et une fois en promesse. */}
-              {!dernierVide && (
-                <button
-                  type="button"
-                  onClick={() => void ecrireIci()}
-                  className="w-full rounded-sm py-0.5 text-left text-[1.0625rem] leading-[1.78] text-muted-foreground/50 outline-none transition-colors hover:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring"
-                >
-                  Écrire…
-                </button>
-              )}
-            </>
+            <JournalSheet
+              key={day}
+              reprises={reprises}
+              aStamper={aStamper}
+              onSegments={(segments) => void enregistrer(segments)}
+            />
           )}
 
           {/* Il y a un an. Séparé par de l'ESPACE, pas par un filet : le gris
