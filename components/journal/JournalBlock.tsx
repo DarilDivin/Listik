@@ -1,6 +1,7 @@
 "use client";
 
 import dynamic from "next/dynamic";
+import { useEffect, useRef, useState } from "react";
 import { format } from "date-fns";
 import { fr } from "date-fns/locale";
 import { Trash2 } from "lucide-react";
@@ -96,14 +97,32 @@ export function JournalBlock({
   // le début d'une reprise, ou un bloc écrit un autre jour.
   const heureFixe = sessionStart || ailleurs;
 
+  // La fermeture du bloc : il passe de vide à écrit, donc il vient d'être
+  // enregistré. On le dit une fois, par un mouvement — pas par un message.
+  const [ferme, setFerme] = useState(false);
+  const videAvant = useRef(!entry.content);
+  useEffect(() => {
+    const vide = !entry.content;
+    if (videAvant.current && !vide) {
+      setFerme(true);
+      const t = setTimeout(() => setFerme(false), 1200);
+      videAvant.current = vide;
+      return () => clearTimeout(t);
+    }
+    videAvant.current = vide;
+  }, [entry.content]);
+
   return (
-    <div className="group/bloc relative">
+    <div className={cn("group/bloc relative", ferme && "journal-commit")}>
       {/* L'heure vit dans la gouttière, jamais dans le texte. */}
       <span
         aria-hidden
         className={cn(
           "pointer-events-none absolute -left-[104px] top-[0.45em] hidden w-[88px] select-none text-right font-mono text-[11px] tabular-nums text-muted-foreground transition-opacity duration-300 md:block",
           heureFixe ? "opacity-50" : "opacity-0 group-hover/bloc:opacity-80",
+          // À la fermeture, l'heure tombe dans la gouttière puis s'en remet à
+          // sa règle : c'est le seul moment où on la montre sans la demander.
+          ferme && "journal-commit-heure",
         )}
       >
         {heure}
@@ -118,9 +137,12 @@ export function JournalBlock({
         </span>
       )}
 
-      {/* Tags et suppression : révélés au survol, posés hors du flux pour ne
-          jamais décaler le texte. */}
-      <span className="absolute -right-2 top-0 flex translate-x-full items-center gap-1 opacity-0 transition-opacity group-hover/bloc:opacity-100 group-focus-within/bloc:opacity-100 max-lg:hidden">
+      {/* Tags et suppression : au SURVOL seulement, posés hors du flux pour ne
+          jamais décaler le texte.
+          Pas au focus : on les voyait alors s'allumer à côté du curseur
+          pendant qu'on écrit — deux boutons qui regardent par-dessus l'épaule.
+          Ces gestes-là se font quand on relit, la souris à la main. */}
+      <span className="absolute -right-2 top-0 flex translate-x-full items-center gap-1 opacity-0 transition-opacity group-hover/bloc:opacity-100 max-lg:hidden">
         <TagControl
           value={entry.tags}
           tags={allTags}

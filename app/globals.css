@@ -399,6 +399,39 @@
   white-space: pre-wrap;
 }
 
+/* LE moment de la page-jour : la fermeture d'un bloc.
+   On s'arrête d'écrire, le texte est enregistré — et il prend son heure. Une
+   marque d'accent affleure au bord gauche puis s'efface, pendant que l'heure
+   tombe dans la gouttière. C'est le seul mouvement de la page, et il ne dit
+   qu'une chose : « c'est gardé ». */
+.journal-commit {
+  animation: journal-commit-marque 1.1s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.journal-commit-heure {
+  animation: journal-commit-heure 0.8s cubic-bezier(0.16, 1, 0.3, 1) 0.15s both;
+}
+@keyframes journal-commit-marque {
+  0% {
+    box-shadow: -10px 0 0 -8px color-mix(in oklch, var(--color-brand) 70%, transparent);
+  }
+  35% {
+    box-shadow: -10px 0 0 -6px color-mix(in oklch, var(--color-brand) 70%, transparent);
+  }
+  100% {
+    box-shadow: -10px 0 0 -8px transparent;
+  }
+}
+@keyframes journal-commit-heure {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 0.5;
+    transform: none;
+  }
+}
+
 .note-markdown {
   color: var(--color-foreground);
   font-size: 0.95rem;

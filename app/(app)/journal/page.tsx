@@ -136,6 +136,10 @@ export default function JournalPage() {
     [entries],
   );
 
+  /** Un bloc vide attend déjà au bas de la page : c'est là qu'on écrit. */
+  const dernierVide =
+    entries.length > 0 && !entries[entries.length - 1].content.trim();
+
   const ecrireIci = async () => {
     const entry = await track(createEntry({ target_day: day, content: "" }));
     if (entry) setFocus({ id: entry.id, caret: "start" });
@@ -345,16 +349,23 @@ export default function JournalPage() {
                 </p>
               )}
 
-              {/* Écrire ici : la porte, quand le clavier ne suffit pas. */}
-              {/* Pas d'icône, pas de cadre : c'est la ligne suivante de la
-                  page, pas un bouton. */}
-              <button
-                type="button"
-                onClick={() => void ecrireIci()}
-                className="w-full rounded-sm py-0.5 text-left text-[1.0625rem] leading-[1.78] text-muted-foreground/50 outline-none transition-colors hover:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring"
-              >
-                Écrire…
-              </button>
+              {/* Écrire ici : la porte, quand le clavier ne suffit pas.
+                  Pas d'icône, pas de cadre : c'est la ligne suivante de la
+                  page, pas un bouton.
+
+                  Elle s'efface quand le dernier bloc est déjà vide : ce bloc
+                  EST l'endroit où écrire, et il porte le même « Écrire… ». On
+                  voyait l'invitation en double, une fois en place de curseur
+                  et une fois en promesse. */}
+              {!dernierVide && (
+                <button
+                  type="button"
+                  onClick={() => void ecrireIci()}
+                  className="w-full rounded-sm py-0.5 text-left text-[1.0625rem] leading-[1.78] text-muted-foreground/50 outline-none transition-colors hover:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring"
+                >
+                  Écrire…
+                </button>
+              )}
             </>
           )}
 
