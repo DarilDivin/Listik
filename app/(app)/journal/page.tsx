@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useState } from "react";
 import useSWR from "swr";
 import { AnimatePresence, motion } from "motion/react";
 import { format } from "date-fns";
@@ -9,7 +9,6 @@ import { ChevronLeft, ChevronRight } from "lucide-react";
 import { useJournal } from "@/hooks/useJournal";
 import { journalApi } from "@/features/journal/api";
 import { SWR_KEYS } from "@/lib/swr-config";
-import { useTags } from "@/hooks/useTags";
 import { JournalBlock, type Caret } from "@/components/journal/JournalBlock";
 import { JournalDensity } from "@/components/journal/JournalDensity";
 import { Button } from "@/components/ui/button";
@@ -46,30 +45,28 @@ function unAnAvant(day: string): string {
   return `${y - 1}-${String(m).padStart(2, "0")}-${String(jour).padStart(2, "0")}`;
 }
 
-/**
- * Au-delà d'une heure sans écrire, on considère qu'on a REPRIS : le bloc
- * suivant garde son heure affichée. C'est ce qui rend le rythme d'une journée
- * lisible sans horodater chaque paragraphe.
- */
-const REPRISE_MS = 60 * 60 * 1000;
-
 type Saving = "idle" | "saving" | "saved";
 
 /**
- * La page-jour : une seule surface d'écriture continue, pas une liste de
- * blocs surmontée d'un champ de saisie. On écrit, ça s'enregistre — il n'y a
- * rien à soumettre.
+ * La page-jour : un document, pas une liste de blocs surmontée d'un champ de
+ * saisie. On écrit, ça s'enregistre — il n'y a rien à soumettre.
  *
- * La page RETIENT pourtant des moments : chaque paragraphe reste une ligne en
- * base, avec son heure et ses tags. Entrée coupe, Retour arrière recolle, les
- * flèches traversent — c'est ce clavier qui fait d'une pile de blocs une page.
+ * Ce que la page RETIENT, ce sont les MOMENTS : une ligne en base par reprise
+ * d'écriture, pas par paragraphe. Tant qu'on écrit sans s'interrompre une
+ * heure, tout va dans la même ligne et le texte y coule normalement — Entrée
+ * fait un paragraphe, une liste reste une liste. C'est le retour APRÈS une
+ * heure qui ouvre le moment suivant, et son heure dans la gouttière est la
+ * seule chose qui le montre.
+ *
+ * La règle vit en Rust (`db::append_journal_entry`) : la capture rapide écrit
+ * dans le même journal, et deux fenêtres décidant chacune sur sa copie de la
+ * liste auraient coupé un même moment en deux.
  */
 export default function JournalPage() {
   const today = todayLocalISODate();
   const [day, setDay] = useState(today);
-  const { entries, upcoming, loading, createEntry, updateEntry, deleteEntry } =
+  const { entries, upcoming, loading, appendEntry, updateEntry, deleteEntry } =
     useJournal(day);
-  const { tags, createTag, setJournalEntryTags } = useTags();
 
   const [focus, setFocus] = useState<{
     id: string;
@@ -123,94 +120,21 @@ export default function JournalPage() {
     }
   }, []);
 
-  // Une reprise se calcule sur la LISTE (il faut le bloc précédent), jamais
-  // dans le bloc lui-même.
-  const reprises = useMemo(
-    () =>
-      entries.map((entry, i) => {
-        if (i === 0) return true;
-        const ecart =
-          new Date(entry.written_at).getTime() -
-          new Date(entries[i - 1].written_at).getTime();
-        return ecart > REPRISE_MS;
-      }),
-    [entries],
-  );
-
   /** Un bloc vide attend déjà au bas de la page : c'est là qu'on écrit. */
   const dernierVide =
     entries.length > 0 && estVide(entries[entries.length - 1].content);
 
+  /**
+   * Écrire. Pas « créer un bloc » : on reprend la session en cours, et il n'y
+   * en a une nouvelle que si la dernière écriture remonte à plus d'une heure.
+   *
+   * C'est Rust qui tranche — la capture rapide écrit dans le même journal, et
+   * deux fenêtres décidant chacune sur sa copie de la liste auraient coupé un
+   * même moment en deux.
+   */
   const ecrireIci = async () => {
-    const entry = await track(createEntry({ target_day: day, content: "" }));
-    if (entry) setFocus({ id: entry.id, caret: "start" });
-  };
-
-  /**
-   * Entrée : ce qui suit le curseur part dans un nouveau bloc.
-   *
-   * Le nouveau bloc hérite TOUJOURS de l'heure de son origine, et le tri par
-   * `created_at` le pose juste après elle.
-   *
-   * Parce qu'Entrée veut dire « je continue ICI ». Daté de maintenant, il
-   * partait en bas de la page : on ne pouvait plus rien intercaler dans sa
-   * journée. Écrire… en pied de page reste le geste qui crée un bloc à
-   * l'heure réelle — les deux intentions ont chacune leur porte.
-   */
-  const scinder = async (
-    entry: (typeof entries)[number],
-    avant: string,
-    apres: string,
-  ) => {
-    if (avant !== entry.content) {
-      await track(updateEntry(entry.id, { content: avant }));
-    }
-    const cree = await track(
-      createEntry({
-        target_day: day,
-        content: apres,
-        written_at: entry.written_at,
-      }),
-    );
-    if (cree) setFocus({ id: cree.id, caret: "start" });
-  };
-
-  /**
-   * Retour arrière collé au début : le bloc rejoint le précédent.
-   *
-   * Le geste est une frappe, pas une suppression — mais il EFFACE une ligne.
-   * Rien ne doit se perdre en silence : le texte est recollé, les tags du bloc
-   * absorbé rejoignent ceux du précédent, et c'est l'heure du PREMIER qui est
-   * conservée (le passage appartient au moment où il a commencé).
-   */
-  const fusionner = async (index: number, contenu: string) => {
-    if (index === 0) return;
-    const entry = entries[index];
-    const precedent = entries[index - 1];
-    // Deux paragraphes se recollent avec une ligne vide entre eux, sinon le
-    // markdown les souderait en un seul.
-    const fusionne = precedent.content
-      ? contenu
-        ? `${precedent.content}\n\n${contenu}`
-        : precedent.content
-      : contenu;
-
-    await track(updateEntry(precedent.id, { content: fusionne }));
-    if (entry.tags.length > 0) {
-      const fusion = [
-        ...new Set([
-          ...precedent.tags.map((t) => t.id),
-          ...entry.tags.map((t) => t.id),
-        ]),
-      ];
-      await track(setJournalEntryTags(precedent.id, fusion));
-    }
-    await track(deleteEntry(entry.id));
-    // On donne le texte fusionné AVEC la demande de focus : l'éditeur du bloc
-    // précédent est déjà monté, il ne se rechargerait pas tout seul. Et lui
-    // seul sait où est la jointure — la page ne voit que du markdown, dont la
-    // longueur n'est pas celle du texte affiché.
-    setFocus({ id: precedent.id, caret: "junction", contenu: fusionne });
+    const entry = await track(appendEntry(day, ""));
+    if (entry) setFocus({ id: entry.id, caret: "suite" });
   };
 
   const traverser = (index: number, dir: -1 | 1) => {
@@ -305,13 +229,13 @@ export default function JournalPage() {
                     transition={spring.smooth}
                     // Des paragraphes, pas des cartes : l'espacement d'un
                     // texte suivi, un peu d'air seulement à une reprise.
-                    className={cn("mb-[0.35em]", reprises[i] && i > 0 && "mt-[1.5em]")}
+                    // Deux reprises sont séparées par de l'AIR, pas par un
+                    // trait : c'est le seul signe qu'on est revenu plus tard.
+                    className={cn(i > 0 && "mt-[1.6em]")}
                   >
                     <JournalBlock
                       entry={entry}
                       targetDay={day}
-                      sessionStart={reprises[i]}
-                      allTags={tags}
                       focus={
                         focus?.id === entry.id
                           ? { caret: focus.caret, contenu: focus.contenu }
@@ -327,14 +251,7 @@ export default function JournalPage() {
                       onBlur={(content) => {
                         if (estVide(content)) void track(deleteEntry(entry.id));
                       }}
-                      onSplit={(avant, apres) => void scinder(entry, avant, apres)}
-                      onMergeUp={(contenu) => void fusionner(i, contenu)}
                       onStep={(dir) => traverser(i, dir)}
-                      onChangeTags={(tagIds) =>
-                        void track(setJournalEntryTags(entry.id, tagIds))
-                      }
-                      onCreateTag={(name) => createTag({ name }).then((t) => t.id)}
-                      onDelete={() => void track(deleteEntry(entry.id))}
                     />
                   </motion.div>
                 ))}

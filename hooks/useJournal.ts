@@ -41,7 +41,8 @@ export const useJournal = (day: string, withUpcoming = true) => {
     },
   );
 
-  const { createEntry, updateEntry, deleteEntry } = useJournalMutations();
+  const { createEntry, appendEntry, updateEntry, deleteEntry } =
+    useJournalMutations();
 
   return {
     entries,
@@ -49,6 +50,7 @@ export const useJournal = (day: string, withUpcoming = true) => {
     loading,
     upcomingLoading,
     createEntry,
+    appendEntry,
     updateEntry,
     deleteEntry,
     refetchDay,

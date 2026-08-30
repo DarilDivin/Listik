@@ -15,18 +15,13 @@ import {
   TRANSFORMERS,
 } from "@lexical/markdown";
 import {
+  $createParagraphNode,
   $getRoot,
-  $getSelection,
-  $isRangeSelection,
   COMMAND_PRIORITY_LOW,
   KEY_ARROW_DOWN_COMMAND,
   KEY_ARROW_UP_COMMAND,
-  KEY_BACKSPACE_COMMAND,
-  KEY_ENTER_COMMAND,
 } from "lexical";
 import {
-  $aLaMain,
-  couper,
   lireMarkdown,
   longueurTexte,
   NOEUDS,
@@ -34,7 +29,7 @@ import {
 import { cn } from "@/lib/utils";
 
 /** Où poser le curseur quand la page rend la main à ce bloc. */
-export type Caret = "start" | "end" | "junction";
+export type Caret = "start" | "end" | "suite" | "junction";
 
 /**
  * Le thème pointe vers les MÊMES classes que `.note-markdown` stylise déjà
@@ -68,29 +63,22 @@ const THEME = {
 // ---------------------------------------------------------------------------
 
 interface ClavierProps {
-  onSplit: (avant: string, apres: string) => void;
-  onMergeUp: (markdown: string) => void;
   onStep: (dir: -1 | 1) => void;
 }
 
 /**
- * Le clavier qui fait d'une pile de blocs une page. Rien ici ne touche au
- * texte : on rend la main à la page, qui seule connaît les voisins.
+ * Ce qui reste du clavier une fois qu'un bloc est une REPRISE et non un
+ * paragraphe : les flèches, pour passer d'un moment au suivant.
+ *
+ * Entrée et Retour arrière ne sont plus ici. Un bloc est un document — Entrée
+ * y fait un paragraphe, une liste y reste une liste, c'est le travail de
+ * Lexical. Et recoller deux blocs effacerait une frontière de moment, la seule
+ * chose que cette page existe pour garder.
  */
-function ClavierPlugin({ onSplit, onMergeUp, onStep }: ClavierProps) {
+function ClavierPlugin({ onStep }: ClavierProps) {
   const [editor] = useLexicalComposerContext();
 
   useEffect(() => {
-    /** Le curseur est-il collé au tout début du bloc ? */
-    const auDebut = (): boolean => {
-      const sel = $getSelection();
-      if (!$isRangeSelection(sel) || !sel.isCollapsed()) return false;
-      if (sel.anchor.offset !== 0) return false;
-      const noeud = sel.anchor.getNode();
-      const premier = $getRoot().getFirstDescendant();
-      return premier === null || noeud.getKey() === premier.getKey();
-    };
-
     /**
      * Première (ou dernière) ligne VISUELLE : on compare le rectangle du
      * curseur à celui de la zone. Un paragraphe peut occuper trois lignes à
@@ -111,43 +99,7 @@ function ClavierPlugin({ onSplit, onMergeUp, onStep }: ClavierProps) {
     };
 
     return [
-      editor.registerCommand(
-        KEY_ENTER_COMMAND,
-        (e) => {
-          if (e?.shiftKey) return false; // Maj+Entrée : retour à la ligne
-          // Dans une LISTE (ou du code), Entrée ne nous appartient pas : elle
-          // ajoute la puce suivante, et sort de la liste sur une puce vide.
-          // L'intercepter cassait les deux — et pire, la coupe se trompait de
-          // cible : `getTopLevelElementOrThrow` renvoie la liste ENTIÈRE, pas
-          // la puce où est le curseur, donc la liste se dupliquait.
-          if ($aLaMain()) return false;
-          e?.preventDefault();
-          // Un gestionnaire de commande s'execute DEJA dans une mise a jour,
-          // ou setEditorState est interdit — la coupe s'y faisait donc dans
-          // le vide et Entree DUPLIQUAIT le bloc. On attend que la mise a
-          // jour soit close, l'etat commite portant alors le curseur.
-          setTimeout(() => {
-            const { avant, apres } = couper(editor);
-            onSplit(avant, apres);
-          }, 0);
-          return true;
-        },
-        COMMAND_PRIORITY_LOW,
-      ),
-      editor.registerCommand(
-        KEY_BACKSPACE_COMMAND,
-        (e) => {
-          let colle = false;
-          editor.getEditorState().read(() => {
-            colle = auDebut() && !$aLaMain();
-          });
-          if (!colle) return false;
-          e?.preventDefault();
-          onMergeUp(lireMarkdown(editor));
-          return true;
-        },
-        COMMAND_PRIORITY_LOW,
-      ),
+
       editor.registerCommand(
         KEY_ARROW_UP_COMMAND,
         (e) => {
@@ -175,7 +127,7 @@ function ClavierPlugin({ onSplit, onMergeUp, onStep }: ClavierProps) {
       },
       () => {},
     );
-  }, [editor, onSplit, onMergeUp, onStep]);
+  }, [editor, onStep]);
 
   return null;
 }
@@ -322,6 +274,18 @@ function FocusPlugin({ demande, onFocused }: FocusProps) {
           racine.selectStart();
         } else if (caret === "end") {
           racine.selectEnd();
+        } else if (caret === "suite") {
+          // « Écrire… » sur une reprise déjà commencée : on veut une LIGNE
+          // neuve, pas la suite de la phrase. Sans ça, le nouveau texte se
+          // collait au dernier mot du bloc.
+          const dernier = racine.getLastChild();
+          if (dernier !== null && dernier.getTextContent() !== "") {
+            const p = $createParagraphNode();
+            racine.append(p);
+            p.select();
+          } else {
+            racine.selectEnd();
+          }
         } else {
           // On avance de `jointure` caractères dans les nœuds de texte.
           let reste = jointure;
@@ -356,8 +320,6 @@ interface JournalEditorProps {
   onFocused: () => void;
   onChange: (markdown: string) => void;
   onBlur: (markdown: string) => void;
-  onSplit: (avant: string, apres: string) => void;
-  onMergeUp: (markdown: string) => void;
   onStep: (dir: -1 | 1) => void;
   className?: string;
 }
@@ -377,8 +339,6 @@ export function JournalEditor({
   onFocused,
   onChange,
   onBlur,
-  onSplit,
-  onMergeUp,
   onStep,
   className,
 }: JournalEditorProps) {
@@ -419,7 +379,7 @@ export function JournalEditor({
       {/* Ce qui rend l'écriture WYSIWYG : `**gras**` devient gras à la frappe,
           et les astérisques disparaissent pour de bon. */}
       <MarkdownShortcutPlugin transformers={TRANSFORMERS} />
-      <ClavierPlugin onSplit={onSplit} onMergeUp={onMergeUp} onStep={onStep} />
+      <ClavierPlugin onStep={onStep} />
       <SauvegardePlugin origine={markdown} onChange={onChange} onBlur={onBlur} />
       <SyncPlugin markdown={markdown} focusEnAttente={focus !== null} />
       <FocusPlugin demande={focus} onFocused={onFocused} />

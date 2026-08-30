@@ -4,26 +4,11 @@ import dynamic from "next/dynamic";
 import { useEffect, useRef, useState } from "react";
 import { format } from "date-fns";
 import { fr } from "date-fns/locale";
-import { Trash2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { toLocalISODate } from "@/lib/date";
-import { TagControl } from "@/components/todo/TagControl";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-  AlertDialogTrigger,
-} from "@/components/ui/alert-dialog";
 import { estVide } from "@/features/journal/decoupe";
 import type { Caret } from "@/components/journal/JournalEditor";
 import type { JournalEntry } from "@/features/journal/types";
-import type { Tag } from "@/features/tags/types";
 
 export type { Caret };
 
@@ -44,49 +29,33 @@ interface JournalBlockProps {
   entry: JournalEntry;
   /** Jour de la page — pour savoir si le bloc a été écrit un AUTRE jour. */
   targetDay: string;
-  /**
-   * Premier bloc d'une reprise (plus d'une heure depuis le précédent). Son
-   * heure reste alors affichée : sans ça, on ne verrait jamais le rythme de la
-   * journée sans promener la souris sur chaque paragraphe.
-   */
-  sessionStart: boolean;
-  allTags: Tag[];
-  /** Demande de focus venue de la page (fusion, scission, flèches). */
+  /** Demande de focus venue de la page (les flèches, d'une reprise à l'autre). */
   focus: { caret: Caret; contenu?: string } | null;
   onFocused: () => void;
   onChange: (content: string) => void;
   onBlur: (content: string) => void;
-  onSplit: (avant: string, apres: string) => void;
-  onMergeUp: (contenu: string) => void;
   onStep: (dir: -1 | 1) => void;
-  onChangeTags: (tagIds: string[]) => void;
-  onCreateTag: (name: string) => Promise<string>;
-  onDelete: () => void;
 }
 
 /**
- * Un bloc de la page-jour. Il n'a ni cadre, ni fond, ni séparateur : la page
- * doit se lire comme un texte suivi, pas comme une liste de cartes. Ce qui
- * distingue un bloc du suivant, c'est son heure dans la gouttière.
+ * Une REPRISE d'écriture de la page-jour — pas un paragraphe.
  *
- * Le texte est en édition PERMANENTE (voir `JournalEditor`) : plus de bascule
- * entre rendu et brut, donc plus d'astérisques qui apparaissent au clic.
+ * Tant qu'on écrit sans s'interrompre une heure, tout reste ici : Entrée fait
+ * un paragraphe, une liste reste une liste, le texte coule comme dans un
+ * document. C'est le retour APRÈS une heure qui ouvre le bloc suivant.
+ *
+ * Rien ne doit signaler qu'un bloc est un bloc : ni cadre, ni fond, ni
+ * séparateur, ni contrôle au survol. Seule son heure, dans la gouttière, dit
+ * qu'on est revenu.
  */
 export function JournalBlock({
   entry,
   targetDay,
-  sessionStart,
-  allTags,
   focus,
   onFocused,
   onChange,
   onBlur,
-  onSplit,
-  onMergeUp,
   onStep,
-  onChangeTags,
-  onCreateTag,
-  onDelete,
 }: JournalBlockProps) {
   // `written_at` est un instant UTC : en tirer le JOUR passe par
   // `toLocalISODate`, jamais par un `slice(0, 10)` sur la chaîne brute (faux
@@ -94,9 +63,10 @@ export function JournalBlock({
   const writtenAt = new Date(entry.written_at);
   const heure = format(writtenAt, "HH:mm");
   const ailleurs = toLocalISODate(writtenAt) !== targetDay;
-  // Une heure reste posée quand elle porte une information qu'on perdrait :
-  // le début d'une reprise, ou un bloc écrit un autre jour.
-  const heureFixe = sessionStart || ailleurs;
+  // Chaque bloc EST une reprise : son heure dit quand on s'est remis à
+  // écrire, et c'est la seule chose qui distingue un bloc du suivant. Elle
+  // reste donc posée, sans qu'on ait à promener la souris.
+  const heureFixe = true;
 
   // La fermeture du bloc : il passe de vide à écrit, donc il vient d'être
   // enregistré. On le dit une fois, par un mouvement — pas par un message.
@@ -138,55 +108,6 @@ export function JournalBlock({
         </span>
       )}
 
-      {/* Tags et suppression : au SURVOL seulement, posés hors du flux pour ne
-          jamais décaler le texte.
-          Pas au focus : on les voyait alors s'allumer à côté du curseur
-          pendant qu'on écrit — deux boutons qui regardent par-dessus l'épaule.
-          Ces gestes-là se font quand on relit, la souris à la main. */}
-      <span className="absolute -right-2 top-0 flex translate-x-full items-center gap-1 opacity-0 transition-opacity group-hover/bloc:opacity-100 max-lg:hidden">
-        <TagControl
-          value={entry.tags}
-          tags={allTags}
-          compact
-          onChange={onChangeTags}
-          onCreate={onCreateTag}
-        />
-        <AlertDialog>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <AlertDialogTrigger asChild>
-                <button
-                  type="button"
-                  aria-label="Supprimer le bloc"
-                  className="flex size-6 items-center justify-center rounded-md text-muted-foreground outline-none transition-colors hover:bg-destructive/10 hover:text-destructive focus-visible:ring-2 focus-visible:ring-ring"
-                >
-                  <Trash2 size={13} />
-                </button>
-              </AlertDialogTrigger>
-            </TooltipTrigger>
-            <TooltipContent>Supprimer ce bloc</TooltipContent>
-          </Tooltip>
-          <AlertDialogContent>
-            <AlertDialogHeader>
-              <AlertDialogTitle>Supprimer ce bloc ?</AlertDialogTitle>
-              <AlertDialogDescription>
-                Le texte de ce moment sera perdu. Les autres blocs du jour ne
-                bougent pas.
-              </AlertDialogDescription>
-            </AlertDialogHeader>
-            <AlertDialogFooter>
-              <AlertDialogCancel>Annuler</AlertDialogCancel>
-              <AlertDialogAction
-                onClick={onDelete}
-                className="bg-destructive text-white hover:bg-destructive/90"
-              >
-                Supprimer
-              </AlertDialogAction>
-            </AlertDialogFooter>
-          </AlertDialogContent>
-        </AlertDialog>
-      </span>
-
       <div className="relative">
         <JournalEditor
           markdown={entry.content}
@@ -195,8 +116,6 @@ export function JournalBlock({
           onFocused={onFocused}
           onChange={onChange}
           onBlur={onBlur}
-          onSplit={onSplit}
-          onMergeUp={onMergeUp}
           onStep={onStep}
         />
       </div>

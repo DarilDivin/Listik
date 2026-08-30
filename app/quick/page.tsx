@@ -37,7 +37,7 @@ function isOverlayOpen() {
 export default function QuickPage() {
   useTodosSync();
   const { createTodo } = useTodoMutations();
-  const { createEntry: createJournalEntry } = useJournalMutations();
+  const { appendEntry: appendJournalEntry } = useJournalMutations();
   const { projects, createProject } = useProjects();
   const { resolveTagNames, setTodoTags } = useTags();
   // Noms des projets actifs pour l'autocomplétion `#` — vient de la table
@@ -203,15 +203,19 @@ export default function QuickPage() {
     [createTodo, createProject, projects, resolveTagNames, setTodoTags, hide],
   );
 
-  // `/note` crée un bloc de Journal pour AUJOURD'HUI — pas de sélecteur de
-  // date depuis la capture rapide (Phase P) : celui-là n'existe que dans
-  // l'éditeur complet du Journal (navigation par jour).
+  // `/note` écrit dans le Journal d'AUJOURD'HUI — pas de sélecteur de date
+  // depuis la capture rapide (Phase P) : celui-là n'existe que dans l'éditeur
+  // complet du Journal (navigation par jour).
+  //
+  // On PROLONGE la reprise en cours plutôt que d'ouvrir un bloc : jeter une
+  // ligne ici pendant qu'on écrit dans la page, c'est le même moment. Rust
+  // arbitre, seul à voir les deux fenêtres.
   const handleSubmitNote = useCallback(
     async (text: string) => {
-      await createJournalEntry({ target_day: todayLocalISODate(), content: text });
+      await appendJournalEntry(todayLocalISODate(), text);
       hide();
     },
-    [createJournalEntry, hide],
+    [appendJournalEntry, hide],
   );
 
   return (

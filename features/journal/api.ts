@@ -20,6 +20,16 @@ export const journalApi = {
     invoke<JournalDayCount[]>("count_journal_entries_by_month", { month }),
   create: (payload: CreateJournalEntryInput) =>
     invoke<JournalEntry>("create_journal_entry", { payload }),
+  /**
+   * Écrire dans le journal du jour : la reprise en cours, ou une nouvelle.
+   *
+   * C'est le seul chemin d'écriture normal. `create` reste pour les cas qui
+   * imposent un bloc à part (une entrée écrite en avance, par exemple).
+   * `content` vide n'ajoute rien : la page s'en sert juste pour savoir où
+   * poser le curseur.
+   */
+  append: (targetDay: string, content: string) =>
+    invoke<JournalEntry>("append_journal_entry", { targetDay, content }),
   update: (id: string, payload: UpdateJournalEntryInput) =>
     invoke<JournalEntry>("update_journal_entry", { id, payload }),
   remove: (id: string) => invoke<void>("delete_journal_entry", { id }),

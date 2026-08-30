@@ -32,6 +32,19 @@ export function useJournalMutations() {
     }
   };
 
+  /** Écrire dans la reprise en cours, ou en ouvrir une. */
+  const appendEntry = async (
+    targetDay: string,
+    content: string,
+  ): Promise<JournalEntry> => {
+    try {
+      return await journalApi.append(targetDay, content);
+    } catch (error) {
+      toast.error("Erreur lors de l'écriture");
+      throw error;
+    }
+  };
+
   const updateEntry = async (
     id: string,
     payload: UpdateJournalEntryInput,
@@ -53,5 +66,5 @@ export function useJournalMutations() {
     }
   };
 
-  return { createEntry, updateEntry, deleteEntry };
+  return { createEntry, appendEntry, updateEntry, deleteEntry };
 }

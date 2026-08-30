@@ -1001,6 +1001,111 @@ pub async fn create_journal_entry(
     Ok(entry)
 }
 
+/// Fenêtre d'une REPRISE d'écriture.
+///
+/// Un bloc du Journal n'est pas un paragraphe : c'est une SESSION. Tant qu'on
+/// écrit sans s'interrompre plus d'une heure, tout va dans le même bloc — le
+/// texte y coule comme dans un document. Passé ce délai, on est revenu, et
+/// c'est un autre moment de la journée.
+pub const REPRISE: chrono::Duration = chrono::Duration::hours(1);
+
+/// Ouvre la session d'écriture du jour : la dernière encore chaude, ou une
+/// nouvelle.
+///
+/// La règle vit ICI et pas dans la page, parce que deux fenêtres écrivent dans
+/// le journal — la page-jour et la capture rapide (`/note`). Chacune décidant
+/// de son côté sur sa copie de la liste, deux moments simultanés se seraient
+/// coupés en deux blocs, ou pire, mélangés.
+///
+/// `content` vide (le cas de la page, qui veut juste où poser le curseur) ne
+/// touche à rien : elle rend la session telle quelle. Sinon le texte est
+/// ajouté au bout, séparé par une ligne vide — sans quoi le markdown souderait
+/// les deux paragraphes en un seul.
+pub async fn append_journal_entry(
+    pool: &SqlitePool,
+    target_day: &str,
+    content: &str,
+) -> Result<JournalEntry, sqlx::Error> {
+    let ouverte = derniere_session_ouverte(pool, target_day).await?;
+
+    let Some(entry) = ouverte else {
+        return create_journal_entry(
+            pool,
+            CreateJournalEntry {
+                target_day: target_day.to_string(),
+                content: content.to_string(),
+                written_at: None,
+            },
+        )
+        .await;
+    };
+
+    if content.is_empty() {
+        return Ok(entry);
+    }
+
+    let fusion = if entry.content.is_empty() {
+        content.to_string()
+    } else {
+        format!("{}
+
+{}", entry.content, content)
+    };
+    update_journal_entry(
+        pool,
+        &entry.id,
+        UpdateJournalEntry {
+            target_day: None,
+            content: Some(fusion),
+        },
+    )
+    .await
+}
+
+/// Le dernier bloc du jour, s'il a été écrit il y a moins d'une `REPRISE`.
+///
+/// On mesure sur `updated_at` — la dernière écriture RÉELLE, pas le début de
+/// la session : rester une heure et demie sur un même bloc ne doit pas le
+/// fermer sous les doigts. (Vérifié : ouvrir un jour ne le bouge pas, seule
+/// une modification de contenu le fait.)
+async fn derniere_session_ouverte(
+    pool: &SqlitePool,
+    target_day: &str,
+) -> Result<Option<JournalEntry>, sqlx::Error> {
+    let query = format!(
+        "SELECT {JOURNAL_ENTRY_COLUMNS} FROM journal_entries WHERE target_day = ?          ORDER BY written_at DESC, created_at DESC LIMIT 1"
+    );
+    let derniere = sqlx::query_as::<_, JournalEntry>(&query)
+        .bind(target_day)
+        .fetch_optional(pool)
+        .await?;
+
+    let Some(entry) = derniere else {
+        return Ok(None);
+    };
+    if !session_ouverte(&entry.updated_at, &now_iso()) {
+        return Ok(None);
+    }
+    let mut entry = entry;
+    entry.tags = list_journal_entry_tags(pool, &entry.id).await?;
+    Ok(Some(entry))
+}
+
+/// Deux instants ISO appartiennent-ils à la même reprise ?
+///
+/// Une date illisible rend `false` : on ouvre alors un bloc neuf plutôt que
+/// d'écrire dans un dont on ne sait rien.
+pub fn session_ouverte(derniere_ecriture: &str, maintenant: &str) -> bool {
+    let (Ok(a), Ok(b)) = (
+        chrono::DateTime::parse_from_rfc3339(derniere_ecriture),
+        chrono::DateTime::parse_from_rfc3339(maintenant),
+    ) else {
+        return false;
+    };
+    let ecart = b.signed_duration_since(a);
+    ecart >= chrono::Duration::zero() && ecart < REPRISE
+}
+
 pub async fn update_journal_entry(
     pool: &SqlitePool,
     id: &str,
@@ -1549,6 +1654,7 @@ pub async fn set_todo_tags(
 #[cfg(test)]
 mod tests {
     use super::{
+        append_journal_entry, list_journal_entries_for_day, session_ouverte,
         create, create_area, create_note, create_project, create_subtask, create_tag, delete,
         delete_area, delete_note, delete_project, delete_tag, due_reminders, duplicate_project,
         duplicate_todo, get, get_settings, list_all, list_areas, list_by_date, list_notes,
@@ -2582,5 +2688,80 @@ mod tests {
 
         delete_tag(&pool, &a.id).await.unwrap();
         assert!(list_tags(&pool).await.unwrap().is_empty());
+    }
+
+    #[test]
+    fn session_ouverte_suit_la_derniere_ecriture() {
+        // Un bloc n'est pas un paragraphe : tant qu'on écrit sans s'arrêter
+        // une heure, tout va dans le même moment de la journée.
+        assert!(session_ouverte(
+            "2026-08-30T10:00:00.000Z",
+            "2026-08-30T10:59:00.000Z"
+        ));
+        assert!(!session_ouverte(
+            "2026-08-30T10:00:00.000Z",
+            "2026-08-30T11:00:01.000Z"
+        ));
+        // Le fuseau ne doit pas décider à notre place : deux écritures à la
+        // même seconde absolue restent la même reprise.
+        assert!(session_ouverte(
+            "2026-08-30T12:00:00.000+02:00",
+            "2026-08-30T10:30:00.000Z"
+        ));
+        // Une horloge qui recule ferme la session plutôt que d'écrire dans un
+        // bloc « à venir ».
+        assert!(!session_ouverte(
+            "2026-08-30T11:00:00.000Z",
+            "2026-08-30T10:00:00.000Z"
+        ));
+        // Date illisible : on ouvre un bloc neuf, on n'écrit pas à l'aveugle.
+        assert!(!session_ouverte("hier", "2026-08-30T10:00:00.000Z"));
+    }
+
+    #[tokio::test]
+    async fn append_prolonge_la_reprise_puis_en_ouvre_une_autre() {
+        let pool = memory_pool().await;
+
+        let a = append_journal_entry(&pool, "2026-08-30", "Premier jet.")
+            .await
+            .unwrap();
+        let b = append_journal_entry(&pool, "2026-08-30", "La suite, dans la foulée.")
+            .await
+            .unwrap();
+        // Même moment : un seul bloc, deux paragraphes.
+        assert_eq!(a.id, b.id);
+        assert_eq!(b.content, "Premier jet.
+
+La suite, dans la foulée.");
+        assert_eq!(list_journal_entries_for_day(&pool, "2026-08-30").await.unwrap().len(), 1);
+
+        // Un contenu vide ne fait qu'ouvrir la porte : la page veut juste
+        // savoir où poser le curseur.
+        let c = append_journal_entry(&pool, "2026-08-30", "").await.unwrap();
+        assert_eq!(c.id, a.id);
+        assert_eq!(c.content, b.content);
+
+        // Écriture d'il y a deux heures : on est revenu, c'est un autre bloc.
+        sqlx::query("UPDATE journal_entries SET updated_at = ? WHERE id = ?")
+            .bind("2020-01-01T00:00:00.000Z")
+            .bind(&a.id)
+            .execute(&pool)
+            .await
+            .unwrap();
+        let d = append_journal_entry(&pool, "2026-08-30", "Plus tard.")
+            .await
+            .unwrap();
+        assert_ne!(d.id, a.id);
+        assert_eq!(d.content, "Plus tard.");
+        assert_eq!(list_journal_entries_for_day(&pool, "2026-08-30").await.unwrap().len(), 2);
+    }
+
+    #[tokio::test]
+    async fn append_n_ecrit_pas_dans_le_jour_du_voisin() {
+        let pool = memory_pool().await;
+        let a = append_journal_entry(&pool, "2026-08-30", "Le trente.").await.unwrap();
+        let b = append_journal_entry(&pool, "2026-08-31", "Le trente-et-un.").await.unwrap();
+        assert_ne!(a.id, b.id);
+        assert_eq!(b.content, "Le trente-et-un.");
     }
 }

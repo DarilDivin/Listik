@@ -234,6 +234,25 @@ pub async fn create_journal_entry(
     Ok(entry)
 }
 
+/// Écrire dans le journal du jour : la reprise en cours, ou une nouvelle.
+///
+/// Les deux fenêtres qui écrivent (la page-jour et la capture rapide) passent
+/// par ici : c'est le seul endroit qui décide si un texte prolonge un moment
+/// ou en ouvre un autre.
+#[tauri::command]
+pub async fn append_journal_entry(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    target_day: String,
+    content: String,
+) -> Result<JournalEntry, String> {
+    let entry = db::append_journal_entry(&state.pool, &target_day, &content)
+        .await
+        .map_err(|e| e.to_string())?;
+    notify_journal_changed(&app);
+    Ok(entry)
+}
+
 #[tauri::command]
 pub async fn update_journal_entry(
     app: AppHandle,
