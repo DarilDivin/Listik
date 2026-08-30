@@ -51,6 +51,28 @@ function unAnAvant(day: string): string {
  */
 const REPRISE_MS = 60 * 60 * 1000;
 
+/**
+ * Une page blanche est intimidante là où une question ne l'est pas. On en pose
+ * une, et une seule — pas un formulaire d'humeur.
+ *
+ * Elle change avec le jour, sans hasard : la même date rend toujours la même
+ * question, sinon elle sauterait d'un rendu à l'autre sous les yeux.
+ */
+const QUESTIONS = [
+  "Qu'est-ce qui a été plus facile que prévu aujourd'hui ?",
+  "Qu'est-ce que tu veux te rappeler de cette journée dans un an ?",
+  "Qu'est-ce qui t'a occupé l'esprit sans que tu l'aies décidé ?",
+  "Qu'est-ce que tu as évité, et pourquoi ?",
+  "Qu'est-ce qui t'a fait rire aujourd'hui ?",
+  "De quoi as-tu changé d'avis, même un peu ?",
+  "Qu'est-ce qui mérite d'être dit avant que tu l'oublies ?",
+];
+
+const questionDuJour = (day: string): string => {
+  const somme = [...day].reduce((n, c) => n + c.charCodeAt(0), 0);
+  return QUESTIONS[somme % QUESTIONS.length];
+};
+
 type Saving = "idle" | "saving" | "saved";
 
 /**
@@ -127,6 +149,16 @@ export default function JournalPage() {
 
 
   const heureDe = (iso: string) => format(new Date(iso), "HH:mm");
+
+  // Ce qu'on lit sur une journée encore blanche. Les trois cas ne disent pas
+  // la même chose : écrire pour aujourd'hui va de soi, revenir sur hier ou
+  // prendre de l'avance demandent qu'on dise ce qu'il advient de l'heure.
+  const invitation = isToday
+    ? "Rien pour l'instant. Cette page t'attend."
+    : day > today
+      ? "Rien pour l'instant. Cette page t'attend — tu peux même écrire en avance, elle gardera l'heure réelle de l'écriture."
+      : "Rien écrit ce jour-là. Tu peux l'écrire maintenant, l'heure réelle sera gardée.";
+  const question = questionDuJour(day);
 
   /**
    * La dernière reprise est-elle encore ouverte ? On mesure sur `updated_at`,
@@ -284,6 +316,16 @@ export default function JournalPage() {
               key={day}
               reprises={reprises}
               aStamper={aStamper}
+              invite={
+                <div className="flex flex-col gap-4">
+                  <p className="text-[1.0625rem] leading-[1.78] text-foreground/[0.66]">
+                    {invitation}
+                  </p>
+                  <p className="text-[0.9375rem] italic text-muted-foreground">
+                    « {question} »
+                  </p>
+                </div>
+              }
               onSegments={(segments) => void enregistrer(segments)}
             />
           )}
