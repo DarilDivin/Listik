@@ -153,3 +153,18 @@ export function couper(editor: LexicalEditor): { avant: string; apres: string } 
 
   return { avant, apres };
 }
+
+/**
+ * Un bloc est VIDE quand il ne porte que de la structure : une puce sans
+ * texte, un titre sans titre, une citation sans citation.
+ *
+ * `trim()` ne suffit pas — « - » n'est pas vide pour lui, alors qu'il ne
+ * montre rien à l'écran. On voyait donc une puce fantôme survivre au blur,
+ * avec la ligne « Écrire… » revenue juste dessous.
+ *
+ * Seuls les marqueurs qui ne portent RIEN par eux-mêmes disparaissent. Un tiret
+ * cadratin, des points de suspension ou un emoji restent du contenu.
+ */
+export function estVide(markdown: string): boolean {
+  return markdown.replace(/\d+\.|[-*+>#`\s]/g, "") === "";
+}

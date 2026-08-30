@@ -16,6 +16,7 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
 import { spring } from "@/lib/motion";
+import { estVide } from "@/features/journal/decoupe";
 import { todayLocalISODate } from "@/lib/date";
 
 /** Parse une date « jour seul » en Date locale (évite le décalage UTC). */
@@ -138,7 +139,7 @@ export default function JournalPage() {
 
   /** Un bloc vide attend déjà au bas de la page : c'est là qu'on écrit. */
   const dernierVide =
-    entries.length > 0 && !entries[entries.length - 1].content.trim();
+    entries.length > 0 && estVide(entries[entries.length - 1].content);
 
   const ecrireIci = async () => {
     const entry = await track(createEntry({ target_day: day, content: "" }));
@@ -324,7 +325,7 @@ export default function JournalPage() {
                       // Sinon la page accumulerait les lignes créées par une
                       // Entrée de trop.
                       onBlur={(content) => {
-                        if (!content.trim()) void track(deleteEntry(entry.id));
+                        if (estVide(content)) void track(deleteEntry(entry.id));
                       }}
                       onSplit={(avant, apres) => void scinder(entry, avant, apres)}
                       onMergeUp={(contenu) => void fusionner(i, contenu)}

@@ -20,6 +20,7 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
+import { estVide } from "@/features/journal/decoupe";
 import type { Caret } from "@/components/journal/JournalEditor";
 import type { JournalEntry } from "@/features/journal/types";
 import type { Tag } from "@/features/tags/types";
@@ -100,9 +101,9 @@ export function JournalBlock({
   // La fermeture du bloc : il passe de vide à écrit, donc il vient d'être
   // enregistré. On le dit une fois, par un mouvement — pas par un message.
   const [ferme, setFerme] = useState(false);
-  const videAvant = useRef(!entry.content);
+  const videAvant = useRef(estVide(entry.content));
   useEffect(() => {
-    const vide = !entry.content;
+    const vide = estVide(entry.content);
     if (videAvant.current && !vide) {
       setFerme(true);
       const t = setTimeout(() => setFerme(false), 1200);

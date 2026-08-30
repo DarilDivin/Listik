@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { createHeadlessEditor } from "@lexical/headless";
 import { $convertFromMarkdownString, TRANSFORMERS } from "@lexical/markdown";
 import { $getRoot, type LexicalEditor } from "lexical";
-import { $aLaMain, couper, NOEUDS } from "./decoupe";
+import { $aLaMain, couper, estVide, NOEUDS } from "./decoupe";
 
 /** Un éditeur hors DOM, chargé de markdown. */
 function editeur(markdown: string): LexicalEditor {
@@ -128,5 +128,26 @@ describe("$aLaMain", () => {
     // C'est la POSITION du curseur qui tranche, pas le contenu du bloc : un
     // même bloc peut mêler du texte et une liste.
     expect(dans("Une liste :\n\n- premier", "Une liste")).toBe(false);
+  });
+});
+
+describe("estVide", () => {
+  it.each([
+    ["", true],
+    ["   \n  ", true],
+    ["- ", true],
+    ["1. ", true],
+    ["## ", true],
+    ["> ", true],
+    ["```\n```", true],
+    ["- a", false],
+    ["Bonjour", false],
+    ["## Un titre", false],
+    // Ce qui n'est pas un marqueur reste du contenu, si court soit-il.
+    ["—", false],
+    ["…", false],
+    ["🙂", false],
+  ])("« %s » vide ? %s", (markdown, attendu) => {
+    expect(estVide(markdown)).toBe(attendu);
   });
 });
