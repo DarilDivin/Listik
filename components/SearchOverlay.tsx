@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { FolderOpen, Hash, Layers, ListTodo } from "lucide-react";
+import { BookOpen, FolderOpen, Hash, Layers, ListTodo } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -17,7 +17,14 @@ import {
   CommandItem,
   CommandList,
 } from "@/components/ui/command";
+import useSWR from "swr";
+import { format } from "date-fns";
+import { fr } from "date-fns/locale";
+import { journalApi } from "@/features/journal/api";
+import { morceaux, sansMarkdown } from "@/features/journal/extrait";
 import { lexicalMatch } from "@/features/search/lexical";
+import { SWR_KEYS } from "@/lib/swr-config";
+import { cn } from "@/lib/utils";
 import { usePlannerTodos } from "@/hooks/usePlannerTodos";
 import { useProjects } from "@/hooks/useProjects";
 import { useTags } from "@/hooks/useTags";
@@ -31,9 +38,16 @@ import { useTags } from "@/hooks/useTags";
  * (Phase P, remplacé par le Journal) — jamais réintroduites ici.
  */
 type QuickFindItem = {
-  kind: "project" | "area" | "tag" | "task";
+  kind: "project" | "area" | "tag" | "task" | "journal";
   id: string;
   label: string;
+  /**
+   * Réservé au journal : on n'y cherche pas un NOM mais une phrase, et c'est
+   * elle qu'il faut reconnaître avant de cliquer. `extrait` porte les marques
+   * du surlignage, `jour` sert au deep-link.
+   */
+  extrait?: string;
+  jour?: string;
 };
 
 const ICON = {
@@ -41,6 +55,7 @@ const ICON = {
   area: Layers,
   tag: Hash,
   task: ListTodo,
+  journal: BookOpen,
 } as const;
 
 const GROUP_LABEL: Record<QuickFindItem["kind"], string> = {
@@ -48,9 +63,16 @@ const GROUP_LABEL: Record<QuickFindItem["kind"], string> = {
   area: "Domaines",
   tag: "Tags",
   task: "Tâches",
+  journal: "Journal",
 };
 
-const GROUP_ORDER: QuickFindItem["kind"][] = ["project", "area", "tag", "task"];
+// Le journal EN DERNIER : la palette sert d'abord à aller quelque part, et un
+// passage se lit, il ne se navigue pas. Il ne doit pas pousser une tâche hors
+// de vue.
+const GROUP_ORDER: QuickFindItem["kind"][] = ["project", "area", "tag", "task", "journal"];
+
+/** Quelques-uns : une palette qui déroule trente passages n'est plus une palette. */
+const PASSAGES = 5;
 
 interface SearchOverlayProps {
   open: boolean;
@@ -106,15 +128,47 @@ export function SearchOverlay({ open, onOpenChange: setOpen }: SearchOverlayProp
     ];
   }, [query, projects, areas, tags, todos]);
 
+  /**
+   * Le journal, lui, passe par SQLite (FTS5) : il ne peut pas être filtré en
+   * mémoire comme le reste — on n'a pas les milliers de lignes sous la main,
+   * et on ne les voudrait pas. D'où un débounce et un cache.
+   */
+  const [requete, setRequete] = useState("");
+  useEffect(() => {
+    const t = setTimeout(() => setRequete(query.trim()), 180);
+    return () => clearTimeout(t);
+  }, [query]);
+
+  const { data: passages, isLoading: chercheJournal } = useSWR(
+    requete ? SWR_KEYS.JOURNAL_SEARCH(requete) : null,
+    () => journalApi.search(requete, PASSAGES),
+    { keepPreviousData: true, revalidateOnFocus: false },
+  );
+
   const grouped = useMemo(() => {
+    const journal: QuickFindItem[] = (passages ?? []).map((h) => ({
+      kind: "journal",
+      id: h.id,
+      label: format(new Date(h.written_at), "d MMMM yyyy", { locale: fr }),
+      extrait: h.extrait,
+      jour: h.target_day,
+    }));
+    const tout = [...lexicalResults, ...journal];
     return GROUP_ORDER.map((kind) => ({
       kind,
       label: GROUP_LABEL[kind],
-      items: lexicalResults.filter((i) => i.kind === kind),
+      items: tout.filter((i) => i.kind === kind),
     })).filter((g) => g.items.length > 0);
-  }, [lexicalResults]);
+  }, [lexicalResults, passages]);
 
   const hasAnyResult = grouped.length > 0;
+
+  /**
+   * On ne dit « aucun résultat » que quand on a fini de chercher. Le journal
+   * répond après un aller-retour SQLite : l'annoncer vide entre-temps serait
+   * un mensonge d'un dixième de seconde, et c'est celui qu'on lit.
+   */
+  const enCours = query.trim() !== requete || chercheJournal;
 
   // Remise à zéro à la fermeture, pour repartir propre à la prochaine ouverture.
   useEffect(() => {
@@ -136,6 +190,9 @@ export function SearchOverlay({ open, onOpenChange: setOpen }: SearchOverlayProp
       case "task":
         router.push(`/?task=${item.id}`);
         break;
+      case "journal":
+        router.push(`/journal?jour=${item.jour}`);
+        break;
     }
   };
 
@@ -150,12 +207,12 @@ export function SearchOverlay({ open, onOpenChange: setOpen }: SearchOverlayProp
         </DialogHeader>
         <Command shouldFilter={false} className="bg-transparent">
           <CommandInput
-            placeholder="Rechercher tâches, projets, tags…"
+            placeholder="Rechercher une tâche, un projet, un passage…"
             value={query}
             onValueChange={setQuery}
           />
           <CommandList>
-            {query.trim() && !hasAnyResult && (
+            {query.trim() && !hasAnyResult && !enCours && (
               <CommandEmpty>Aucun résultat.</CommandEmpty>
             )}
             {grouped.map((group) => {
@@ -167,9 +224,32 @@ export function SearchOverlay({ open, onOpenChange: setOpen }: SearchOverlayProp
                       key={`${item.kind}:${item.id}`}
                       value={`${item.kind}:${item.id}`}
                       onSelect={() => handleSelect(item)}
+                      className={item.extrait ? "items-start" : undefined}
                     >
-                      <Icon />
-                      <span className="truncate">{item.label}</span>
+                      <Icon className={item.extrait ? "mt-0.5" : undefined} />
+                      {item.extrait ? (
+                        <span className="flex min-w-0 flex-col gap-0.5">
+                          <span className="text-xs text-muted-foreground">
+                            {item.label}
+                          </span>
+                          {/* Le surlignage vient du SQL : le refaire ici
+                              différerait de l'index et tomberait à côté. */}
+                          <span className="line-clamp-2 text-sm">
+                            {morceaux(item.extrait).map((m, i) => (
+                              <span
+                                key={i}
+                                className={cn(
+                                  m.trouve && "font-medium text-brand",
+                                )}
+                              >
+                                {sansMarkdown(m.texte)}
+                              </span>
+                            ))}
+                          </span>
+                        </span>
+                      ) : (
+                        <span className="truncate">{item.label}</span>
+                      )}
                     </CommandItem>
                   ))}
                 </CommandGroup>

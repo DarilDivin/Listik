@@ -1,6 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import useSWR from "swr";
 import { format } from "date-fns";
 import { fr } from "date-fns/locale";
@@ -92,6 +93,16 @@ type Saving = "idle" | "saving" | "saved";
  * liste auraient coupé un même moment en deux.
  */
 export default function JournalPage() {
+  // `useSearchParams()` exige un `Suspense` sous export statique — même
+  // précédent que `app/(app)/page.tsx`.
+  return (
+    <Suspense fallback={null}>
+      <JournalPageContent />
+    </Suspense>
+  );
+}
+
+function JournalPageContent() {
   const today = todayLocalISODate();
   const [day, setDay] = useState(today);
   const { entries, upcoming, loading, appendEntry, updateEntry, deleteEntry } =
@@ -103,6 +114,25 @@ export default function JournalPage() {
   );
   const [saving, setSaving] = useState<Saving>("idle");
   const [cherche, setCherche] = useState(false);
+
+  /**
+   * Deep-link depuis la palette (Ctrl+K) : `?jour=YYYY-MM-DD`, consommé puis
+   * EFFACÉ pour que retour et rafraîchissement ne rejouent pas la navigation.
+   *
+   * Gardé sur `searchParams` et non lu au seul montage : si on est DÉJÀ sur
+   * le journal et qu'on choisit un autre passage, c'est une navigation de MÊME
+   * route — Next ne remonte pas la page, et seul un effet keyé sur la valeur
+   * le voit.
+   */
+  const searchParams = useSearchParams();
+  const router = useRouter();
+  const jourDemande = searchParams.get("jour");
+  useEffect(() => {
+    if (!jourDemande) return;
+    setDay(jourDemande);
+    setCherche(false);
+    router.replace("/journal");
+  }, [jourDemande, router]);
 
   // Le même jour, un an plus tôt. Une seule requête, la même commande que la
   // page — et la section disparaît quand il n'y avait rien.
