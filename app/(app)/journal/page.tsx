@@ -4,10 +4,11 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import useSWR from "swr";
 import { format } from "date-fns";
 import { fr } from "date-fns/locale";
-import { ChevronLeft, ChevronRight } from "lucide-react";
+import { ChevronLeft, ChevronRight, Search } from "lucide-react";
 import { useJournal } from "@/hooks/useJournal";
 import { journalApi } from "@/features/journal/api";
 import { SWR_KEYS } from "@/lib/swr-config";
+import { JournalSearch } from "@/components/journal/JournalSearch";
 import { JournalSheet, type Reprise } from "@/components/journal/JournalSheet";
 import { JournalDensity } from "@/components/journal/JournalDensity";
 import { Button } from "@/components/ui/button";
@@ -101,6 +102,7 @@ export default function JournalPage() {
     null,
   );
   const [saving, setSaving] = useState<Saving>("idle");
+  const [cherche, setCherche] = useState(false);
 
   // Le même jour, un an plus tôt. Une seule requête, la même commande que la
   // page — et la section disparaît quand il n'y avait rien.
@@ -299,13 +301,33 @@ export default function JournalPage() {
               Aujourd&apos;hui
             </Button>
           )}
+          {/* Le premier des outils de l'en-tête. Les quatre autres (pièces
+              jointes, musique, verrou, export) viendront à côté. */}
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            aria-label="Chercher dans le journal"
+            data-actif={cherche || undefined}
+            onClick={() => setCherche((c) => !c)}
+            className="data-[actif]:bg-brand-soft data-[actif]:text-brand"
+          >
+            <Search />
+          </Button>
         </div>
       </div>
 
       <div className="min-h-0 flex-1 overflow-y-auto pb-10 pt-6">
         {/* La colonne de texte, décalée pour laisser sa gouttière aux heures. */}
         <div className="max-w-[68ch] md:ml-[104px]">
-          {loading ? (
+          {cherche ? (
+            <JournalSearch
+              onPick={(jour) => {
+                setDay(jour);
+                setCherche(false);
+              }}
+              onClose={() => setCherche(false)}
+            />
+          ) : loading ? (
             <div className="flex flex-col gap-4">
               {[0.9, 0.6].map((opacity) => (
                 <Skeleton key={opacity} className="h-5 w-full" style={{ opacity }} />

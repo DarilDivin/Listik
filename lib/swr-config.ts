@@ -10,6 +10,13 @@ export const SWR_KEYS = {
   JOURNAL_DAY: (day: string) => `journal/day/${day}`,
   JOURNAL_UPCOMING: "journal/upcoming",
   JOURNAL_MONTH: (month: string) => `journal/month/${month}`,
+  /**
+   * La recherche est SOUS `journal/` comme les autres : `useJournalSync`
+   * revalide toutes les clés de ce préfixe après une écriture, et une
+   * liste de résultats périmée est un piège — on cliquerait sur un
+   * passage qui n'existe plus.
+   */
+  JOURNAL_SEARCH: (query: string) => `journal/search/${query}`,
   ALL_PROJECTS: "projects/all",
   ALL_AREAS: "projects/areas",
   ALL_TAGS: "tags/all",

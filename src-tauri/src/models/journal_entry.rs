@@ -22,6 +22,22 @@ pub struct JournalEntry {
     pub tags: Vec<super::Tag>,
 }
 
+/// Un passage trouvé par la recherche.
+///
+/// On ne remonte PAS le bloc entier : une reprise peut faire vingt lignes, et
+/// une liste de résultats qui les affiche toutes n'est plus une liste, c'est
+/// la page. `extrait` est le fragment rendu par FTS5 autour du mot cherché,
+/// les occurrences encadrées par `MARQUE_DEBUT`/`MARQUE_FIN` — au front de
+/// décider comment il les met en valeur.
+#[derive(Debug, Clone, Serialize, sqlx::FromRow, TS)]
+#[ts(export, export_to = "../../features/journal/generated/")]
+pub struct JournalHit {
+    pub id: String,
+    pub target_day: String,
+    pub written_at: String,
+    pub extrait: String,
+}
+
 /// Densité d'écriture d'UN jour. Sert au calendrier du mois : on ne
 /// remonte pas les blocs eux-mêmes pour savoir s'il y en a — trente jours de
 /// contenu pour dessiner trente points serait absurde.

@@ -4,8 +4,17 @@ import type {
   CreateJournalEntryInput,
   JournalDayCount,
   JournalEntry,
+  JournalHit,
   UpdateJournalEntryInput,
 } from "./types";
+
+/**
+ * Ce qui encadre les occurrences dans un extrait — les mêmes deux caractères
+ * que `db::MARQUE_DEBUT`/`MARQUE_FIN` côté Rust. Deux caractères qu'on
+ * n'écrit pas dans un journal, donc sans risque de les confondre avec du texte.
+ */
+export const MARQUE_DEBUT = "┆";
+export const MARQUE_FIN = "┇";
 
 /** Événement émis par le backend après chaque mutation de bloc Journal. */
 export const JOURNAL_CHANGED = "journal:changed";
@@ -33,4 +42,10 @@ export const journalApi = {
   update: (id: string, payload: UpdateJournalEntryInput) =>
     invoke<JournalEntry>("update_journal_entry", { id, payload }),
   remove: (id: string) => invoke<void>("delete_journal_entry", { id }),
+  /**
+   * Cherche un passage dans tout le journal. `limit` vient de l'appelant :
+   * une palette en montre quelques-uns, une page de recherche beaucoup plus.
+   */
+  search: (query: string, limit: number) =>
+    invoke<JournalHit[]>("search_journal", { query, limit }),
 };

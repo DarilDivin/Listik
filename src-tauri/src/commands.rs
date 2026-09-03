@@ -1,7 +1,8 @@
 use crate::db::{self, AppState};
 use crate::models::{
     AiChatMessage, AiParsedTask, Area, CreateArea, CreateJournalEntry, CreateNote, CreateProject,
-    CreateSubTask, CreateTag, CreateTodo, JournalDayCount, JournalEntry, Note, Project, Settings,
+    CreateSubTask, CreateTag, CreateTodo, JournalDayCount, JournalEntry, JournalHit, Note,
+    Project, Settings,
     SubTask, Tag,
     Todo, UpdateArea, UpdateJournalEntry, UpdateNote, UpdateProject, UpdateSettings, UpdateSubTask,
     UpdateTag, UpdateTodo,
@@ -232,6 +233,21 @@ pub async fn create_journal_entry(
         .map_err(|e| e.to_string())?;
     notify_journal_changed(&app);
     Ok(entry)
+}
+
+/// Cherche un passage dans tout le journal.
+///
+/// La limite vient du frontend : la palette en montre quelques-uns, la page de
+/// recherche beaucoup plus. Rien ne sert de tout remonter pour en afficher six.
+#[tauri::command]
+pub async fn search_journal(
+    state: State<'_, AppState>,
+    query: String,
+    limit: i64,
+) -> Result<Vec<JournalHit>, String> {
+    db::search_journal(&state.pool, &query, limit)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 /// Écrire dans le journal du jour : la reprise en cours, ou une nouvelle.

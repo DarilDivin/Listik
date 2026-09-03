@@ -12,7 +12,7 @@ pub mod task;
 pub use ai::{AiChatMessage, AiParsedTask};
 pub use area::{Area, CreateArea, UpdateArea};
 pub use journal_entry::{
-    CreateJournalEntry, JournalDayCount, JournalEntry, UpdateJournalEntry,
+    CreateJournalEntry, JournalDayCount, JournalEntry, JournalHit, UpdateJournalEntry,
 };
 pub use note::{CreateNote, Note, UpdateNote};
 pub use project::{CreateProject, Project, ProjectStatus, UpdateProject};

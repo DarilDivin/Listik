@@ -1,6 +1,6 @@
 use crate::models::{
     Area, CreateArea, CreateJournalEntry, CreateNote, CreateProject, CreateSubTask, CreateTag,
-    CreateTodo, JournalDayCount, JournalEntry, Note, Project, Recurrence, Settings, SubTask, Tag,
+    CreateTodo, JournalDayCount, JournalEntry, JournalHit, Note, Project, Recurrence, Settings, SubTask, Tag,
     Todo, TodoStatus,
     UpdateArea, UpdateJournalEntry, UpdateNote, UpdateProject, UpdateSettings, UpdateSubTask,
     UpdateTag, UpdateTodo,
@@ -1001,6 +1001,80 @@ pub async fn create_journal_entry(
     Ok(entry)
 }
 
+/// Ce qui encadre les occurrences dans un extrait. Deux caractères qu'on
+/// n'écrit pas dans un journal — sinon le front les prendrait pour du texte.
+pub const MARQUE_DEBUT: &str = "\u{2506}";
+pub const MARQUE_FIN: &str = "\u{2507}";
+
+/// Traduit une saisie humaine en requête FTS5.
+///
+/// MATCH a sa propre syntaxe : guillemets, étoile, opérateurs booléens, tiret
+/// de négation. Passer la saisie telle quelle, c'est une erreur SQL dès qu'on
+/// tape un guillemet — et la recherche semble cassée sans qu'on comprenne
+/// pourquoi.
+///
+/// On cite donc chaque mot (ce qui neutralise tout opérateur), et le DERNIER
+/// reçoit une étoile : on cherche pendant qu'on tape, et « gara » doit déjà
+/// trouver « garage ».
+///
+/// Rend `None` quand il ne reste rien à chercher — à l'appelant de ne pas
+/// interroger la base pour une chaîne vide.
+pub fn requete_fts(saisie: &str) -> Option<String> {
+    let mots: Vec<String> = saisie
+        .split_whitespace()
+        .map(|m| m.replace('"', ""))
+        .filter(|m| !m.is_empty())
+        .collect();
+    if mots.is_empty() {
+        return None;
+    }
+    let dernier = mots.len() - 1;
+    Some(
+        mots.iter()
+            .enumerate()
+            .map(|(i, m)| {
+                if i == dernier {
+                    format!("\"{m}\"*")
+                } else {
+                    format!("\"{m}\"")
+                }
+            })
+            .collect::<Vec<_>>()
+            .join(" "),
+    )
+}
+
+/// Cherche un passage dans tout le journal.
+///
+/// Classe par date DÉCROISSANTE, pas par pertinence : dans un journal on
+/// cherche « quand ai-je parlé de ça », et la réponse la plus utile est la
+/// plus récente. Un score bm25 mettrait en tête un jour d'il y a trois ans
+/// parce qu'il répète le mot.
+pub async fn search_journal(
+    pool: &SqlitePool,
+    saisie: &str,
+    limite: i64,
+) -> Result<Vec<JournalHit>, sqlx::Error> {
+    let Some(requete) = requete_fts(saisie) else {
+        return Ok(Vec::new());
+    };
+    sqlx::query_as::<_, JournalHit>(
+        "SELECT e.id, e.target_day, e.written_at, \
+                snippet(journal_fts, 0, ?, ?, '…', 14) AS extrait \
+         FROM journal_fts f \
+         JOIN journal_entries e ON e.rowid = f.rowid \
+         WHERE journal_fts MATCH ? \
+         ORDER BY e.written_at DESC, e.created_at DESC \
+         LIMIT ?",
+    )
+    .bind(MARQUE_DEBUT)
+    .bind(MARQUE_FIN)
+    .bind(requete)
+    .bind(limite)
+    .fetch_all(pool)
+    .await
+}
+
 /// Fenêtre d'une REPRISE d'écriture.
 ///
 /// Un bloc du Journal n'est pas un paragraphe : c'est une SESSION. Tant qu'on
@@ -1654,7 +1728,9 @@ pub async fn set_todo_tags(
 #[cfg(test)]
 mod tests {
     use super::{
-        append_journal_entry, list_journal_entries_for_day, session_ouverte,
+        append_journal_entry, delete_journal_entry, list_journal_entries_for_day,
+        requete_fts, search_journal, session_ouverte, update_journal_entry, MARQUE_DEBUT,
+        MARQUE_FIN,
         create, create_area, create_note, create_project, create_subtask, create_tag, delete,
         delete_area, delete_note, delete_project, delete_tag, due_reminders, duplicate_project,
         duplicate_todo, get, get_settings, list_all, list_areas, list_by_date, list_notes,
@@ -1664,6 +1740,7 @@ mod tests {
     };
     use crate::models::{
         CreateArea, CreateNote, CreateProject, CreateSubTask, CreateTag, CreateTodo, TodoStatus,
+        UpdateJournalEntry,
         UpdateArea, UpdateNote, UpdateProject, UpdateSettings, UpdateSubTask, UpdateTag,
         UpdateTodo,
     };
@@ -2763,5 +2840,113 @@ La suite, dans la foulée.");
         let b = append_journal_entry(&pool, "2026-08-31", "Le trente-et-un.").await.unwrap();
         assert_ne!(a.id, b.id);
         assert_eq!(b.content, "Le trente-et-un.");
+    }
+
+    #[tokio::test]
+    async fn fts5_est_disponible() {
+        // Sonde : toute la recherche du journal en depend. Si une montee de
+        // version de sqlx retirait FTS5, ce test tomberait avant l'utilisateur.
+        let pool = memory_pool().await;
+        sqlx::query("CREATE VIRTUAL TABLE sonde USING fts5(x, tokenize = 'unicode61 remove_diacritics 2')")
+            .execute(&pool)
+            .await
+            .expect("FTS5 absent de la build SQLite");
+        sqlx::query("INSERT INTO sonde(x) VALUES ('Épicerie du coin')")
+            .execute(&pool)
+            .await
+            .unwrap();
+        // Sans diacritiques : « epicerie » doit trouver « Épicerie ».
+        let n: (i64,) = sqlx::query_as("SELECT count(*) FROM sonde WHERE sonde MATCH 'epicerie'")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(n.0, 1);
+    }
+
+    #[test]
+    fn requete_fts_neutralise_la_syntaxe_de_match() {
+        // Chaque mot est cité : un guillemet ou un opérateur tapé par erreur
+        // devient du texte, au lieu d'une erreur SQL incompréhensible.
+        assert_eq!(requete_fts("garage").unwrap(), "\"garage\"*");
+        assert_eq!(requete_fts("le garage").unwrap(), "\"le\" \"garage\"*");
+        assert_eq!(requete_fts("  espaces   partout  ").unwrap(), "\"espaces\" \"partout\"*");
+        assert_eq!(requete_fts("dit \"bonjour\"").unwrap(), "\"dit\" \"bonjour\"*");
+        assert_eq!(requete_fts("a OR b").unwrap(), "\"a\" \"OR\" \"b\"*");
+        assert_eq!(requete_fts("-exclu").unwrap(), "\"-exclu\"*");
+        // Rien à chercher : on n'interroge pas la base.
+        assert!(requete_fts("").is_none());
+        assert!(requete_fts("   ").is_none());
+        assert!(requete_fts("\"\"").is_none());
+    }
+
+    #[tokio::test]
+    async fn search_journal_trouve_malgre_les_accents_et_en_cours_de_frappe() {
+        let pool = memory_pool().await;
+        append_journal_entry(&pool, "2026-08-20", "Passé à l'épicerie du coin.")
+            .await
+            .unwrap();
+        append_journal_entry(&pool, "2026-08-21", "Rien à voir ici.")
+            .await
+            .unwrap();
+
+        // Sans accent, et sur un mot commencé : la recherche doit suivre la
+        // frappe, pas attendre le mot entier.
+        for saisie in ["épicerie", "epicerie", "EPICERIE", "epic"] {
+            let hits = search_journal(&pool, saisie, 20).await.unwrap();
+            assert_eq!(hits.len(), 1, "« {saisie} » n'a rien trouvé");
+            assert_eq!(hits[0].target_day, "2026-08-20");
+        }
+
+        // L'extrait encadre l'occurrence, pour que le front la mette en valeur.
+        let hits = search_journal(&pool, "épicerie", 20).await.unwrap();
+        assert!(hits[0].extrait.contains(MARQUE_DEBUT));
+        assert!(hits[0].extrait.contains(MARQUE_FIN));
+
+        assert!(search_journal(&pool, "introuvable", 20).await.unwrap().is_empty());
+        assert!(search_journal(&pool, "  ", 20).await.unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn l_index_suit_la_table_sans_qu_on_y_pense() {
+        // Une écriture oubliée dans l'index serait un passage introuvable, et
+        // rien ne le dirait. Les triggers doivent tenir les trois cas.
+        let pool = memory_pool().await;
+        let e = append_journal_entry(&pool, "2026-08-20", "Le premier texte.")
+            .await
+            .unwrap();
+        assert_eq!(search_journal(&pool, "premier", 20).await.unwrap().len(), 1);
+
+        // Modifié : l'ancien mot ne doit plus répondre, le nouveau oui.
+        update_journal_entry(
+            &pool,
+            &e.id,
+            UpdateJournalEntry { target_day: None, content: Some("Le second texte.".into()) },
+        )
+        .await
+        .unwrap();
+        assert!(search_journal(&pool, "premier", 20).await.unwrap().is_empty());
+        assert_eq!(search_journal(&pool, "second", 20).await.unwrap().len(), 1);
+
+        // Supprimé : plus rien.
+        delete_journal_entry(&pool, &e.id).await.unwrap();
+        assert!(search_journal(&pool, "second", 20).await.unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn search_journal_rend_le_plus_recent_en_premier() {
+        // Dans un journal on cherche « quand ai-je parlé de ça » : la réponse
+        // la plus utile est la plus récente, pas la plus dense en mots.
+        let pool = memory_pool().await;
+        for jour in ["2026-08-18", "2026-08-19", "2026-08-20"] {
+            append_journal_entry(&pool, jour, "Le garage, encore.").await.unwrap();
+        }
+        let hits = search_journal(&pool, "garage", 20).await.unwrap();
+        assert_eq!(
+            hits.iter().map(|h| h.target_day.as_str()).collect::<Vec<_>>(),
+            ["2026-08-20", "2026-08-19", "2026-08-18"]
+        );
+
+        // La limite est respectée.
+        assert_eq!(search_journal(&pool, "garage", 2).await.unwrap().len(), 2);
     }
 }

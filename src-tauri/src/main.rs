@@ -186,6 +186,7 @@ fn main() {
             commands::list_upcoming_journal_entries,
             commands::create_journal_entry,
             commands::append_journal_entry,
+            commands::search_journal,
             commands::update_journal_entry,
             commands::delete_journal_entry,
             commands::set_journal_entry_tags,
