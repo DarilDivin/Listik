@@ -1,88 +1,117 @@
 "use client";
 
+import { forwardRef, useImperativeHandle, useRef } from "react";
 import Link from "next/link";
-import { AnimatePresence, motion } from "motion/react";
 import { NotebookPen } from "lucide-react";
-import { useJournal } from "@/hooks/useJournal";
-import { useTags } from "@/hooks/useTags";
-import { JournalEntryRow } from "@/components/journal/JournalEntryRow";
-import { JournalComposer } from "@/components/journal/JournalComposer";
-import { spring } from "@/lib/motion";
+import { JournalSheet } from "@/components/journal/JournalSheet";
+import { useFeuille } from "@/features/journal/useFeuille";
+import { useShortcut } from "@/lib/keys";
+import { cn } from "@/lib/utils";
 import { todayLocalISODate } from "@/lib/date";
 
-/**
- * Aperçu de la page-jour du Journal directement sur l'accueil Aujourd'hui
- * (Phase Q) — réutilise les mêmes briques que la page complète
- * (`JournalEntryRow`, `JournalComposer`), pas de nouveau renderer : écrire,
- * modifier ou taguer un bloc ne demande jamais de quitter l'accueil. Le lien
- * « Ouvrir » ne sert qu'à naviguer vers un AUTRE jour (la page complète a la
- * navigation par jour, absente ici par construction).
- *
- * Le composer parle le même idiome que la capture de tâche (＋ Écrire une
- * pensée…) : un seul langage « ajouter ici » sur toute la page. Toujours
- * monté, il ouvre son enveloppe au focus plutôt que de se faire remplacer.
- */
-export function JournalWidget() {
-  const today = todayLocalISODate();
-  // Pas de « À venir » ici : le widget ne montre que le jour courant.
-  const { entries, createEntry, updateEntry, deleteEntry } = useJournal(
-    today,
-    false,
-  );
-  const { tags, createTag, setJournalEntryTags } = useTags();
-
-  return (
-    <section className="border-t border-border/60 pt-6">
-      <div className="flex items-center justify-between px-3 pb-2">
-        <h3 className="flex items-center gap-1.5 text-[13px] font-semibold text-muted-foreground">
-          <NotebookPen size={13} className="text-muted-foreground/70" />
-          Journal
-        </h3>
-        <Link
-          href="/journal"
-          className="text-[11px] font-medium text-muted-foreground/70 transition-colors hover:text-foreground"
-        >
-          Ouvrir
-        </Link>
-      </div>
-
-      {entries.length > 0 && (
-        <AnimatePresence initial={false}>
-          {entries.map((entry) => (
-            <motion.div
-              key={entry.id}
-              layout="position"
-              initial={{ opacity: 0, y: 6 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, transition: { duration: 0.15 } }}
-              transition={spring.smooth}
-            >
-              <JournalEntryRow
-                entry={entry}
-                allTags={tags}
-                onChangeContent={(content) =>
-                  void updateEntry(entry.id, { content })
-                }
-                onChangeTags={(tagIds) =>
-                  void setJournalEntryTags(entry.id, tagIds)
-                }
-                onCreateTag={(name) => createTag({ name }).then((t) => t.id)}
-                onDelete={() => void deleteEntry(entry.id)}
-              />
-            </motion.div>
-          ))}
-        </AnimatePresence>
-      )}
-
-      <div className="pt-2">
-        <JournalComposer
-          variant="inline"
-          placeholder="Écrire une pensée…"
-          onSubmit={async (content) => {
-            await createEntry({ target_day: today, content });
-          }}
-        />
-      </div>
-    </section>
-  );
+export interface JournalWidgetHandle {
+  /** Pose le curseur au bout de la journée (raccourci Ctrl+J). */
+  open: () => void;
 }
+
+/**
+ * Le journal d'aujourd'hui, au bas de l'accueil.
+ *
+ * C'est la MÊME feuille que la page-jour — même composant, même découpage en
+ * reprises, même sauvegarde (`useFeuille`). L'ancien widget avait son propre
+ * moteur de rendu et découpait par paragraphe : les deux surfaces racontaient
+ * deux histoires différentes de la même journée.
+ *
+ * Ce qui change ici est une question de PLACE, pas de nature : le texte est
+ * estompé au repos et remonte quand on y entre, il est plafonné à quatre
+ * lignes et défile à l'intérieur. Aucun cadre, aucun fond — le texte reste
+ * posé sur la page, comme partout ailleurs dans l'app.
+ *
+ * Le seul filet est celui qui sépare déjà le journal des tâches ; il prend
+ * l'accent quand on écrit. Un trait qui existe, pas une boîte de plus.
+ */
+export const JournalWidget = forwardRef<JournalWidgetHandle>(
+  function JournalWidget(_props, ref) {
+    const today = todayLocalISODate();
+    // Pas de « À venir » ici : le widget ne montre que le jour courant.
+    const { reprises, aStamper, enregistrer } = useFeuille(today, false);
+    const racineRef = useRef<HTMLDivElement>(null);
+    const raccourci = useShortcut("J");
+
+    useImperativeHandle(ref, () => ({
+      open: () => {
+        const zone = racineRef.current?.querySelector<HTMLElement>(
+          '[contenteditable="true"]',
+        );
+        if (!zone) return;
+        zone.focus();
+        // Au BOUT de la journée : Ctrl+J veut dire « écrire maintenant », pas
+        // « relire ». Sans ça le curseur tomberait au tout début, sur le
+        // premier mot du matin.
+        const s = window.getSelection();
+        const r = document.createRange();
+        r.selectNodeContents(zone);
+        r.collapse(false);
+        s?.removeAllRanges();
+        s?.addRange(r);
+        zone.scrollTop = zone.scrollHeight;
+      },
+    }));
+
+    return (
+      <section
+        ref={racineRef}
+        className="group/journal"
+        aria-label="Journal d'aujourd'hui"
+      >
+        {/* Le SEUL filet : celui qui sépare le journal des tâches. Il prend
+            l'accent quand on écrit — rien d'autre ne change de forme. */}
+        <div
+          className={cn(
+            "flex items-center justify-between gap-3 border-t border-border/60 px-3 pb-2 pt-6",
+            "transition-colors duration-300 group-focus-within/journal:border-brand/40",
+          )}
+        >
+          <h3
+            className={cn(
+              "flex items-center gap-1.5 text-[13px] font-semibold text-muted-foreground",
+              "transition-colors duration-300 group-focus-within/journal:text-brand",
+            )}
+          >
+            <NotebookPen size={13} className="text-muted-foreground/70" />
+            Journal
+          </h3>
+          <span className="flex items-center gap-3">
+            {/* Indice typographique, pas pastille — même retenue que le Ctrl N
+                de la rangée de capture, dont le badge plein était l'élément le
+                plus lourd d'une rangée qui se veut plate. */}
+            <span className="font-mono text-[11px] tracking-tight text-muted-foreground/40 opacity-0 transition-opacity duration-200 group-hover/journal:opacity-100 group-focus-within/journal:opacity-100">
+              {raccourci}
+            </span>
+            <Link
+              href="/journal"
+              className="text-[11px] font-medium text-muted-foreground/70 transition-colors hover:text-foreground"
+            >
+              Ouvrir
+            </Link>
+          </span>
+        </div>
+
+        <div className="px-3">
+          <JournalSheet
+            variant="widget"
+            reprises={reprises}
+            aStamper={aStamper}
+            onSegments={(segments) => void enregistrer(segments)}
+            invite={
+              <p className="text-[0.9375rem] leading-[1.78] text-muted-foreground/60">
+                Écrire…
+              </p>
+            }
+            className="journal-widget"
+          />
+        </div>
+      </section>
+    );
+  },
+);

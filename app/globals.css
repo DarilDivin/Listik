@@ -406,11 +406,17 @@
   position: relative;
   height: 0;
 }
+/* La gouttière est un RÉGLAGE, pas une constante : la page-jour a une colonne
+   large, le widget de l'accueil non — et les deux montrent la même journée. */
+.journal-prose {
+  --journal-gouttiere: 104px;
+  --journal-gout-largeur: 88px;
+}
 .journal-repere-heure {
   position: absolute;
-  left: -104px;
+  left: calc(-1 * var(--journal-gouttiere));
   top: 0.45em;
-  width: 88px;
+  width: var(--journal-gout-largeur);
   text-align: right;
   font-family: var(--font-mono), ui-monospace, monospace;
   font-size: 11px;
@@ -432,6 +438,80 @@
 }
 .journal-prose > .journal-repere:first-child + * {
   margin-top: 0;
+}
+
+/* Le widget de l'accueil : un aperçu, pas une page.
+   Aucun cadre, aucun fond — c'est l'ENCRE qui dit l'état (voir la variante
+   « widget » de `JournalSheet`). Ici ne vivent que ses mesures. */
+.journal-widget {
+  /* La bascule étroite écoute le WIDGET, pas la fenêtre : c'est la largeur de
+     la colonne qui décide, et elle change quand la barre latérale se replie. */
+  container-type: inline-size;
+  container-name: journal;
+}
+/* Les mesures vivent sur la FEUILLE, pas sur son enveloppe : `.journal-prose`
+   définit `--journal-gouttiere` plus près du repère que ne le ferait le
+   parent, et gagnerait donc l'héritage. Mesuré : l'heure restait à -104 px,
+   très loin hors du widget. */
+.journal-widget .journal-prose {
+  /* Quatre lignes, et jamais plus d'un quart de la fenêtre : sur un écran bas,
+     le journal mangerait la vue des tâches. En `em` pour suivre le texte
+     plutôt que d'être juste à une seule échelle. */
+  --journal-plafond: min(calc(4 * 1.78 * 1em), 24vh);
+  /* En REM, pas en EM : la même variable sert de `padding-left` sur la feuille
+     (17 px) et de `left` sur l'heure (11 px). En `em` elle y vaudrait deux
+     longueurs différentes — mesuré : 49 px d'un côté, 32 de l'autre. */
+  --journal-gouttiere: 2.9rem;
+  --journal-gout-largeur: 2.3rem;
+  padding-left: var(--journal-gouttiere);
+}
+.journal-widget .journal-repere + * {
+  margin-top: 1.1em;
+}
+/* L'ENCRE dit l'état, pas un cadre : estompée au repos, pleine quand on y
+   entre. Ici et non en utilitaire Tailwind — `.journal-prose` vit hors des
+   couches et bat les utilitaires de couleur, celui-ci ne gagnait jamais. */
+.journal-widget [contenteditable] {
+  color: color-mix(in oklch, var(--color-foreground) 62%, transparent);
+  transition: color 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.journal-widget [contenteditable]:focus {
+  color: var(--color-foreground);
+}
+@media (prefers-reduced-motion: reduce) {
+  .journal-widget [contenteditable] {
+    transition: none;
+  }
+}
+/* Trop étroit pour une marge : l'heure passe AU-DESSUS de son texte plutôt
+   que de disparaître — elle est ce qui distingue une reprise de la suivante. */
+/* La page cache son heure sous 767 px de FENÊTRE — sa colonne y perd sa
+   marge. Le widget, lui, ne la perd pas : sa bascule à lui est plus bas, et
+   elle DÉPLACE l'heure au lieu de l'effacer. Sans cette reprise, une fenêtre
+   étroite effaçait la seule chose qui distingue une reprise de la suivante. */
+@media (max-width: 767px) {
+  .journal-widget .journal-repere-heure {
+    display: block;
+  }
+}
+/* 380 px : en dessous, la gouttière coûte plus d'un dixième de la colonne. */
+@container journal (max-width: 380px) {
+  .journal-widget .journal-prose {
+    --journal-gouttiere: 0px;
+  }
+  .journal-widget .journal-repere {
+    height: auto;
+  }
+  .journal-widget .journal-repere-heure {
+    position: static;
+    display: block;
+    width: auto;
+    text-align: left;
+    opacity: 0.6;
+  }
+  .journal-widget .journal-repere + * {
+    margin-top: 0.15em;
+  }
 }
 
 /* LE moment de la page-jour : une reprise reçoit son identité.

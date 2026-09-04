@@ -1,21 +1,20 @@
 "use client";
 
-import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import useSWR from "swr";
 import { format } from "date-fns";
 import { fr } from "date-fns/locale";
 import { ChevronLeft, ChevronRight, Search } from "lucide-react";
-import { useJournal } from "@/hooks/useJournal";
+import { useFeuille } from "@/features/journal/useFeuille";
 import { journalApi } from "@/features/journal/api";
 import { SWR_KEYS } from "@/lib/swr-config";
 import { JournalSearch } from "@/components/journal/JournalSearch";
-import { JournalSheet, type Reprise } from "@/components/journal/JournalSheet";
+import { JournalSheet } from "@/components/journal/JournalSheet";
 import { JournalDensity } from "@/components/journal/JournalDensity";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
-import { estVide, type Segment } from "@/features/journal/feuille";
 import { todayLocalISODate } from "@/lib/date";
 
 /** Parse une date « jour seul » en Date locale (évite le décalage UTC). */
@@ -46,14 +45,6 @@ function unAnAvant(day: string): string {
 }
 
 /**
- * Au-delà d'une heure sans écrire, on est REVENU : la phrase suivante ouvre un
- * autre moment de la journée. La même règle vit en Rust (`db::REPRISE`), qui
- * reste l'arbitre — ici elle ne sert qu'à savoir s'il faut montrer un repère
- * vierge au bas de la feuille.
- */
-const REPRISE_MS = 60 * 60 * 1000;
-
-/**
  * Une page blanche est intimidante là où une question ne l'est pas. On en pose
  * une, et une seule — pas un formulaire d'humeur.
  *
@@ -74,8 +65,6 @@ const questionDuJour = (day: string): string => {
   const somme = [...day].reduce((n, c) => n + c.charCodeAt(0), 0);
   return QUESTIONS[somme % QUESTIONS.length];
 };
-
-type Saving = "idle" | "saving" | "saved";
 
 /**
  * La page-jour : un document, pas une liste de blocs surmontée d'un champ de
@@ -105,14 +94,9 @@ export default function JournalPage() {
 function JournalPageContent() {
   const today = todayLocalISODate();
   const [day, setDay] = useState(today);
-  const { entries, upcoming, loading, appendEntry, updateEntry, deleteEntry } =
-    useJournal(day);
+  const { upcoming, loading, reprises, aStamper, enregistrer, saving, isToday } =
+    useFeuille(day);
 
-  // L'identité à poser sur le repère encore vierge, une fois sa ligne créée.
-  const [aStamper, setAStamper] = useState<{ id: string; heure: string } | null>(
-    null,
-  );
-  const [saving, setSaving] = useState<Saving>("idle");
   const [cherche, setCherche] = useState(false);
 
   /**
@@ -151,7 +135,6 @@ function JournalPageContent() {
     { revalidateOnFocus: false, dedupingInterval: 60_000 },
   );
 
-  const isToday = day === today;
   const date = parseLocalISODate(day);
   // La date se lit en trois temps, comme dans le hero du planificateur : le
   // jour de la semaine en accent, la date en grand, l'année en retrait.
@@ -159,28 +142,6 @@ function JournalPageContent() {
   const jourMois = format(date, "d MMMM", { locale: fr });
   const annee = format(date, "yyyy");
 
-  /**
-   * Enveloppe une mutation pour que l'indicateur d'enregistrement la suive.
-   *
-   * Ne rejette JAMAIS : tous les appels d'ici sont en `void` (on écrit, on
-   * n'attend pas), donc re-lever ne ferait qu'un rejet non capturé de plus.
-   * `useJournalMutations` a déjà prévenu par un toast — le seul travail qui
-   * reste est de rendre l'échec lisible à l'appelant, d'où le `null`.
-   */
-  const track = useCallback(async <T,>(work: Promise<T>): Promise<T | null> => {
-    setSaving("saving");
-    try {
-      const result = await work;
-      setSaving("saved");
-      return result;
-    } catch {
-      setSaving("idle");
-      return null;
-    }
-  }, []);
-
-
-  const heureDe = (iso: string) => format(new Date(iso), "HH:mm");
 
   // Ce qu'on lit sur une journée encore blanche. Les trois cas ne disent pas
   // la même chose : écrire pour aujourd'hui va de soi, revenir sur hier ou
@@ -192,83 +153,7 @@ function JournalPageContent() {
       : "Rien écrit ce jour-là. Tu peux l'écrire maintenant, l'heure réelle sera gardée.";
   const question = questionDuJour(day);
 
-  /**
-   * La dernière reprise est-elle encore ouverte ? On mesure sur `updated_at`,
-   * la dernière écriture RÉELLE — rester une heure et demie sur un même
-   * moment ne doit pas le fermer sous les doigts.
-   *
-   * Ce calcul double celui de Rust, qui reste l'arbitre : ici il ne sert qu'à
-   * savoir s'il faut MONTRER un repère vierge au bas de la feuille.
-   */
-  const derniere = entries[entries.length - 1];
-  const ouverte =
-    derniere !== undefined &&
-    Date.now() - new Date(derniere.updated_at).getTime() < REPRISE_MS;
 
-  // L'heure du repère vierge se fige à son apparition : la recalculer à chaque
-  // rendu changerait la feuille toutes les minutes, et la rechargerait.
-  const [heureVierge, setHeureVierge] = useState<string | null>(null);
-  useEffect(() => {
-    if (isToday && !ouverte) {
-      setHeureVierge((h) => h ?? format(new Date(), "HH:mm"));
-    } else {
-      setHeureVierge(null);
-    }
-  }, [isToday, ouverte]);
-
-  const reprises = useMemo<Reprise[]>(() => {
-    const posees = entries.map((e) => ({
-      id: e.id,
-      heure: heureDe(e.written_at),
-      markdown: e.content,
-    }));
-    // « Ici commence maintenant » : une promesse, pas encore une ligne en base.
-    if (heureVierge !== null) posees.push({ id: "", heure: heureVierge, markdown: "" });
-    return posees;
-  }, [entries, heureVierge]);
-
-  // La sauvegarde compare aux entrées SANS se réabonner à chaque frappe.
-  const entriesRef = useRef(entries);
-  entriesRef.current = entries;
-
-  /**
-   * La feuille a changé : on écrit ce qui a bougé, reprise par reprise.
-   *
-   * Une reprise vidée s'en va — c'est le seul geste de suppression, et il ne
-   * demande rien de plus que d'effacer son texte. Un repère disparu (Retour
-   * arrière sur la frontière) fait de même : sa ligne part, son texte ayant
-   * déjà rejoint celle d'avant.
-   */
-  const enregistrer = useCallback(
-    async (segments: Segment[]) => {
-      const connues = entriesRef.current;
-      const vues = new Set<string>();
-
-      for (const s of segments) {
-        if (s.entryId === "") {
-          if (estVide(s.markdown)) continue;
-          const cree = await track(appendEntry(day, s.markdown));
-          if (cree) setAStamper({ id: cree.id, heure: heureDe(cree.written_at) });
-          continue;
-        }
-        vues.add(s.entryId);
-        const avant = connues.find((e) => e.id === s.entryId);
-        if (avant === undefined) continue;
-        if (estVide(s.markdown)) {
-          await track(deleteEntry(s.entryId));
-          continue;
-        }
-        if (s.markdown !== avant.content) {
-          await track(updateEntry(s.entryId, { content: s.markdown }));
-        }
-      }
-
-      for (const e of connues) {
-        if (!vues.has(e.id)) await track(deleteEntry(e.id));
-      }
-    },
-    [day, track, appendEntry, updateEntry, deleteEntry],
-  );
 
   return (
     <div className="mx-auto flex h-full w-full max-w-4xl flex-col overflow-hidden px-8">

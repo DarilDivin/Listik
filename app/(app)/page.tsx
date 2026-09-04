@@ -19,7 +19,10 @@ import { EmptyState } from "@/components/todo/EmptyState";
 import { SidebarSlot } from "@/components/sidebar-slot";
 import { AreaView } from "@/components/planner/AreaView";
 import { HeroDay } from "@/components/planner/HeroDay";
-import { JournalWidget } from "@/components/planner/JournalWidget";
+import {
+  JournalWidget,
+  type JournalWidgetHandle,
+} from "@/components/planner/JournalWidget";
 import { PlannerRail } from "@/components/planner/PlannerRail";
 import { RailSkeleton } from "@/components/planner/RailSkeleton";
 import { ProjectView } from "@/components/planner/ProjectView";
@@ -264,6 +267,7 @@ function PlannerPageContent() {
   const scrollRef = useRef<HTMLDivElement>(null);
   // Rangée de capture montée dans la branche courante (une seule à la fois).
   const captureRef = useRef<CaptureRowHandle>(null);
+  const journalRef = useRef<JournalWidgetHandle>(null);
 
   // Tâches fraîchement (dé)cochées : id → statut de routage (celui d'AVANT le
   // basculement), le temps de la pause. Voir LINGER_MS.
@@ -477,6 +481,7 @@ function PlannerPageContent() {
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
+
   // Une ligne en pause LINGER n'est pas déplaçable : le minuteur la ferait
   // disparaître en plein geste, et le drop entrerait en course avec le toggle.
   const canDragTodo = (id: string) => !linger.has(id);
@@ -550,6 +555,33 @@ function PlannerPageContent() {
    */
   const searchParams = useSearchParams();
   const router = useRouter();
+
+  /**
+   * Ctrl/Cmd+J : écrire dans le journal, maintenant.
+   *
+   * Le raccourci prend la porte la plus rapide. Le widget est à l'écran (vue
+   * « Aujourd'hui ») : le curseur s'y pose, au bout de la dernière reprise.
+   * Sinon — un projet, un domaine, une section en portail — la page-jour
+   * s'ouvre et le curseur s'y pose pareil. Même intention, porte différente :
+   * la touche ne reste jamais sans effet.
+   */
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (!(e.metaKey || e.ctrlKey) || e.key.toLowerCase() !== "j") return;
+      // Même garde que Ctrl+N : un panneau modal garde le focus par son piège
+      // Radix, mais le défilement partirait quand même.
+      if (document.querySelector('[role="dialog"]')) return;
+      e.preventDefault();
+      if (journalRef.current) {
+        scrollRef.current?.scrollTo({ top: 99999, behavior: "smooth" });
+        journalRef.current.open();
+        return;
+      }
+      router.push("/journal");
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [router]);
   const requestedProject = searchParams.get("project");
   const requestedArea = searchParams.get("area");
   const requestedTag = searchParams.get("tag");
@@ -971,7 +1003,7 @@ function PlannerPageContent() {
                       portail comme le reste du chrome. */}
                   {currentView === "today" && !portalSection && (
                     <div className="mt-auto pb-10">
-                      <JournalWidget />
+                      <JournalWidget ref={journalRef} />
                     </div>
                   )}
                 </LayoutGroup>
