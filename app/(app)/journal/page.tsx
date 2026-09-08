@@ -5,9 +5,10 @@ import { useRouter, useSearchParams } from "next/navigation";
 import useSWR from "swr";
 import { format } from "date-fns";
 import { fr } from "date-fns/locale";
-import { ChevronLeft, ChevronRight, Paperclip, Search } from "lucide-react";
+import { ChevronLeft, ChevronRight, Download, Paperclip, Search } from "lucide-react";
 import { useFeuille } from "@/features/journal/useFeuille";
 import { journalApi } from "@/features/journal/api";
+import { exporterJournal, resume } from "@/features/journal/export";
 import { SWR_KEYS } from "@/lib/swr-config";
 import { JournalSearch } from "@/components/journal/JournalSearch";
 import {
@@ -103,6 +104,23 @@ function JournalPageContent() {
 
   const [cherche, setCherche] = useState(false);
   const feuilleRef = useRef<JournalSheetHandle>(null);
+
+  // L'export sort TOUT le journal, pas le jour affiché : ce qu'on veut d'un
+  // export, c'est pouvoir partir avec ses écrits — pas en découper une page.
+  const [exporte, setExporte] = useState(false);
+  const exporter = async () => {
+    setExporte(true);
+    try {
+      const bilan = await exporterJournal();
+      // Rien à dire quand le dialogue a été refermé : ce n'est pas un échec.
+      if (bilan) toast.success(`Journal exporté — ${resume(bilan)}.`);
+    } catch (e) {
+      console.error("export_journal:", e);
+      toast.error("L'export a échoué.");
+    } finally {
+      setExporte(false);
+    }
+  };
 
   /**
    * Deep-link depuis la palette (Ctrl+K) : `?jour=YYYY-MM-DD`, consommé puis
@@ -221,8 +239,8 @@ function JournalPageContent() {
               Aujourd&apos;hui
             </Button>
           )}
-          {/* Deux des cinq outils de l'en-tête. La musique, le verrou et
-              l'export viendront à côté. */}
+          {/* Trois des cinq outils de l'en-tête. La musique et le verrou
+              viendront à côté. */}
           <Button
             variant="ghost"
             size="icon-sm"
@@ -231,6 +249,16 @@ function JournalPageContent() {
             onClick={() => feuilleRef.current?.attacher()}
           >
             <Paperclip />
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            aria-label="Exporter le journal"
+            title="Exporter le journal"
+            disabled={exporte}
+            onClick={exporter}
+          >
+            <Download />
           </Button>
           <Button
             variant="ghost"

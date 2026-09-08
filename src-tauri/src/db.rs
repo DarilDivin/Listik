@@ -1,6 +1,6 @@
 use crate::models::{
     Area, CreateArea, CreateJournalEntry, CreateNote, CreateProject, CreateSubTask, CreateTag,
-    CreateTodo, JournalDayCount, JournalEntry, JournalHit, JournalPiece, Note, Project, Recurrence, Settings, SubTask, Tag,
+    CreateTodo, JournalDayCount, JournalEntry, JournalExport, JournalHit, JournalPiece, Note, Project, Recurrence, Settings, SubTask, Tag,
     Todo, TodoStatus,
     UpdateArea, UpdateJournalEntry, UpdateNote, UpdateProject, UpdateSettings, UpdateSubTask,
     UpdateTag, UpdateTodo,
@@ -915,6 +915,21 @@ pub async fn list_journal_entries_for_day(
     attach_journal_relations(pool, entries).await
 }
 
+/// Tout le journal, du plus ancien au plus récent — pour l'export.
+///
+/// Sans les tags : `attach_journal_relations` fait une requête PAR bloc, et
+/// l'export en lit des milliers d'un coup. L'export ne rend d'ailleurs pas
+/// les tags, la page non plus depuis qu'elle est un document.
+pub async fn list_all_journal_entries(
+    pool: &SqlitePool,
+) -> Result<Vec<JournalEntry>, sqlx::Error> {
+    let query = format!(
+        "SELECT {JOURNAL_ENTRY_COLUMNS} FROM journal_entries \
+         ORDER BY target_day ASC, written_at ASC, created_at ASC"
+    );
+    sqlx::query_as::<_, JournalEntry>(&query).fetch_all(pool).await
+}
+
 /// Blocs écrits en avance : `target_day` strictement après `after_day`.
 pub async fn list_upcoming_journal_entries(
     pool: &SqlitePool,
@@ -1122,6 +1137,233 @@ pub async fn list_journal_pieces(
             created_at,
         })
         .collect())
+}
+
+// ---------------------------------------------------------------------------
+// Export du journal (Markdown + dossier de pièces voisin)
+// ---------------------------------------------------------------------------
+
+/// Les identifiants de pièces cités par un texte, dans l'ordre.
+///
+/// Un balayage à la main plutôt qu'une dépendance à `regex` : la syntaxe est
+/// la nôtre — `![légende](piece:<id>)`, fixée par le transformeur de
+/// `features/journal/feuille.ts` — et tient en une recherche de sous-chaîne.
+pub fn ids_pieces(markdown: &str) -> Vec<String> {
+    const OUVERTURE: &str = "](piece:";
+    let mut out = Vec::new();
+    let mut reste = markdown;
+    while let Some(i) = reste.find(OUVERTURE) {
+        let apres = &reste[i + OUVERTURE.len()..];
+        let Some(j) = apres.find(')') else { break };
+        out.push(apres[..j].to_string());
+        reste = &apres[j..];
+    }
+    out
+}
+
+/// `capture.png`, puis `capture-2.png`.
+///
+/// Deux photos peuvent porter le même nom d'origine — c'est même pour ça que
+/// le disque les range sous un UUID. À l'export on rend le nom lisible, celui
+/// qu'on reconnaît ; il faut donc départager les homonymes plutôt qu'en
+/// écraser un silencieusement.
+pub fn nom_unique(pris: &mut std::collections::HashSet<String>, nom_origine: &str) -> String {
+    let p = std::path::Path::new(nom_origine);
+    let tige = p.file_stem().and_then(|s| s.to_str()).unwrap_or("piece");
+    let ext = p.extension().and_then(|s| s.to_str());
+    let compose = |n: u32| match (n, ext) {
+        (1, Some(e)) => format!("{tige}.{e}"),
+        (1, None) => tige.to_string(),
+        (n, Some(e)) => format!("{tige}-{n}.{e}"),
+        (n, None) => format!("{tige}-{n}"),
+    };
+    let mut n = 1;
+    while pris.contains(&compose(n)) {
+        n += 1;
+    }
+    let nom = compose(n);
+    pris.insert(nom.clone());
+    nom
+}
+
+const JOURS: [&str; 7] = [
+    "lundi", "mardi", "mercredi", "jeudi", "vendredi", "samedi", "dimanche",
+];
+const MOIS: [&str; 12] = [
+    "janvier", "février", "mars", "avril", "mai", "juin", "juillet", "août",
+    "septembre", "octobre", "novembre", "décembre",
+];
+
+/// « mardi 8 septembre 2026 » — la date telle que la porte l'en-tête de la page.
+fn jour_en_francais(iso: &str) -> String {
+    use chrono::Datelike;
+    match chrono::NaiveDate::parse_from_str(iso, "%Y-%m-%d") {
+        Ok(d) => format!(
+            "{} {} {} {}",
+            JOURS[d.weekday().num_days_from_monday() as usize],
+            d.day(),
+            MOIS[d.month0() as usize],
+            d.year()
+        ),
+        // Une date qu'on ne sait pas lire vaut mieux telle quelle qu'effacée.
+        Err(_) => iso.to_string(),
+    }
+}
+
+/// L'heure d'écriture, à l'heure de celui qui exporte.
+///
+/// `written_at` est en UTC (`now_iso`) ; la page l'a toujours affichée en
+/// heure locale. Un export qui décalerait tout de deux heures raconterait une
+/// autre journée que celle qu'on a sous les yeux.
+fn heure_locale(iso: &str) -> Option<String> {
+    chrono::DateTime::parse_from_rfc3339(iso)
+        .ok()
+        .map(|t| t.with_timezone(&chrono::Local).format("%H:%M").to_string())
+}
+
+/// Une cible de lien Markdown, entre chevrons si elle contient de quoi la
+/// casser. `![x](mes photos/a.png)` ne se lit nulle part ; `<…>` est la forme
+/// prévue par CommonMark pour ça.
+fn cible_lien(cible: &str) -> String {
+    if cible.contains([' ', '(', ')']) {
+        format!("<{cible}>")
+    } else {
+        cible.to_string()
+    }
+}
+
+/// Remplace les renvois internes par des liens vers le dossier voisin.
+///
+/// `piece:<id>` est un schéma PRIVÉ : hors de l'app il ne pointe nulle part.
+/// Une pièce absente de `noms` (fichier disparu, copie échouée) laisse sa
+/// légende en texte simple — mieux vaut une phrase orpheline qu'un lien mort.
+fn reecrire_pieces(
+    contenu: &str,
+    noms: &std::collections::HashMap<String, String>,
+    dossier: &str,
+) -> String {
+    const OUVERTURE: &str = "](piece:";
+    let mut out = String::with_capacity(contenu.len());
+    let mut reste = contenu;
+
+    while let Some(i) = reste.find("![") {
+        let apres = &reste[i + 2..];
+        // La légende s'arrête au premier `]`, comme dans le transformeur qui
+        // l'a écrite (`[^\]]*`).
+        let cible = apres.find(']').map(|j| (j, &apres[j..]));
+        let Some((j, queue)) = cible.filter(|(_, q)| q.starts_with(OUVERTURE)) else {
+            // Un `![` qui n'ouvre pas une de nos pièces : on le laisse passer.
+            out.push_str(&reste[..i + 2]);
+            reste = apres;
+            continue;
+        };
+        let Some(k) = queue.find(')') else {
+            out.push_str(&reste[..i + 2]);
+            reste = apres;
+            continue;
+        };
+
+        let legende = &apres[..j];
+        let id = &queue[OUVERTURE.len()..k];
+        out.push_str(&reste[..i]);
+        match noms.get(id) {
+            Some(fichier) => out.push_str(&format!(
+                "![{legende}]({})",
+                cible_lien(&format!("{dossier}/{fichier}"))
+            )),
+            None => out.push_str(legende),
+        }
+        reste = &queue[k + 1..];
+    }
+
+    out.push_str(reste);
+    out
+}
+
+/// Écrit l'export : le document à `cible`, les photos dans le dossier voisin.
+///
+/// Séparé de la commande pour être testable : c'est ici que se joue tout ce
+/// qui peut mal tourner — un nom de fichier en double, une photo disparue du
+/// disque, un dossier à créer — et rien de tout cela ne demande une fenêtre
+/// Tauri pour être vérifié.
+pub fn ecrire_export(
+    cible: &std::path::Path,
+    entries: &[JournalEntry],
+    fiches: &[JournalPiece],
+) -> Result<JournalExport, String> {
+    let nom_dossier = format!(
+        "{}-pieces",
+        cible.file_stem().and_then(|s| s.to_str()).unwrap_or("journal")
+    );
+
+    let mut noms: std::collections::HashMap<String, String> = std::collections::HashMap::new();
+    if !fiches.is_empty() {
+        let dossier = cible.with_file_name(&nom_dossier);
+        std::fs::create_dir_all(&dossier).map_err(|e| e.to_string())?;
+        let mut pris = std::collections::HashSet::new();
+        for f in fiches {
+            let nom = nom_unique(&mut pris, &f.nom_origine);
+            // Une photo disparue du disque n'arrête pas l'export : sa légende
+            // restera en texte plutôt qu'en lien mort.
+            if std::fs::copy(&f.chemin, dossier.join(&nom)).is_ok() {
+                noms.insert(f.id.clone(), nom);
+            } else {
+                pris.remove(&nom);
+            }
+        }
+    }
+
+    std::fs::write(cible, markdown_du_journal(entries, &noms, &nom_dossier))
+        .map_err(|e| e.to_string())?;
+
+    let mut jours: Vec<&str> = entries.iter().map(|e| e.target_day.as_str()).collect();
+    jours.dedup();
+    Ok(JournalExport {
+        jours: jours.len() as u32,
+        pieces: noms.len() as u32,
+    })
+}
+
+/// Rend le journal entier en UN document Markdown.
+///
+/// Un seul fichier, et les jours en `##` : le modèle veut que la journée soit
+/// un document, et une reprise n'est qu'un moment à l'intérieur. La découper
+/// en un fichier par bloc rendrait à l'export ce que la page a justement
+/// cessé de montrer.
+///
+/// `noms` associe l'identifiant d'une pièce au nom qu'elle porte dans le
+/// dossier voisin `dossier`.
+pub fn markdown_du_journal(
+    entries: &[JournalEntry],
+    noms: &std::collections::HashMap<String, String>,
+    dossier: &str,
+) -> String {
+    let mut out = String::from("# Journal\n\n");
+    let mut jour_courant = "";
+
+    for e in entries {
+        // On rogne APRÈS la réécriture : une pièce introuvable en tête de bloc
+        // s'efface, et laisserait sinon ses lignes vides derrière elle.
+        let corps = reecrire_pieces(&e.content, noms, dossier).trim().to_string();
+        // Un bloc vidé mais jamais effacé ne mérite pas une heure à lui seul.
+        if corps.trim().is_empty() {
+            continue;
+        }
+        if e.target_day != jour_courant {
+            out.push_str(&format!("## {}\n\n", jour_en_francais(&e.target_day)));
+            jour_courant = &e.target_day;
+        }
+        // L'heure en italique, pas en titre : c'est la gouttière de la page,
+        // une indication en marge — pas un niveau de plan qui se mêlerait aux
+        // titres écrits par l'utilisateur.
+        if let Some(h) = heure_locale(&e.written_at) {
+            out.push_str(&format!("*{h}*\n\n"));
+        }
+        out.push_str(&corps);
+        out.push_str("\n\n");
+    }
+
+    out
 }
 
 /// Ce qui encadre les occurrences dans un extrait. Deux caractères qu'on
@@ -1851,8 +2093,9 @@ pub async fn set_todo_tags(
 #[cfg(test)]
 mod tests {
     use super::{
-        append_journal_entry, create_journal_piece, delete_journal_entry,
-        list_journal_entries_for_day, list_journal_pieces, nature,
+        append_journal_entry, create_journal_piece, delete_journal_entry, ids_pieces,
+        ecrire_export, list_journal_entries_for_day, list_journal_pieces, markdown_du_journal,
+        nature, nom_unique,
         requete_fts, search_journal, session_ouverte, update_journal_entry, MARQUE_DEBUT,
         MARQUE_FIN,
         create, create_area, create_note, create_project, create_subtask, create_tag, delete,
@@ -1863,8 +2106,8 @@ mod tests {
         update_area, update_note, update_project, update_settings, update_subtask, update_tag,
     };
     use crate::models::{
-        CreateArea, CreateNote, CreateProject, CreateSubTask, CreateTag, CreateTodo, TodoStatus,
-        UpdateJournalEntry,
+        CreateArea, CreateNote, CreateProject, CreateSubTask, CreateTag, CreateTodo, JournalEntry, JournalPiece,
+        TodoStatus, UpdateJournalEntry,
         UpdateArea, UpdateNote, UpdateProject, UpdateSettings, UpdateSubTask, UpdateTag,
         UpdateTodo,
     };
@@ -3029,6 +3272,163 @@ La suite, dans la foulée.");
 
         assert!(search_journal(&pool, "introuvable", 20).await.unwrap().is_empty());
         assert!(search_journal(&pool, "  ", 20).await.unwrap().is_empty());
+    }
+
+    /// Un bloc de journal monté à la main — l'export ne lit que ces champs.
+    fn bloc(target_day: &str, written_at: &str, content: &str) -> JournalEntry {
+        JournalEntry {
+            id: Uuid::new_v4().to_string(),
+            target_day: target_day.to_string(),
+            written_at: written_at.to_string(),
+            content: content.to_string(),
+            created_at: written_at.to_string(),
+            updated_at: written_at.to_string(),
+            tags: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn l_export_rend_un_document_par_jour_et_des_liens_qui_pointent_quelque_part() {
+        let mut noms = std::collections::HashMap::new();
+        noms.insert("f9aa0944".to_string(), "capture.png".to_string());
+
+        let entries = vec![
+            bloc("2026-09-07", "2026-09-07T09:15:00.000Z", "Une première journée."),
+            bloc(
+                "2026-09-08",
+                "2026-09-08T09:29:00.000Z",
+                "![La terrasse](piece:f9aa0944)\n\nIl a plu ensuite.",
+            ),
+            bloc("2026-09-08", "2026-09-08T16:02:00.000Z", "![](piece:f9aa0944)"),
+            bloc(
+                "2026-09-08",
+                "2026-09-08T18:40:00.000Z",
+                "![Le chat sur le muret.](piece:disparue)\n\nLa suite.",
+            ),
+        ];
+
+        let md = markdown_du_journal(&entries, &noms, "journal-pieces");
+
+        assert!(md.starts_with("# Journal\n\n"));
+        assert!(md.contains("## lundi 7 septembre 2026"));
+        // Un seul titre par jour, même à trois reprises.
+        assert_eq!(md.matches("## mardi 8 septembre 2026").count(), 1);
+
+        // Le renvoi privé devient un lien relatif vers le dossier voisin.
+        assert!(md.contains("![La terrasse](journal-pieces/capture.png)"));
+
+        // Une image SANS légende reste une image : c'est là que les règles de
+        // ce code ont déjà cédé une fois (l'invitation « rien pour l'instant »
+        // se dessinait par-dessus les photos, faute de texte à voir).
+        assert!(md.contains("![](journal-pieces/capture.png)"));
+
+        // Une pièce disparue laisse sa légende en texte, jamais un lien mort —
+        // et surtout jamais le schéma privé.
+        assert!(md.contains("Le chat sur le muret."), "{md}");
+        assert!(!md.contains("piece:"), "{md}");
+        assert!(!md.contains("disparue"), "{md}");
+    }
+
+    #[test]
+    fn l_export_donne_l_heure_de_celui_qui_lit_pas_celle_du_serveur() {
+        // `written_at` est en UTC ; la page a toujours affiché l'heure LOCALE.
+        // Un export en UTC décalerait toute une journée d'écriture.
+        let entries = vec![bloc(
+            "2026-09-08",
+            "2026-09-08T09:29:00.000Z",
+            "Le texte.",
+        )];
+        let attendu = chrono::DateTime::parse_from_rfc3339("2026-09-08T09:29:00.000Z")
+            .unwrap()
+            .with_timezone(&chrono::Local)
+            .format("%H:%M")
+            .to_string();
+
+        let md = markdown_du_journal(&entries, &std::collections::HashMap::new(), "p");
+        assert!(md.contains(&format!("*{attendu}*")), "{md}");
+    }
+
+    #[test]
+    fn un_bloc_vide_n_emporte_pas_son_heure_dans_l_export() {
+        // Un bloc vidé sans être effacé ne mérite pas une ligne d'heure seule.
+        let entries = vec![bloc("2026-09-08", "2026-09-08T09:29:00.000Z", "   \n\n  ")];
+        assert_eq!(
+            markdown_du_journal(&entries, &std::collections::HashMap::new(), "p"),
+            "# Journal\n\n"
+        );
+    }
+
+    #[test]
+    fn les_identifiants_de_pieces_se_lisent_dans_le_texte() {
+        assert_eq!(
+            ids_pieces("![a](piece:un)\n\ntexte\n\n![](piece:deux)"),
+            vec!["un".to_string(), "deux".to_string()]
+        );
+        assert!(ids_pieces("pas de pièce ici").is_empty());
+        // Une syntaxe tronquée ne doit pas partir en boucle.
+        assert!(ids_pieces("![a](piece:jamais-ferme").is_empty());
+    }
+
+    #[test]
+    fn l_export_pose_vraiment_les_fichiers_a_cote_du_document() {
+        // Le seul test qui touche le disque : le reste vérifie du texte, et du
+        // texte juste n'a jamais prouvé qu'un fichier avait été écrit.
+        let bac = std::env::temp_dir().join(format!("listik-export-{}", Uuid::new_v4()));
+        std::fs::create_dir_all(&bac).unwrap();
+        let source = bac.join("source");
+        std::fs::create_dir_all(&source).unwrap();
+
+        // Deux photos DU MÊME NOM d'origine, plus une dont le fichier n'existe
+        // pas — les trois cas qui font mentir un export.
+        std::fs::write(source.join("a.png"), b"AAA").unwrap();
+        std::fs::write(source.join("b.png"), b"BBB").unwrap();
+        let fiche = |id: &str, nom: &str, chemin: std::path::PathBuf| JournalPiece {
+            id: id.to_string(),
+            kind: "image".to_string(),
+            nom_origine: nom.to_string(),
+            chemin: chemin.to_string_lossy().into_owned(),
+            created_at: "2026-09-08T09:00:00.000Z".to_string(),
+        };
+        let fiches = vec![
+            fiche("un", "capture.png", source.join("a.png")),
+            fiche("deux", "capture.png", source.join("b.png")),
+            fiche("trois", "envolee.png", source.join("jamais-ecrite.png")),
+        ];
+
+        let entries = vec![bloc(
+            "2026-09-08",
+            "2026-09-08T09:29:00.000Z",
+            "![Une](piece:un)\n\n![Deux](piece:deux)\n\n![Trois](piece:trois)",
+        )];
+
+        let cible = bac.join("mon journal.md");
+        let bilan = ecrire_export(&cible, &entries, &fiches).unwrap();
+
+        assert_eq!(bilan.jours, 1);
+        assert_eq!(bilan.pieces, 2, "la photo disparue ne doit pas être comptée");
+
+        let dossier = bac.join("mon journal-pieces");
+        assert_eq!(std::fs::read(dossier.join("capture.png")).unwrap(), b"AAA");
+        assert_eq!(std::fs::read(dossier.join("capture-2.png")).unwrap(), b"BBB");
+
+        let md = std::fs::read_to_string(&cible).unwrap();
+        // Le dossier porte une ESPACE : sans chevrons, le lien ne s'ouvre nulle part.
+        assert!(md.contains("![Une](<mon journal-pieces/capture.png>)"), "{md}");
+        assert!(md.contains("![Deux](<mon journal-pieces/capture-2.png>)"), "{md}");
+        // La disparue laisse sa légende, jamais un lien vers un fichier absent.
+        assert!(md.contains("Trois"), "{md}");
+        assert!(!md.contains("envolee"), "{md}");
+
+        std::fs::remove_dir_all(&bac).ok();
+    }
+
+    #[test]
+    fn deux_photos_du_meme_nom_ne_s_ecrasent_pas_a_l_export() {
+        let mut pris = std::collections::HashSet::new();
+        assert_eq!(nom_unique(&mut pris, "capture.png"), "capture.png");
+        assert_eq!(nom_unique(&mut pris, "capture.png"), "capture-2.png");
+        assert_eq!(nom_unique(&mut pris, "capture.png"), "capture-3.png");
+        assert_eq!(nom_unique(&mut pris, "sans-extension"), "sans-extension");
     }
 
     #[tokio::test]

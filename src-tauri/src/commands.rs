@@ -1,7 +1,7 @@
 use crate::db::{self, AppState};
 use crate::models::{
     AiChatMessage, AiParsedTask, Area, CreateArea, CreateJournalEntry, CreateNote, CreateProject,
-    CreateSubTask, CreateTag, CreateTodo, JournalDayCount, JournalEntry, JournalHit,
+    CreateSubTask, CreateTag, CreateTodo, JournalDayCount, JournalEntry, JournalExport, JournalHit,
     JournalPiece, Note,
     Project, Settings,
     SubTask, Tag,
@@ -287,6 +287,44 @@ pub async fn list_journal_pieces(
     db::list_journal_pieces(&state.pool, &dossier, &ids)
         .await
         .map_err(|e| e.to_string())
+}
+
+/// Sort tout le journal en Markdown, avec ses photos dans un dossier voisin.
+///
+/// Le document stocké ne porte que des renvois `piece:<id>` — un schéma
+/// PRIVÉ, qui ne pointe nulle part hors de l'app. L'export les remplace par
+/// des liens relatifs vers `<nom du fichier>-pieces/`, et copie les images
+/// dedans : un dossier à côté du `.md` s'ouvre dans Obsidian, Typora, un
+/// navigateur, n'importe où. On a écarté le base64 pour ça — il gonfle une
+/// photo d'un tiers et presque rien ne l'affiche hors navigateur.
+///
+/// Le dialogue « Enregistrer sous » est côté frontend (natif, interactif) :
+/// on reçoit un chemin déjà choisi, comme `export_backup`.
+#[tauri::command]
+pub async fn export_journal(
+    state: State<'_, AppState>,
+    app: AppHandle,
+    path: String,
+) -> Result<JournalExport, String> {
+    let entries = db::list_all_journal_entries(&state.pool)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    // Les identifiants cités par le journal, sans doublon — une même photo
+    // peut être collée deux fois.
+    let mut ids: Vec<String> = Vec::new();
+    for e in &entries {
+        for id in db::ids_pieces(&e.content) {
+            if !ids.contains(&id) {
+                ids.push(id);
+            }
+        }
+    }
+    let fiches = db::list_journal_pieces(&state.pool, &db::dossier_pieces(&app)?, &ids)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    db::ecrire_export(std::path::Path::new(&path), &entries, &fiches)
 }
 
 /// Cherche un passage dans tout le journal.

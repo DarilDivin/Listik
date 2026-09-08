@@ -38,6 +38,17 @@ pub struct JournalPiece {
     pub created_at: String,
 }
 
+/// Ce qu'un export a produit, pour pouvoir le dire.
+///
+/// « Enregistré » ne prouve rien : c'est le nombre de jours et de photos
+/// sorties qui dit si le fichier contient bien ce qu'on croit.
+#[derive(Debug, Clone, Serialize, TS)]
+#[ts(export, export_to = "../../features/journal/generated/")]
+pub struct JournalExport {
+    pub jours: u32,
+    pub pieces: u32,
+}
+
 /// Un passage trouvé par la recherche.
 ///
 /// On ne remonte PAS le bloc entier : une reprise peut faire vingt lignes, et

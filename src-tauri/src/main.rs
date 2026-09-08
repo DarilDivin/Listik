@@ -190,6 +190,7 @@ fn main() {
             commands::attach_journal_piece,
             commands::attach_journal_piece_bytes,
             commands::list_journal_pieces,
+            commands::export_journal,
             commands::update_journal_entry,
             commands::delete_journal_entry,
             commands::set_journal_entry_tags,

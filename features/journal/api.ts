@@ -4,6 +4,7 @@ import type {
   CreateJournalEntryInput,
   JournalDayCount,
   JournalEntry,
+  JournalExport,
   JournalHit,
   JournalPiece,
   UpdateJournalEntryInput,
@@ -66,4 +67,10 @@ export const journalApi = {
   /** Les fiches des pièces citées par le document. */
   pieces: (ids: string[]) =>
     invoke<JournalPiece[]>("list_journal_pieces", { ids }),
+
+  /**
+   * Tout le journal en Markdown, ses photos dans un dossier voisin. `path`
+   * vient du dialogue natif — voir `features/journal/export.ts`.
+   */
+  exporter: (path: string) => invoke<JournalExport>("export_journal", { path }),
 };
