@@ -842,3 +842,62 @@
     color: var(--color-muted-foreground);
   }
 }
+
+/* ──────────────────────────────────────────────────────────────────────────
+ * Les pièces jointes du journal — l'image est de l'ENCRE, pas un objet posé
+ * dessus : aucun fond, aucun cadre, aucune ombre. Alignée sur le bord du
+ * texte, séparée par de l'espace.
+ * ────────────────────────────────────────────────────────────────────────── */
+.journal-piece {
+  display: block;
+  margin: 1.2em 0 1em;
+}
+/*
+ * LA HAUTEUR, JAMAIS LA LARGEUR.
+ *
+ * Une photo de téléphone en 3:4 ferait 750 px de haut à la largeur de la
+ * colonne — elle chasserait tout le reste de l'écran. On plafonne donc la
+ * hauteur : le paysage remplit la colonne, le portrait devient étroit et
+ * laisse du blanc à côté, comme une image dans un livre.
+ *
+ * Aucune dimension n'est stockée : `width: auto` sous un plafond de hauteur
+ * suffit, et le navigateur connaît déjà le rapport de l'image.
+ */
+.journal-piece-image {
+  display: block;
+  max-width: 100%;
+  max-height: min(24rem, 46vh);
+  width: auto;
+  border-radius: 3px;
+  user-select: none;
+}
+/* Le temps que le fichier arrive : de la place, pas un vide qui saute. */
+.journal-piece-attente {
+  display: block;
+  height: 8rem;
+  border-radius: 3px;
+  background-color: color-mix(in oklch, var(--color-foreground) 4%, transparent);
+}
+.journal-piece-absente {
+  display: block;
+  font-size: 0.875rem;
+  color: var(--color-muted-foreground);
+  font-style: italic;
+}
+/* La LÉGENDE, pas le nom de fichier : `IMG_4821.jpg` ne dira rien dans dix
+   ans. Le champ est là, vide et discret ; on écrit ou on n'écrit pas. */
+.journal-piece-legende {
+  display: block;
+  margin-top: 0.55em;
+  font-size: 0.8125rem;
+  line-height: 1.5;
+  color: var(--color-muted-foreground);
+  outline: none;
+}
+.journal-piece-legende:empty::before {
+  content: attr(data-invite);
+  color: color-mix(in oklch, var(--color-muted-foreground) 55%, transparent);
+}
+.journal-piece-legende:focus:empty::before {
+  color: color-mix(in oklch, var(--color-muted-foreground) 35%, transparent);
+}

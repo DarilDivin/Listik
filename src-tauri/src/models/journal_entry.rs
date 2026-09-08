@@ -22,6 +22,22 @@ pub struct JournalEntry {
     pub tags: Vec<super::Tag>,
 }
 
+/// Une pièce jointe du journal — une photo aujourd'hui, un document ou une
+/// note vocale ensuite.
+///
+/// `chemin` est le chemin ABSOLU sur le disque : le webview en fait une URL
+/// avec `convertFileSrc`. On ne renvoie pas les octets — une photo de trois
+/// méga-octets traverserait l'IPC en base64 à chaque rendu.
+#[derive(Debug, Clone, Serialize, TS)]
+#[ts(export, export_to = "../../features/journal/generated/")]
+pub struct JournalPiece {
+    pub id: String,
+    pub kind: String,
+    pub nom_origine: String,
+    pub chemin: String,
+    pub created_at: String,
+}
+
 /// Un passage trouvé par la recherche.
 ///
 /// On ne remonte PAS le bloc entier : une reprise peut faire vingt lignes, et

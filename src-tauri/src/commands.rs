@@ -1,7 +1,8 @@
 use crate::db::{self, AppState};
 use crate::models::{
     AiChatMessage, AiParsedTask, Area, CreateArea, CreateJournalEntry, CreateNote, CreateProject,
-    CreateSubTask, CreateTag, CreateTodo, JournalDayCount, JournalEntry, JournalHit, Note,
+    CreateSubTask, CreateTag, CreateTodo, JournalDayCount, JournalEntry, JournalHit,
+    JournalPiece, Note,
     Project, Settings,
     SubTask, Tag,
     Todo, UpdateArea, UpdateJournalEntry, UpdateNote, UpdateProject, UpdateSettings, UpdateSubTask,
@@ -233,6 +234,59 @@ pub async fn create_journal_entry(
         .map_err(|e| e.to_string())?;
     notify_journal_changed(&app);
     Ok(entry)
+}
+
+/// Attache une image au journal, depuis un fichier choisi sur le disque.
+///
+/// On COPIE : l'original peut être déplacé, renommé ou vidé de la corbeille
+/// sans que la journée y perde son image. C'est le prix d'un journal qui doit
+/// se lire dans dix ans.
+#[tauri::command]
+pub async fn attach_journal_piece(
+    state: State<'_, AppState>,
+    app: AppHandle,
+    source: String,
+) -> Result<JournalPiece, String> {
+    let chemin = std::path::PathBuf::from(&source);
+    let nom = chemin
+        .file_name()
+        .and_then(|n| n.to_str())
+        .ok_or_else(|| "Chemin de fichier illisible.".to_string())?
+        .to_string();
+    let octets = std::fs::read(&chemin).map_err(|e| e.to_string())?;
+    let dossier = db::dossier_pieces(&app)?;
+    db::create_journal_piece(&state.pool, &dossier, &nom, &octets).await
+}
+
+/// La même chose, depuis des octets — le chemin de COLLAGE.
+///
+/// Une capture d'écran collée n'a pas de fichier : le presse-papiers n'a que
+/// des octets et un type. C'est le geste le plus fréquent pour une image dans
+/// un journal, et il n'a pas d'autre porte : le glisser-déposer natif est
+/// coupé sur la fenêtre principale (il empêcherait le réordonnancement des
+/// tâches — voir `dragDropEnabled` dans `tauri.conf.json`).
+#[tauri::command]
+pub async fn attach_journal_piece_bytes(
+    state: State<'_, AppState>,
+    app: AppHandle,
+    nom: String,
+    octets: Vec<u8>,
+) -> Result<JournalPiece, String> {
+    let dossier = db::dossier_pieces(&app)?;
+    db::create_journal_piece(&state.pool, &dossier, &nom, &octets).await
+}
+
+/// Les fiches des pièces citées par le document.
+#[tauri::command]
+pub async fn list_journal_pieces(
+    state: State<'_, AppState>,
+    app: AppHandle,
+    ids: Vec<String>,
+) -> Result<Vec<JournalPiece>, String> {
+    let dossier = db::dossier_pieces(&app)?;
+    db::list_journal_pieces(&state.pool, &dossier, &ids)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 /// Cherche un passage dans tout le journal.

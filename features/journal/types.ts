@@ -4,6 +4,7 @@
 export type { JournalEntry } from "./generated/JournalEntry";
 export type { JournalDayCount } from "./generated/JournalDayCount";
 export type { JournalHit } from "./generated/JournalHit";
+export type { JournalPiece } from "./generated/JournalPiece";
 
 // Types d'ENTRÉE (construits côté frontend), écrits à la main.
 export interface CreateJournalEntryInput {

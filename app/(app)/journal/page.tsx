@@ -1,20 +1,24 @@
 "use client";
 
-import { Suspense, useEffect, useState } from "react";
+import { Suspense, useEffect, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import useSWR from "swr";
 import { format } from "date-fns";
 import { fr } from "date-fns/locale";
-import { ChevronLeft, ChevronRight, Search } from "lucide-react";
+import { ChevronLeft, ChevronRight, Paperclip, Search } from "lucide-react";
 import { useFeuille } from "@/features/journal/useFeuille";
 import { journalApi } from "@/features/journal/api";
 import { SWR_KEYS } from "@/lib/swr-config";
 import { JournalSearch } from "@/components/journal/JournalSearch";
-import { JournalSheet } from "@/components/journal/JournalSheet";
+import {
+  JournalSheet,
+  type JournalSheetHandle,
+} from "@/components/journal/JournalSheet";
 import { JournalDensity } from "@/components/journal/JournalDensity";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
+import { toast } from "sonner";
 import { todayLocalISODate } from "@/lib/date";
 
 /** Parse une date « jour seul » en Date locale (évite le décalage UTC). */
@@ -98,6 +102,7 @@ function JournalPageContent() {
     useFeuille(day);
 
   const [cherche, setCherche] = useState(false);
+  const feuilleRef = useRef<JournalSheetHandle>(null);
 
   /**
    * Deep-link depuis la palette (Ctrl+K) : `?jour=YYYY-MM-DD`, consommé puis
@@ -216,8 +221,17 @@ function JournalPageContent() {
               Aujourd&apos;hui
             </Button>
           )}
-          {/* Le premier des outils de l'en-tête. Les quatre autres (pièces
-              jointes, musique, verrou, export) viendront à côté. */}
+          {/* Deux des cinq outils de l'en-tête. La musique, le verrou et
+              l'export viendront à côté. */}
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            aria-label="Joindre une image"
+            title="Joindre une image"
+            onClick={() => feuilleRef.current?.attacher()}
+          >
+            <Paperclip />
+          </Button>
           <Button
             variant="ghost"
             size="icon-sm"
@@ -250,6 +264,7 @@ function JournalPageContent() {
             </div>
           ) : (
             <JournalSheet
+              ref={feuilleRef}
               key={day}
               reprises={reprises}
               aStamper={aStamper}
@@ -264,6 +279,9 @@ function JournalPageContent() {
                 </div>
               }
               onSegments={(segments) => void enregistrer(segments)}
+              // On ne prévient QUE si ça a échoué : poser une image se voit,
+              // le dire serait redondant.
+              onErreurPiece={(m) => toast.error(m)}
             />
           )}
 

@@ -1,6 +1,6 @@
 use crate::models::{
     Area, CreateArea, CreateJournalEntry, CreateNote, CreateProject, CreateSubTask, CreateTag,
-    CreateTodo, JournalDayCount, JournalEntry, JournalHit, Note, Project, Recurrence, Settings, SubTask, Tag,
+    CreateTodo, JournalDayCount, JournalEntry, JournalHit, JournalPiece, Note, Project, Recurrence, Settings, SubTask, Tag,
     Todo, TodoStatus,
     UpdateArea, UpdateJournalEntry, UpdateNote, UpdateProject, UpdateSettings, UpdateSubTask,
     UpdateTag, UpdateTodo,
@@ -1001,6 +1001,129 @@ pub async fn create_journal_entry(
     Ok(entry)
 }
 
+/// Le dossier des pièces, à côté de la base.
+///
+/// Les fichiers ne vont PAS dans SQLite : une photo de trois méga-octets par
+/// ligne rendrait chaque lecture de la journée coûteuse, et la sauvegarde du
+/// journal impossible à copier à la main. Le disque garde les octets, la base
+/// garde le nom.
+pub fn dossier_pieces(app: &AppHandle) -> Result<std::path::PathBuf, String> {
+    let dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|e| e.to_string())?
+        .join("pieces");
+    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    Ok(dir)
+}
+
+/// Les extensions qu'on accepte comme image.
+///
+/// Une liste EXPLICITE, pas une devinette sur le type MIME : c'est le webview
+/// qui affichera le fichier, et il n'affiche que ce qu'il sait décoder. Un
+/// fichier accepté puis muet à l'écran serait pire qu'un fichier refusé.
+const IMAGES: [&str; 6] = ["png", "jpg", "jpeg", "gif", "webp", "avif"];
+
+/// La nature d'un fichier, d'après son extension.
+pub fn nature(nom: &str) -> Option<&'static str> {
+    let ext = std::path::Path::new(nom)
+        .extension()
+        .and_then(|e| e.to_str())?
+        .to_ascii_lowercase();
+    if IMAGES.contains(&ext.as_str()) {
+        return Some("image");
+    }
+    None
+}
+
+/// Enregistre des octets comme pièce jointe et rend sa fiche.
+///
+/// Le nom sur le disque est un UUID : deux photos appelées `IMG_4821.jpg` ne
+/// doivent pas se recouvrir. Le nom d'origine est gardé à côté — c'est lui
+/// qu'on reconnaît, et celui qu'on rendra à l'export.
+pub async fn create_journal_piece(
+    pool: &SqlitePool,
+    dossier: &std::path::Path,
+    nom_origine: &str,
+    octets: &[u8],
+) -> Result<JournalPiece, String> {
+    let Some(kind) = nature(nom_origine) else {
+        return Err(format!("« {nom_origine} » n'est pas une image que Listik sait afficher."));
+    };
+    let ext = std::path::Path::new(nom_origine)
+        .extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or("bin")
+        .to_ascii_lowercase();
+
+    let id = Uuid::new_v4().to_string();
+    let fichier = format!("{id}.{ext}");
+    let chemin = dossier.join(&fichier);
+    std::fs::write(&chemin, octets).map_err(|e| e.to_string())?;
+
+    let created_at = now_iso();
+    sqlx::query(
+        "INSERT INTO journal_pieces (id, kind, fichier, nom_origine, created_at) \
+         VALUES (?, ?, ?, ?, ?)",
+    )
+    .bind(&id)
+    .bind(kind)
+    .bind(&fichier)
+    .bind(nom_origine)
+    .bind(&created_at)
+    .execute(pool)
+    .await
+    .map_err(|e| e.to_string())?;
+
+    Ok(JournalPiece {
+        id,
+        kind: kind.to_string(),
+        nom_origine: nom_origine.to_string(),
+        chemin: chemin.to_string_lossy().into_owned(),
+        created_at,
+    })
+}
+
+/// Les fiches de plusieurs pièces, dans l'ordre demandé.
+///
+/// Le document ne porte que des identifiants : c'est ici qu'ils redeviennent
+/// des fichiers. Un identifiant inconnu est simplement ABSENT du résultat —
+/// une pièce supprimée hors de l'app ne doit pas faire échouer la journée
+/// entière.
+pub async fn list_journal_pieces(
+    pool: &SqlitePool,
+    dossier: &std::path::Path,
+    ids: &[String],
+) -> Result<Vec<JournalPiece>, sqlx::Error> {
+    if ids.is_empty() {
+        return Ok(Vec::new());
+    }
+    let mut qb: QueryBuilder<Sqlite> = QueryBuilder::new(
+        "SELECT id, kind, fichier, nom_origine, created_at FROM journal_pieces WHERE id IN (",
+    );
+    let mut sep = qb.separated(", ");
+    for id in ids {
+        sep.push_bind(id);
+    }
+    qb.push(")");
+
+    let lignes = qb
+        .build_query_as::<(String, String, String, String, String)>()
+        .fetch_all(pool)
+        .await?;
+
+    Ok(lignes
+        .into_iter()
+        .map(|(id, kind, fichier, nom_origine, created_at)| JournalPiece {
+            id,
+            kind,
+            nom_origine,
+            chemin: dossier.join(fichier).to_string_lossy().into_owned(),
+            created_at,
+        })
+        .collect())
+}
+
 /// Ce qui encadre les occurrences dans un extrait. Deux caractères qu'on
 /// n'écrit pas dans un journal — sinon le front les prendrait pour du texte.
 pub const MARQUE_DEBUT: &str = "\u{2506}";
@@ -1728,7 +1851,8 @@ pub async fn set_todo_tags(
 #[cfg(test)]
 mod tests {
     use super::{
-        append_journal_entry, delete_journal_entry, list_journal_entries_for_day,
+        append_journal_entry, create_journal_piece, delete_journal_entry,
+        list_journal_entries_for_day, list_journal_pieces, nature,
         requete_fts, search_journal, session_ouverte, update_journal_entry, MARQUE_DEBUT,
         MARQUE_FIN,
         create, create_area, create_note, create_project, create_subtask, create_tag, delete,
@@ -1745,6 +1869,7 @@ mod tests {
         UpdateTodo,
     };
     use sqlx::sqlite::SqlitePoolOptions;
+    use uuid::Uuid;
     use sqlx::SqlitePool;
 
     // Une seule connexion : le ":memory:" reste partagé pour toute la durée du test.
@@ -2948,5 +3073,67 @@ La suite, dans la foulée.");
 
         // La limite est respectée.
         assert_eq!(search_journal(&pool, "garage", 2).await.unwrap().len(), 2);
+    }
+
+    #[test]
+    fn nature_ne_devine_pas() {
+        // Liste EXPLICITE : un fichier accepté puis muet à l'écran serait pire
+        // qu'un fichier refusé.
+        for nom in ["photo.png", "PHOTO.JPG", "vue.jpeg", "anim.gif", "x.webp", "y.avif"] {
+            assert_eq!(nature(nom), Some("image"), "{nom} aurait dû être une image");
+        }
+        for nom in ["notes.pdf", "voix.m4a", "archive.zip", "sans-extension", ""] {
+            assert_eq!(nature(nom), None, "{nom} n'aurait pas dû passer");
+        }
+    }
+
+    #[tokio::test]
+    async fn une_piece_atterrit_sur_le_disque_et_en_base() {
+        let pool = memory_pool().await;
+        let dossier = std::env::temp_dir().join(format!("listik-pieces-{}", Uuid::new_v4()));
+        std::fs::create_dir_all(&dossier).unwrap();
+
+        let octets = b"\x89PNG\r\n\x1a\nfaux mais suffisant";
+        let piece = create_journal_piece(&pool, &dossier, "IMG_4821.png", octets)
+            .await
+            .unwrap();
+
+        assert_eq!(piece.kind, "image");
+        // Le nom d'ORIGINE est gardé — c'est lui qu'on reconnaît.
+        assert_eq!(piece.nom_origine, "IMG_4821.png");
+        // Le nom sur le DISQUE est un uuid : deux « IMG_4821.png » ne doivent
+        // pas se recouvrir.
+        assert!(piece.chemin.ends_with(".png"));
+        assert!(!piece.chemin.contains("IMG_4821"));
+        assert_eq!(std::fs::read(&piece.chemin).unwrap(), octets);
+
+        // Deux fois le même nom : deux fichiers distincts, tous deux intacts.
+        let deux = create_journal_piece(&pool, &dossier, "IMG_4821.png", b"autre")
+            .await
+            .unwrap();
+        assert_ne!(deux.chemin, piece.chemin);
+        assert_eq!(std::fs::read(&piece.chemin).unwrap(), octets);
+
+        // On les retrouve par leurs identifiants, et un inconnu est simplement
+        // ABSENT — une pièce effacée hors de l'app ne casse pas la journée.
+        let vues = list_journal_pieces(
+            &pool,
+            &dossier,
+            &[piece.id.clone(), "fantome".into(), deux.id.clone()],
+        )
+        .await
+        .unwrap();
+        assert_eq!(vues.len(), 2);
+
+        assert!(list_journal_pieces(&pool, &dossier, &[]).await.unwrap().is_empty());
+
+        // Ce que Listik ne sait pas afficher est refusé, et rien n'est écrit.
+        let avant = std::fs::read_dir(&dossier).unwrap().count();
+        assert!(create_journal_piece(&pool, &dossier, "notes.pdf", b"%PDF")
+            .await
+            .is_err());
+        assert_eq!(std::fs::read_dir(&dossier).unwrap().count(), avant);
+
+        std::fs::remove_dir_all(&dossier).ok();
     }
 }

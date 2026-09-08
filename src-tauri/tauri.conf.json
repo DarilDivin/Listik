@@ -43,6 +43,10 @@
       }
     ],
     "security": {
+      "assetProtocol": {
+        "enable": true,
+        "scope": ["$APPDATA/pieces/*"]
+      },
       "csp": {
         "default-src": "'self'",
         "script-src": "'self'",

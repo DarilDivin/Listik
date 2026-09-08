@@ -20,8 +20,10 @@ import {
   TRANSFORMERS,
 } from "@lexical/markdown";
 import { HeadingNode, QuoteNode } from "@lexical/rich-text";
+import type { ElementTransformer } from "@lexical/markdown";
 import { type LexicalEditor, type SerializedLexicalNode } from "lexical";
 import { RepereNode } from "./RepereNode";
+import { $createPieceNode, $isPieceNode, PieceNode } from "./PieceNode";
 
 export const NOEUDS = [
   HeadingNode,
@@ -32,7 +34,36 @@ export const NOEUDS = [
   CodeNode,
   CodeHighlightNode,
   RepereNode,
+  PieceNode,
 ];
+
+/**
+ * Une pièce, en markdown : `![légende](piece:<id>)`.
+ *
+ * On reste dans la syntaxe d'IMAGE plutôt que d'inventer la nôtre : le contenu
+ * du journal doit rester lisible tel quel, et exportable sans traducteur.
+ * Seule la CIBLE change — un identifiant au lieu d'un chemin, parce qu'un
+ * chemin absolu ne survit ni à une sauvegarde ni à un changement de machine.
+ */
+const PIECE: ElementTransformer = {
+  dependencies: [PieceNode],
+  export: (node) =>
+    $isPieceNode(node) ? `![${node.getLegende()}](piece:${node.getPieceId()})` : null,
+  regExp: /^!\[([^\]]*)\]\(piece:([A-Za-z0-9-]+)\)\s*$/,
+  replace: (parent, _enfants, match) => {
+    parent.replace($createPieceNode(match[2], match[1]));
+  },
+  type: "element",
+};
+
+/**
+ * Les transformeurs de la feuille : ceux de Lexical, plus le nôtre.
+ *
+ * TOUTE conversion de la page passe par cette liste. En oublier une seule
+ * ferait disparaître les images à l'aller-retour — le markdown les rendrait en
+ * texte brut, et la reprise perdrait sa photo sans rien dire.
+ */
+export const TRANSFORMEURS = [PIECE, ...TRANSFORMERS];
 
 /** Une reprise, telle qu'elle vit dans le document. */
 export interface Segment {
@@ -62,7 +93,7 @@ function jetable(): LexicalEditor {
 export function lireMarkdown(editor: LexicalEditor): string {
   let md = "";
   editor.getEditorState().read(() => {
-    md = $convertToMarkdownString(TRANSFORMERS);
+    md = $convertToMarkdownString(TRANSFORMEURS);
   });
   return md;
 }
@@ -72,7 +103,7 @@ export function noeudsDepuisMarkdown(markdown: string): SerializedLexicalNode[] 
   const e = jetable();
   e.update(
     () => {
-      $convertFromMarkdownString(markdown, TRANSFORMERS);
+      $convertFromMarkdownString(markdown, TRANSFORMEURS);
     },
     { discrete: true },
   );

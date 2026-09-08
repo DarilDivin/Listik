@@ -17,6 +17,8 @@ export const SWR_KEYS = {
    * passage qui n'existe plus.
    */
   JOURNAL_SEARCH: (query: string) => `journal/search/${query}`,
+  /** La fiche d'une pièce jointe : son fichier ne change jamais. */
+  JOURNAL_PIECE: (id: string) => `journal/piece/${id}`,
   ALL_PROJECTS: "projects/all",
   ALL_AREAS: "projects/areas",
   ALL_TAGS: "tags/all",

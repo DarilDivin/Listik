@@ -5,6 +5,7 @@ import type {
   JournalDayCount,
   JournalEntry,
   JournalHit,
+  JournalPiece,
   UpdateJournalEntryInput,
 } from "./types";
 
@@ -48,4 +49,21 @@ export const journalApi = {
    */
   search: (query: string, limit: number) =>
     invoke<JournalHit[]>("search_journal", { query, limit }),
+
+  /**
+   * Attacher une image, depuis un fichier choisi sur le disque. On COPIE :
+   * l'original peut être déplacé ou effacé sans que la journée y perde son
+   * image.
+   */
+  attacher: (source: string) =>
+    invoke<JournalPiece>("attach_journal_piece", { source }),
+  /**
+   * La même chose depuis des octets — le chemin de COLLAGE. Une capture
+   * d'écran n'a pas de fichier : le presse-papiers n'a que des octets.
+   */
+  attacherOctets: (nom: string, octets: number[]) =>
+    invoke<JournalPiece>("attach_journal_piece_bytes", { nom, octets }),
+  /** Les fiches des pièces citées par le document. */
+  pieces: (ids: string[]) =>
+    invoke<JournalPiece[]>("list_journal_pieces", { ids }),
 };

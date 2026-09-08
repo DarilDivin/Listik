@@ -135,3 +135,43 @@ describe("le paragraphe vide de queue ne s'enregistre pas", () => {
     ]);
   });
 });
+
+describe("une pièce traverse le markdown", () => {
+  const ID = "3f1a2b7c-0e4d-4a91-8b22-9c5d1e7f0a63";
+
+  it("garde son identifiant et sa légende", () => {
+    const md = `![La terrasse, juste avant qu'il pleuve](piece:${ID})`;
+    expect(markdownDepuisNoeuds(noeudsDepuisMarkdown(md))).toBe(md);
+  });
+
+  it("accepte une légende vide — on écrit, ou on n'écrit pas", () => {
+    const md = `![](piece:${ID})`;
+    expect(markdownDepuisNoeuds(noeudsDepuisMarkdown(md))).toBe(md);
+  });
+
+  it("vit au milieu du texte sans le déranger", () => {
+    const md = `Avant la photo.\n\n![Deux essais](piece:${ID})\n\nAprès la photo.`;
+    expect(markdownDepuisNoeuds(noeudsDepuisMarkdown(md))).toBe(md);
+  });
+
+  it("est comptée dans la reprise où elle est posée", () => {
+    const doc = [
+      repere("a", "09:02"),
+      ...noeudsDepuisMarkdown(`Une photo :\n\n![Le mur](piece:${ID})`),
+    ];
+    expect(decouperEnSegments(doc)).toEqual([
+      { entryId: "a", heure: "09:02", markdown: `Une photo :\n\n![Le mur](piece:${ID})` },
+    ]);
+  });
+
+  it("n'est PAS confondue avec une image markdown ordinaire", () => {
+    // `piece:` est ce qui distingue nos pièces d'un lien collé. Une image
+    // pointant ailleurs doit rester ce qu'elle est.
+    const md = "![un dessin](https://exemple.fr/x.png)";
+    expect(markdownDepuisNoeuds(noeudsDepuisMarkdown(md))).toBe(md);
+  });
+
+  it("compte comme du contenu — une reprise qui n'a qu'une photo n'est pas vide", () => {
+    expect(estVide(`![](piece:${ID})`)).toBe(false);
+  });
+});
