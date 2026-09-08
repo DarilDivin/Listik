@@ -6,7 +6,7 @@ import { format } from "date-fns";
 import { fr } from "date-fns/locale";
 import { Search, X } from "lucide-react";
 import { journalApi } from "@/features/journal/api";
-import { morceaux, sansMarkdown } from "@/features/journal/extrait";
+import { morceaux } from "@/features/journal/extrait";
 import { SWR_KEYS } from "@/lib/swr-config";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
@@ -129,7 +129,7 @@ export function JournalSearch({ onPick, onClose }: JournalSearchProps) {
                               "rounded-[3px] bg-brand/15 px-0.5 font-medium text-foreground",
                           )}
                         >
-                          {sansMarkdown(m.texte)}
+                          {m.texte}
                         </span>
                       ))}
                     </span>

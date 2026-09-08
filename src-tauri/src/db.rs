@@ -3032,6 +3032,37 @@ La suite, dans la foulée.");
     }
 
     #[tokio::test]
+    async fn la_legende_d_une_photo_la_rend_retrouvable() {
+        // La légende vit dans le markdown (`![légende](piece:<id>)`) et non
+        // dans une colonne à part : c'est ce qui la fait entrer dans l'index
+        // sans une ligne de code de plus. « La terrasse » doit ramener la
+        // PHOTO, pas seulement le paragraphe d'à côté.
+        let pool = memory_pool().await;
+        append_journal_entry(
+            &pool,
+            "2026-09-08",
+            "![La terrasse, juste avant qu'il pleuve.](piece:f9aa0944-8d1e-4c02-9b77-2e5a1d3c6f80)",
+        )
+        .await
+        .unwrap();
+
+        let hits = search_journal(&pool, "terrasse", 20).await.unwrap();
+        assert_eq!(hits.len(), 1, "la légende n'est pas indexée");
+        assert!(hits[0].extrait.contains(MARQUE_DEBUT));
+
+        // L'extrait est du markdown BRUT : `snippet` travaille sur la colonne
+        // telle quelle. Le renvoi `piece:<id>` en fait donc partie, et c'est
+        // au front de l'effacer — voir `sansMarkdown` dans
+        // `features/journal/extrait.ts`, appelé AVANT le découpage sur les
+        // marques justement parce que la marque tombe au milieu de la syntaxe.
+        assert!(
+            hits[0].extrait.contains("piece:"),
+            "l'extrait a changé de forme : vérifier features/journal/extrait.ts — {}",
+            hits[0].extrait
+        );
+    }
+
+    #[tokio::test]
     async fn l_index_suit_la_table_sans_qu_on_y_pense() {
         // Une écriture oubliée dans l'index serait un passage introuvable, et
         // rien ne le dirait. Les triggers doivent tenir les trois cas.

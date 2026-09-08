@@ -21,7 +21,7 @@ import useSWR from "swr";
 import { format } from "date-fns";
 import { fr } from "date-fns/locale";
 import { journalApi } from "@/features/journal/api";
-import { morceaux, sansMarkdown } from "@/features/journal/extrait";
+import { morceaux } from "@/features/journal/extrait";
 import { lexicalMatch } from "@/features/search/lexical";
 import { SWR_KEYS } from "@/lib/swr-config";
 import { cn } from "@/lib/utils";
@@ -242,7 +242,7 @@ export function SearchOverlay({ open, onOpenChange: setOpen }: SearchOverlayProp
                                   m.trouve && "font-medium text-brand",
                                 )}
                               >
-                                {sansMarkdown(m.texte)}
+                                {m.texte}
                               </span>
                             ))}
                           </span>

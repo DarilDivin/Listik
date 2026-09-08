@@ -16,10 +16,15 @@ export interface Morceau {
  *
  * Une marque orpheline (extrait tronqué par `snippet`) ne casse rien : le
  * texte qui suit est simplement rendu tel quel.
+ *
+ * Le markdown part AVANT le découpage, et c'est l'ordre qui compte : la marque
+ * tombe sur le mot trouvé, donc au MILIEU d'une syntaxe. Nettoyer chaque
+ * morceau séparément ne verrait jamais qu'une moitié — `![La ` d'un côté,
+ * `, juste avant.](piece:f9aa…)` de l'autre — et l'uuid resterait à l'écran.
  */
 export function morceaux(extrait: string): Morceau[] {
   const out: Morceau[] = [];
-  let reste = extrait;
+  let reste = sansMarkdown(extrait);
 
   while (reste.length > 0) {
     const debut = reste.indexOf(MARQUE_DEBUT);
@@ -52,6 +57,17 @@ export function sansMarkdown(texte: string): string {
     .replace(new RegExp(`^${bord}>[^\\S\\n]?`, "gm"), "")
     .replace(new RegExp(`^${bord}[-*+][^\\S\\n]+`, "gm"), "")
     .replace(new RegExp(`^${bord}\\d+\\.[^\\S\\n]+`, "gm"), "")
+    // Une image vaut sa LÉGENDE, un lien vaut son texte : la cible est de la
+    // tuyauterie. Derrière une photo c'est même un renvoi interne
+    // (`piece:<id>`) — un uuid en plein extrait ne dirait rien à personne.
+    // Le `(?:\)|$)` tient compte de `snippet`, qui coupe à quatorze mots et
+    // laisse volontiers une cible sans sa parenthèse fermante.
+    .replace(/!?\[([^\]]*)\]\([^)]*(?:\)|$)/g, "$1")
+    // Coupé de l'autre côté : l'extrait commence APRÈS le crochet ouvrant, et
+    // il ne reste que la queue de la cible.
+    .replace(/\]\([^)]*(?:\)|$)/g, "")
+    // Et le `![` d'une image dont la légende, elle, a été tronquée.
+    .replace(/!\[/g, "")
     .replace(/\*\*|__|`/g, "")
     .replace(/\s*\n+\s*/g, " ");
 }

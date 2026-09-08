@@ -39,6 +39,20 @@ describe("morceaux", () => {
   it("rend une liste vide pour un extrait vide", () => {
     expect(morceaux("")).toEqual([]);
   });
+
+  it("efface le renvoi d'une image sans perdre la marque posée dans sa légende", () => {
+    // Le cas qui impose de nettoyer AVANT de découper : la marque tombe au
+    // milieu de la syntaxe. Morceau par morceau, on ne verrait jamais que
+    // `![La ` d'un côté et `, juste avant.](piece:…)` de l'autre — et l'uuid
+    // s'afficherait en plein résultat.
+    expect(
+      morceaux(`![La ${m("terrasse")}, juste avant.](piece:f9aa0944-8d1e)`),
+    ).toEqual([
+      { texte: "La ", trouve: false },
+      { texte: "terrasse", trouve: true },
+      { texte: ", juste avant.", trouve: false },
+    ]);
+  });
 });
 
 describe("sansMarkdown", () => {
@@ -48,6 +62,14 @@ describe("sansMarkdown", () => {
     ["- une puce", "une puce"],
     ["1. un point", "un point"],
     ["du **gras** et du `code`", "du gras et du code"],
+    // Une image vaut sa légende — jamais son renvoi interne.
+    ["![La terrasse](piece:f9aa0944-8d1e)", "La terrasse"],
+    ["![](piece:f9aa0944-8d1e)", ""],
+    ["[le guide](https://exemple.dev)", "le guide"],
+    // `snippet` coupe à quatorze mots, des deux côtés de la syntaxe.
+    ["![La terrasse](piece:f9aa", "La terrasse"],
+    ["terrasse.](piece:f9aa0944-8d1e) Puis il a plu.", "terrasse. Puis il a plu."],
+    ["![La terrasse, juste", "La terrasse, juste"],
     ["deux\n\nlignes", "deux lignes"],
     // Ce qui n'est pas de la mécanique reste : un tiret cadratin est du texte.
     ["un — tiret", "un — tiret"],
