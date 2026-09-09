@@ -1,15 +1,22 @@
 "use client";
 
-import { Suspense, useEffect, useRef, useState } from "react";
+import { Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import useSWR from "swr";
 import { format } from "date-fns";
 import { fr } from "date-fns/locale";
-import { ChevronLeft, ChevronRight, Download, Paperclip, Search } from "lucide-react";
+import { ChevronLeft, ChevronRight, Download, Mic, Paperclip, Search } from "lucide-react";
 import { useFeuille } from "@/features/journal/useFeuille";
 import { journalApi } from "@/features/journal/api";
 import { exporterJournal, resume } from "@/features/journal/export";
+// Aliasé : `useFeuille` expose déjà un `enregistrer`, qui sauve le TEXTE.
+import {
+  enregistrer as ouvrirLeMicro,
+  nomDeNote,
+  type Enregistrement,
+} from "@/features/journal/voix";
 import { SWR_KEYS } from "@/lib/swr-config";
+import { BandeEnregistrement } from "@/components/journal/BandeEnregistrement";
 import { JournalSearch } from "@/components/journal/JournalSearch";
 import {
   JournalSheet,
@@ -121,6 +128,73 @@ function JournalPageContent() {
       setExporte(false);
     }
   };
+
+  /**
+   * L'enregistrement d'une voix vit ICI, dans la page — hors de l'éditeur
+   * (voir `BandeEnregistrement`), et hors d'un effet.
+   *
+   * Hors d'un effet parce qu'un micro ne s'ouvre pas au montage : React monte,
+   * démonte et remonte les effets en développement, et deux `getUserMedia` sur
+   * le même appareil rendent un second flux MUET — celui-là même qui survit.
+   * Le micro s'ouvre donc au CLIC, une fois, comme le geste le demande.
+   */
+  const [enregistre, setEnregistre] = useState(false);
+  const sessionRef = useRef<Enregistrement | null>(null);
+  const departRef = useRef(0);
+  // La bande y dépose son écouteur : sans ce relais, la page se rendrait
+  // vingt fois par seconde — avec l'éditeur du jour dedans.
+  const niveauRef = useRef<(niveau: number) => void>(() => {});
+  const abonner = useCallback((surNiveau: (niveau: number) => void) => {
+    niveauRef.current = surNiveau;
+  }, []);
+
+  const commencer = async () => {
+    // La feuille est démontée pendant une recherche : sans ça, la note
+    // s'enregistrerait pour n'avoir nulle part où se poser.
+    setCherche(false);
+    try {
+      sessionRef.current = await ouvrirLeMicro((n) => niveauRef.current(n));
+      departRef.current = performance.now();
+      setEnregistre(true);
+    } catch (e) {
+      console.error("voix:", e);
+      toast.error("Le micro n'a pas pu être ouvert.");
+    }
+  };
+
+  const abandonner = () => {
+    sessionRef.current?.annuler();
+    sessionRef.current = null;
+    setEnregistre(false);
+  };
+
+  const terminer = async () => {
+    const session = sessionRef.current;
+    if (!session) return;
+    // Repris tout de suite : la bande s'en va, et rien ne doit pouvoir
+    // arrêter deux fois la même session.
+    sessionRef.current = null;
+    setEnregistre(false);
+    try {
+      const note = await session.arreter();
+      const piece = await journalApi.attacherVoix(
+        nomDeNote(),
+        Array.from(note.octets),
+        note.dureeMs,
+        note.cretes,
+      );
+      // Au CURSEUR, comme une image collée : la note se pose là où l'on en
+      // était, pas au bout de la journée.
+      feuilleRef.current?.poser(piece.id);
+    } catch (e) {
+      console.error("attach_journal_voice:", e);
+      toast.error("La note vocale n'a pas pu être enregistrée.");
+    }
+  };
+
+  // Quitter la page pendant qu'on enregistre rend le micro : la pastille du
+  // système ne doit pas rester allumée derrière nous.
+  useEffect(() => () => sessionRef.current?.annuler(), []);
 
   /**
    * Deep-link depuis la palette (Ctrl+K) : `?jour=YYYY-MM-DD`, consommé puis
@@ -239,7 +313,7 @@ function JournalPageContent() {
               Aujourd&apos;hui
             </Button>
           )}
-          {/* Trois des cinq outils de l'en-tête. La musique et le verrou
+          {/* Quatre des six outils de l'en-tête. La musique et le verrou
               viendront à côté. */}
           <Button
             variant="ghost"
@@ -249,6 +323,20 @@ function JournalPageContent() {
             onClick={() => feuilleRef.current?.attacher()}
           >
             <Paperclip />
+          </Button>
+          {/* Il BASCULE, comme la loupe : rappuyer abandonne, tout comme la
+              croix de la bande. Deux gestes pour la même chose, parce qu'on ne
+              cherche pas où arrêter ce qu'on vient de commencer. */}
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            aria-label={enregistre ? "Abandonner l'enregistrement" : "Enregistrer une note vocale"}
+            title="Enregistrer une note vocale"
+            data-actif={enregistre || undefined}
+            onClick={() => (enregistre ? abandonner() : void commencer())}
+            className="data-[actif]:bg-brand-soft data-[actif]:text-brand"
+          >
+            <Mic />
           </Button>
           <Button
             variant="ghost"
@@ -310,6 +398,18 @@ function JournalPageContent() {
               // On ne prévient QUE si ça a échoué : poser une image se voit,
               // le dire serait redondant.
               onErreurPiece={(m) => toast.error(m)}
+            />
+          )}
+
+          {/* Sous le texte, dans la colonne : la bande n'entre pas dans le
+              document — elle se tient à côté du temps de l'enregistrement,
+              puis s'efface en laissant une pièce. */}
+          {enregistre && !cherche && (
+            <BandeEnregistrement
+              depart={departRef.current}
+              abonner={abonner}
+              onTerminer={() => void terminer()}
+              onAbandonner={abandonner}
             />
           )}
 

@@ -1054,6 +1054,14 @@ const DOCUMENTS: [&str; 13] = [
 /// Le PDF a sa propre nature parce qu'il est le seul qui s'APERÇOIT : sa
 /// première page se rend en image. Les autres documents se nomment, ils ne se
 /// montrent pas — il faudrait un moteur de rendu par format.
+///
+/// `webm` est ici la VOIX, et il est seul de sa catégorie : c'est ce que
+/// `MediaRecorder` produit dans WebView2, donc le seul format qu'on ait
+/// vraiment enregistré ET rejoué. Ajouter `mp3`, `m4a` ou `wav` « puisque
+/// c'est une ligne » les ferait accepter sans qu'on sache s'ils se lisent —
+/// le même marché que le `.zip` refusé plus haut, en pire : un fichier
+/// silencieux à l'écran. Ils viendront quand on attachera de l'audio du
+/// disque, et qu'on l'aura joué.
 pub fn nature(nom: &str) -> Option<&'static str> {
     let ext = std::path::Path::new(nom)
         .extension()
@@ -1064,6 +1072,9 @@ pub fn nature(nom: &str) -> Option<&'static str> {
     }
     if ext == "pdf" {
         return Some("pdf");
+    }
+    if ext == "webm" {
+        return Some("voix");
     }
     if DOCUMENTS.contains(&ext.as_str()) {
         return Some("document");
@@ -1122,7 +1133,49 @@ pub async fn create_journal_piece(
         // il vient tout juste d'apprendre que la pièce existe.
         apercu: None,
         pages: None,
+        // Une pièce prise sur le disque n'a ni durée ni crêtes : elles se
+        // mesurent en enregistrant. Voir `create_journal_voice`.
+        duree_ms: None,
+        cretes: None,
         created_at,
+    })
+}
+
+/// Enregistre une note vocale : le fichier, sa durée et sa silhouette, d'un
+/// seul geste.
+///
+/// EN UNE FOIS, contrairement à la vignette d'un PDF. Les deux temps de
+/// `set_journal_piece_apercu` existent parce que le rendu d'une page est LENT
+/// et que la pièce doit se poser tout de suite ; ici tout est déjà là quand
+/// l'enregistrement s'arrête. Un second appel n'achèterait qu'un instant
+/// pendant lequel une note vocale existerait sans sa forme — et un chemin de
+/// rattrapage à écrire pour le jour où ce second appel échoue.
+pub async fn create_journal_voice(
+    pool: &SqlitePool,
+    dossier: &std::path::Path,
+    nom_origine: &str,
+    octets: &[u8],
+    duree_ms: i64,
+    cretes: &[f32],
+) -> Result<JournalPiece, String> {
+    let piece = create_journal_piece(pool, dossier, nom_origine, octets).await?;
+    if piece.kind != "voix" {
+        return Err(format!("« {nom_origine} » n'est pas une note vocale."));
+    }
+
+    let dessin = serde_json::to_string(cretes).map_err(|e| e.to_string())?;
+    sqlx::query("UPDATE journal_pieces SET duree_ms = ?, cretes = ? WHERE id = ?")
+        .bind(duree_ms)
+        .bind(&dessin)
+        .bind(&piece.id)
+        .execute(pool)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    Ok(JournalPiece {
+        duree_ms: Some(duree_ms),
+        cretes: Some(cretes.to_vec()),
+        ..piece
     })
 }
 
@@ -1141,7 +1194,7 @@ pub async fn list_journal_pieces(
         return Ok(Vec::new());
     }
     let mut qb: QueryBuilder<Sqlite> = QueryBuilder::new(
-        "SELECT id, kind, fichier, nom_origine, taille, apercu, pages, created_at \n         FROM journal_pieces WHERE id IN (",
+        "SELECT id, kind, fichier, nom_origine, taille, apercu, pages, duree_ms, cretes, created_at \n         FROM journal_pieces WHERE id IN (",
     );
     let mut sep = qb.separated(", ");
     for id in ids {
@@ -1149,23 +1202,42 @@ pub async fn list_journal_pieces(
     }
     qb.push(")");
 
-    let lignes = qb
-        .build_query_as::<(String, String, String, String, Option<i64>, Option<String>, Option<i64>, String)>()
-        .fetch_all(pool)
-        .await?;
+    type Ligne = (
+        String,
+        String,
+        String,
+        String,
+        Option<i64>,
+        Option<String>,
+        Option<i64>,
+        Option<i64>,
+        Option<String>,
+        String,
+    );
+    let lignes = qb.build_query_as::<Ligne>().fetch_all(pool).await?;
 
     Ok(lignes
         .into_iter()
-        .map(|(id, kind, fichier, nom_origine, taille, apercu, pages, created_at)| JournalPiece {
-            id,
-            kind,
-            nom_origine,
-            chemin: dossier.join(fichier).to_string_lossy().into_owned(),
-            taille,
-            apercu: apercu.map(|a| dossier.join(a).to_string_lossy().into_owned()),
-            pages,
-            created_at,
-        })
+        .map(
+            |(id, kind, fichier, nom_origine, taille, apercu, pages, duree_ms, cretes, created_at)| {
+                JournalPiece {
+                    id,
+                    kind,
+                    nom_origine,
+                    chemin: dossier.join(fichier).to_string_lossy().into_owned(),
+                    taille,
+                    apercu: apercu.map(|a| dossier.join(a).to_string_lossy().into_owned()),
+                    pages,
+                    duree_ms,
+                    // Un dessin illisible se traite comme un dessin absent :
+                    // la note retombe sur sa rangée nue et s'écoute quand
+                    // même. Faire échouer la lecture de la JOURNÉE pour une
+                    // silhouette serait hors de proportion.
+                    cretes: cretes.and_then(|c| serde_json::from_str(&c).ok()),
+                    created_at,
+                }
+            },
+        )
         .collect())
 }
 
@@ -2196,7 +2268,8 @@ pub async fn set_todo_tags(
 #[cfg(test)]
 mod tests {
     use super::{
-        append_journal_entry, create_journal_piece, delete_journal_entry, ids_pieces,
+        append_journal_entry, create_journal_piece, create_journal_voice, delete_journal_entry,
+        ids_pieces,
         ecrire_export, list_journal_entries_for_day, list_journal_pieces, markdown_du_journal,
         nature, nom_unique,
         requete_fts, search_journal, session_ouverte, update_journal_entry, MARQUE_DEBUT,
@@ -3543,6 +3616,8 @@ La suite, dans la foulée.");
             taille: Some(3),
             apercu: None,
             pages: None,
+            duree_ms: None,
+            cretes: None,
             created_at: "2026-09-08T09:00:00.000Z".to_string(),
         };
         let fiches = vec![
@@ -3676,11 +3751,53 @@ La suite, dans la foulée.");
         for nom in ["lettre.docx", "budget.xlsx", "liste.csv", "notes.md", "expose.odp"] {
             assert_eq!(nature(nom), Some("document"), "{nom} aurait dû être un document");
         }
+        // La voix, et un seul format : celui que `MediaRecorder` produit et
+        // qu'on a rejoué. Voir la note sur `nature`.
+        for nom in ["note.webm", "NOTE.WEBM"] {
+            assert_eq!(nature(nom), Some("voix"), "{nom} aurait dû être une voix");
+        }
         // Une archive n'est pas ce qu'on pose dans un journal, et la pièce est
         // COPIÉE : accepter un `.zip` inviterait à y déposer quatre gigaoctets.
+        // `m4a` et `mp4` restent dehors tant qu'on ne les a pas joués.
         for nom in ["archive.zip", "voix.m4a", "film.mp4", "sans-extension", ""] {
             assert_eq!(nature(nom), None, "{nom} n'aurait pas dû passer");
         }
+    }
+
+    #[tokio::test]
+    async fn une_note_vocale_garde_sa_duree_et_sa_forme() {
+        let pool = memory_pool().await;
+        let dossier = std::env::temp_dir().join(format!("listik-voix-{}", Uuid::new_v4()));
+        std::fs::create_dir_all(&dossier).unwrap();
+
+        let cretes = vec![0.0, 0.42, 1.0, 0.15];
+        let note = create_journal_voice(
+            &pool,
+            &dossier,
+            "note-vocale-2026-09-09-14h32.webm",
+            b"\x1a\x45\xdf\xa3 faux webm",
+            7_400,
+            &cretes,
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(note.kind, "voix");
+        assert_eq!(note.duree_ms, Some(7_400));
+        assert_eq!(note.cretes.as_deref(), Some(cretes.as_slice()));
+
+        // Et surtout : elles se RELISENT. C'est tout l'intérêt de les mesurer
+        // à l'enregistrement plutôt qu'à l'affichage.
+        let relu = list_journal_pieces(&pool, &dossier, &[note.id.clone()]).await.unwrap();
+        assert_eq!(relu[0].duree_ms, Some(7_400));
+        assert_eq!(relu[0].cretes.as_deref(), Some(cretes.as_slice()));
+
+        // Ce qui n'est pas une voix ne passe pas par cette porte.
+        assert!(create_journal_voice(&pool, &dossier, "photo.png", b"\x89PNG", 100, &[])
+            .await
+            .is_err());
+
+        std::fs::remove_dir_all(&dossier).ok();
     }
 
     #[tokio::test]

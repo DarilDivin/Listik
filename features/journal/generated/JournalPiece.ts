@@ -10,8 +10,9 @@
  */
 export type JournalPiece = { 
 /**
- * `image`, `pdf` ou `document` — voir `db::nature`. Le PDF a sa propre
- * nature parce qu'il est le seul qui s'aperçoit.
+ * `image`, `pdf`, `document` ou `voix` — voir `db::nature`. Le PDF a sa
+ * propre nature parce qu'il est le seul qui s'aperçoit ; la voix parce
+ * qu'elle est la seule qui s'écoute.
  */
 kind: string, id: string, nom_origine: string, chemin: string, 
 /**
@@ -30,4 +31,17 @@ apercu: string | null,
 /**
  * Nombre de pages du document, quand on a su le lire.
  */
-pages: bigint | null, created_at: string, };
+pages: bigint | null, 
+/**
+ * Durée d'une note vocale, en millisecondes. MESURÉE à l'enregistrement,
+ * parce qu'on ne peut pas la relire : un WebM de `MediaRecorder` n'a pas
+ * de durée dans son en-tête, et `audio.duration` y répond `Infinity`.
+ */
+duree_ms: bigint | null, 
+/**
+ * La silhouette de la voix : une centaine de crêtes entre 0 et 1,
+ * mesurées pendant qu'on parlait. Les recalculer demanderait de décoder
+ * tout l'audio à chaque ouverture de la journée — pour une vignette.
+ * `None` pour tout ce qui n'est pas une voix.
+ */
+cretes: Array<number> | null, created_at: string, };

@@ -200,6 +200,7 @@ fn main() {
             commands::search_journal,
             commands::attach_journal_piece,
             commands::attach_journal_piece_bytes,
+            commands::attach_journal_voice,
             commands::list_journal_pieces,
             commands::set_journal_piece_apercu,
             commands::export_journal,

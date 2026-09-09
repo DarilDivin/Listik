@@ -321,23 +321,38 @@ function VidePlugin({ onVide }: { onVide: (vide: boolean) => void }) {
 export interface JournalSheetHandle {
   /** Ouvre le sélecteur de fichier et pose l'image au curseur. */
   attacher: () => void;
+  /**
+   * Pose au curseur une pièce DÉJÀ créée.
+   *
+   * C'est par là qu'arrive une note vocale : elle s'enregistre dans la page,
+   * hors de l'éditeur — la bande qui bouge pendant qu'on parle n'a pas à
+   * traverser l'état du document, ni à finir dans le markdown enregistré. Une
+   * fois la note faite, il ne reste qu'une pièce à poser, comme les autres.
+   */
+  poser: (pieceId: string) => void;
 }
 
 /**
- * Poser une image dans la journée.
+ * Poser une pièce dans la journée.
  *
- * DEUX portes, et pas trois : le trombone, et le COLLAGE. Le glisser-déposer
- * de fichier n'en est pas une — `dragDropEnabled` est à `false` sur la fenêtre
- * principale, sinon Tauri intercepte le drag natif et WebView2 ne délivre
- * jamais les événements HTML5 dont le réordonnancement des tâches a besoin
- * (voir `docs/ROADMAP-THINGS.md`). Coller reste de loin le geste le plus
- * fréquent pour une capture d'écran.
+ * QUATRE portes : le trombone, le COLLAGE, le glisser-déposer, et `inserer`
+ * pour une pièce déjà créée ailleurs (une note vocale enregistrée par la
+ * page). Coller reste de loin le geste le plus fréquent pour une capture
+ * d'écran.
+ *
+ * Le glisser-déposer marche PARCE QUE `dragDropEnabled` est à `false` sur la
+ * fenêtre principale : Tauri n'intercepte alors pas le drag natif, et WebView2
+ * délivre les événements HTML5 — les mêmes dont le réordonnancement des tâches
+ * a besoin (voir `docs/ROADMAP-THINGS.md`).
  */
 function PiecePlugin({
   poserRef,
+  insererRef,
   onErreur,
 }: {
   poserRef: RefObject<(() => void) | null>;
+  /** Poser une pièce déjà créée — la porte des notes vocales. */
+  insererRef: RefObject<((pieceId: string) => void) | null>;
   onErreur: (message: string) => void;
 }) {
   const [editor] = useLexicalComposerContext();
@@ -383,6 +398,7 @@ function PiecePlugin({
     };
 
     poserRef.current = () => void depuisFichier();
+    insererRef.current = inserer;
 
     /** Le chemin commun au collage et au dépôt : des octets, un nom. */
     const depuisOctets = async (fichier: File) => {
@@ -464,11 +480,12 @@ function PiecePlugin({
 
     return () => {
       poserRef.current = null;
+      insererRef.current = null;
       stopColle();
       stopSurvol();
       stopDepot();
     };
-  }, [editor, poserRef, onErreur]);
+  }, [editor, poserRef, insererRef, onErreur]);
 
   return null;
 }
@@ -510,7 +527,15 @@ export const JournalSheet = forwardRef<JournalSheetHandle, JournalSheetProps>(
   // Le plugin y dépose sa fonction : l'éditeur n'existe qu'à l'INTÉRIEUR du
   // composeur, la poignée doit donc être posée depuis là.
   const poserRef = useRef<(() => void) | null>(null);
-  useImperativeHandle(ref, () => ({ attacher: () => poserRef.current?.() }), []);
+  const insererRef = useRef<((pieceId: string) => void) | null>(null);
+  useImperativeHandle(
+    ref,
+    () => ({
+      attacher: () => poserRef.current?.(),
+      poser: (pieceId: string) => insererRef.current?.(pieceId),
+    }),
+    [],
+  );
 
   return (
     <LexicalComposer
@@ -567,7 +592,11 @@ export const JournalSheet = forwardRef<JournalSheetHandle, JournalSheetProps>(
         <QueuePlugin />
         <IdentitePlugin aStamper={aStamper} />
         <VidePlugin onVide={setVide} />
-        <PiecePlugin poserRef={poserRef} onErreur={onErreurPiece ?? (() => {})} />
+        <PiecePlugin
+          poserRef={poserRef}
+          insererRef={insererRef}
+          onErreur={onErreurPiece ?? (() => {})}
+        />
         <SauvegardePlugin onSegments={onSegments} />
       </div>
     </LexicalComposer>

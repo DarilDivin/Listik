@@ -64,6 +64,26 @@ export const journalApi = {
    */
   attacherOctets: (nom: string, octets: number[]) =>
     invoke<JournalPiece>("attach_journal_piece_bytes", { nom, octets }),
+  /**
+   * Range une note vocale : le fichier, sa durée et sa silhouette d'un seul
+   * geste.
+   *
+   * EN UNE FOIS, contrairement à la vignette d'un PDF : tout est déjà mesuré
+   * quand l'enregistrement s'arrête, et rien ne le retrouverait après — un
+   * WebM de `MediaRecorder` n'a pas de durée dans son en-tête.
+   */
+  attacherVoix: (
+    nom: string,
+    octets: number[],
+    dureeMs: number,
+    cretes: number[],
+  ) =>
+    invoke<JournalPiece>("attach_journal_voice", {
+      nom,
+      octets,
+      dureeMs,
+      cretes,
+    }),
   /** Les fiches des pièces citées par le document. */
   pieces: (ids: string[]) =>
     invoke<JournalPiece[]>("list_journal_pieces", { ids }),

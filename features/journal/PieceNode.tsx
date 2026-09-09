@@ -16,6 +16,7 @@ import type { JSX } from "react";
 import { journalApi } from "./api";
 import { assurerApercu } from "./apercu";
 import { poids } from "./poids";
+import { minutage } from "./voix";
 import type { JournalPiece } from "./types";
 // Import RELATIF, pas `@/` : vitest ne resout pas l alias, et ce fichier est
 // atteint depuis `feuille.test.ts` par la chaine des transformeurs.
@@ -165,6 +166,18 @@ function PieceVue({ pieceId, legende, onLegende }: PieceVueProps) {
     );
   }
 
+  if (piece && piece.kind === "voix") {
+    // Sans silhouette il n'y a rien à dessiner — une note enregistrée par une
+    // version antérieure, ou dont les crêtes n'ont pas pu être lues. Elle
+    // retombe sur la rangée nue et s'écoute quand même : la visionneuse du
+    // système sait ouvrir un WebM.
+    return piece.cretes && piece.cretes.length > 0 ? (
+      <OndeVocale piece={piece} legende={legende} onLegende={onLegende} />
+    ) : (
+      <LigneDocument piece={piece} />
+    );
+  }
+
   if (piece && piece.kind !== "image") {
     // Un PDF dont on a rendu la première page se POSE comme une feuille : on
     // reconnaît un document sans lui donner le poids d'une photo. Les autres
@@ -282,6 +295,121 @@ function FeuillePosee({
         <span className="journal-piece-meta">{apposition(piece)}</span>
         <Legende texte={legende} onTexte={onLegende} />
       </span>
+    </span>
+  );
+}
+
+/**
+ * Une voix dans la journée : sa silhouette, et de quoi l'écouter.
+ *
+ * La forme d'onde n'est pas une décoration. C'est ce qui distingue deux notes
+ * d'affilée — l'une brève et hachée, l'autre longue et posée — là où deux
+ * rangées « note-vocale-14h32.webm » se ressembleraient trait pour trait. On
+ * retrouve un enregistrement à sa forme comme on retrouve une photo à ce
+ * qu'elle montre.
+ *
+ * Les crêtes viennent de la BASE, mesurées pendant qu'on parlait : les
+ * recalculer ici demanderait de décoder tout l'audio à chaque ouverture de la
+ * journée, pour dessiner cent barres.
+ */
+function OndeVocale({
+  piece,
+  legende,
+  onLegende,
+}: {
+  piece: JournalPiece;
+  legende: string;
+  onLegende: (t: string) => void;
+}) {
+  const audioRef = useRef<HTMLAudioElement>(null);
+  const [joue, setJoue] = useState(false);
+  const [avance, setAvance] = useState(0);
+
+  const cretes = piece.cretes ?? [];
+  // La durée MESURÉE, jamais `audio.duration` : un WebM de `MediaRecorder`
+  // n'en porte pas dans son en-tête et répond `Infinity`. Toute la barre de
+  // progression en dépend.
+  const dureeMs = Number(piece.duree_ms ?? 0);
+
+  const basculer = () => {
+    const audio = audioRef.current;
+    if (!audio) return;
+    if (audio.paused) void audio.play().catch(() => {});
+    else audio.pause();
+  };
+
+  return (
+    <span className="journal-piece-voix">
+      <button
+        type="button"
+        className="journal-voix-bouton"
+        aria-label={joue ? "Mettre en pause" : "Écouter la note"}
+        onClick={basculer}
+      >
+        {joue ? (
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor" aria-hidden>
+            <rect x="6" y="4.5" width="4" height="15" rx="1.2" />
+            <rect x="14" y="4.5" width="4" height="15" rx="1.2" />
+          </svg>
+        ) : (
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor" aria-hidden>
+            <path d="M7.5 4.8a1 1 0 0 1 1.53-.85l10 7.2a1 1 0 0 1 0 1.7l-10 7.2A1 1 0 0 1 7.5 19.2z" />
+          </svg>
+        )}
+      </button>
+
+      <span className="journal-voix-corps">
+        <button
+          type="button"
+          className="journal-voix-onde"
+          aria-label="Se déplacer dans la note"
+          onClick={(e) => {
+            const audio = audioRef.current;
+            if (!audio || dureeMs <= 0) return;
+            const boite = e.currentTarget.getBoundingClientRect();
+            const part = Math.min(1, Math.max(0, (e.clientX - boite.left) / boite.width));
+            audio.currentTime = (part * dureeMs) / 1000;
+            setAvance(part);
+          }}
+        >
+          {cretes.map((crete, i) => (
+            <span
+              key={i}
+              // La barre est PASSÉE quand la lecture l'a dépassée : le
+              // remplissage suit la voix, il ne recouvre pas la forme.
+              data-passe={i / cretes.length < avance || undefined}
+              // Un plancher de 9 % : une crête nulle rendrait une barre
+              // invisible, et la bande serait trouée là où l'on s'est tu.
+              style={{ height: `${Math.max(9, crete * 100)}%` }}
+            />
+          ))}
+        </button>
+        <Legende texte={legende} onTexte={onLegende} />
+      </span>
+
+      <span className="journal-voix-duree">
+        {minutage(joue || avance > 0 ? avance * dureeMs : dureeMs)}
+      </span>
+
+      {/* Pas de `controls` : la barre du navigateur afficherait une durée
+          `Infinity` et une glissière inutilisable — c'est justement le défaut
+          qu'on contourne. */}
+      <audio
+        ref={audioRef}
+        src={convertFileSrc(piece.chemin)}
+        preload="metadata"
+        onPlay={() => setJoue(true)}
+        onPause={() => setJoue(false)}
+        onEnded={() => {
+          setJoue(false);
+          setAvance(0);
+        }}
+        onTimeUpdate={(e) => {
+          if (dureeMs > 0) {
+            setAvance(Math.min(1, (e.currentTarget.currentTime * 1000) / dureeMs));
+          }
+        }}
+      />
     </span>
   );
 }

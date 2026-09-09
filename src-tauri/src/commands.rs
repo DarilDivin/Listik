@@ -276,6 +276,25 @@ pub async fn attach_journal_piece_bytes(
     db::create_journal_piece(&state.pool, &dossier, &nom, &octets).await
 }
 
+/// Range une note vocale, enregistrée par le webview.
+///
+/// La durée et les crêtes arrivent AVEC les octets : elles ont été mesurées
+/// pendant qu'on parlait, et rien ne les retrouverait après. La durée parce
+/// qu'un WebM de `MediaRecorder` n'en porte pas dans son en-tête ; les crêtes
+/// parce qu'il faudrait décoder tout l'audio pour redessiner la vignette.
+#[tauri::command]
+pub async fn attach_journal_voice(
+    state: State<'_, AppState>,
+    app: AppHandle,
+    nom: String,
+    octets: Vec<u8>,
+    duree_ms: i64,
+    cretes: Vec<f32>,
+) -> Result<JournalPiece, String> {
+    let dossier = db::dossier_pieces(&app)?;
+    db::create_journal_voice(&state.pool, &dossier, &nom, &octets, duree_ms, &cretes).await
+}
+
 /// Range la vignette d'un PDF, rendue par le webview.
 ///
 /// Deux temps plutôt qu'un : la pièce est attachée et POSÉE dans la page tout

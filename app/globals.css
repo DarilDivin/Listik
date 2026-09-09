@@ -997,3 +997,154 @@
 .journal-piece-legende:focus:empty::before {
   color: color-mix(in oklch, var(--color-muted-foreground) 35%, transparent);
 }
+
+/* ──────────────────────────────────────────────────────────────────────────
+ * Une voix dans la journée.
+ *
+ * Pas de rangée close par des filets, comme un document : une note vocale se
+ * RECONNAÎT à sa forme, et la forme est déjà une structure. Deux notes
+ * d'affilée — l'une brève et hachée, l'autre longue et posée — se distinguent
+ * d'un coup d'œil là où deux lignes « note-vocale-14h32.webm » se
+ * ressembleraient trait pour trait.
+ * ────────────────────────────────────────────────────────────────────────── */
+.journal-piece-voix {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.85rem;
+  padding: 0.25rem 0;
+}
+.journal-voix-bouton {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.25rem;
+  height: 2.25rem;
+  /* Le seul rond de la page : c'est un bouton de lecture, et il n'y a pas
+     d'autre forme qui dise « écouter » sans mot. */
+  border-radius: 999px;
+  background-color: var(--color-brand-soft);
+  color: var(--color-brand);
+  outline: none;
+  cursor: pointer;
+  transition:
+    background-color 140ms ease,
+    transform 140ms ease;
+}
+.journal-voix-bouton:hover {
+  background-color: color-mix(in oklch, var(--brand) 18%, transparent);
+}
+.journal-voix-bouton:active {
+  transform: scale(0.94);
+}
+.journal-voix-bouton:focus-visible {
+  box-shadow: 0 0 0 2px var(--color-ring);
+}
+.journal-voix-corps {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  flex: 1;
+}
+/* La bande elle-même : cent barres, alignées sur l'axe médian. Pas de miroir
+   sous l'axe — une demi-onde suffit à lire un rythme, et la symétrie n'aurait
+   fait que doubler la hauteur pour la même information. */
+.journal-voix-onde {
+  display: flex;
+  align-items: center;
+  gap: 1.5px;
+  width: 100%;
+  height: 2.25rem;
+  padding: 0;
+  border: none;
+  background: none;
+  outline: none;
+  cursor: pointer;
+}
+.journal-voix-onde:focus-visible {
+  box-shadow: 0 0 0 2px var(--color-ring);
+  border-radius: 3px;
+}
+.journal-voix-onde > span {
+  flex: 1;
+  min-width: 1px;
+  border-radius: 1px;
+  background-color: color-mix(in oklch, var(--color-foreground) 22%, transparent);
+  transition: background-color 90ms linear;
+}
+/* Ce qui est PASSÉ prend l'accent : le remplissage suit la voix, il ne
+   recouvre pas la forme d'un bandeau. */
+.journal-voix-onde > span[data-passe] {
+  background-color: var(--color-brand);
+}
+.journal-voix-duree {
+  flex: none;
+  padding-top: 0.75rem;
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 0.6875rem;
+  /* Chiffres à chasse fixe : sans ça, la durée sautille à chaque seconde
+     pendant la lecture et tire l'œil hors de l'onde. */
+  font-variant-numeric: tabular-nums;
+  color: var(--color-muted-foreground);
+}
+.journal-voix-corps .journal-piece-legende {
+  margin-top: 0.15em;
+}
+
+/* La bande d'enregistrement : ce qui se passe MAINTENANT, pas ce qui est
+   gardé. Elle n'entre pas dans le document — elle se tient sous lui, le temps
+   qu'on parle, et s'efface en laissant une pièce. */
+.journal-bande {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  margin-top: 1rem;
+  padding: 0.5rem 0.75rem 0.5rem 0.9rem;
+  border-radius: 10px;
+  /* Le seul fond de la colonne de texte : la bande est un état, pas de
+     l'encre. C'est ce qui dit qu'elle partira. */
+  background-color: color-mix(in oklch, var(--color-foreground) 4%, transparent);
+}
+.journal-bande-point {
+  flex: none;
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 999px;
+  background-color: oklch(0.58 0.21 25);
+  animation: journal-bande-pouls 1.6s ease-in-out infinite;
+}
+@keyframes journal-bande-pouls {
+  50% {
+    opacity: 0.25;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .journal-bande-point {
+    animation: none;
+  }
+}
+/* Ce que le micro entend à l'instant : les trois dernières secondes, les plus
+   récentes à droite. Ce n'est PAS la silhouette qui sera gardée — celle-là se
+   calcule à l'arrêt, quand on sait enfin ce qui a été le plus fort. */
+.journal-bande-onde {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex: 1;
+  height: 1.75rem;
+  min-width: 0;
+}
+.journal-bande-onde > span {
+  flex: 1;
+  min-width: 1px;
+  border-radius: 1px;
+  background-color: var(--color-brand);
+  transition: height 90ms linear;
+}
+.journal-bande-duree {
+  flex: none;
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 0.6875rem;
+  font-variant-numeric: tabular-nums;
+  color: var(--color-muted-foreground);
+}
