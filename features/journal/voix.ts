@@ -172,7 +172,15 @@ export async function enregistrer(
             )
             .catch(reject);
         };
-        magnetophone.stop();
+        // Si `stop()` lève, `onstop` ne viendra jamais : sans ce filet, la
+        // promesse ne se règle pas, l'appelant a déjà lâché la session, et le
+        // micro reste ouvert sans plus rien pour l'atteindre.
+        try {
+          magnetophone.stop();
+        } catch (e) {
+          fermer();
+          reject(e);
+        }
       }),
     annuler: () => {
       // Pas de `onstop` : personne n'attend les octets, et les laisser se

@@ -7,6 +7,7 @@ import { format } from "date-fns";
 import { fr } from "date-fns/locale";
 import { ChevronLeft, ChevronRight, Download, Mic, Paperclip, Search } from "lucide-react";
 import { useFeuille } from "@/features/journal/useFeuille";
+import { useJournalMutations } from "@/features/journal/useJournalMutations";
 import { journalApi } from "@/features/journal/api";
 import { exporterJournal, resume } from "@/features/journal/export";
 // Aliasé : `useFeuille` expose déjà un `enregistrer`, qui sauve le TEXTE.
@@ -111,6 +112,9 @@ function JournalPageContent() {
 
   const [cherche, setCherche] = useState(false);
   const feuilleRef = useRef<JournalSheetHandle>(null);
+  // Sert au seul cas d'une note vocale finie sur une AUTRE page que celle où
+  // elle a commencé — voir `terminer`.
+  const { appendEntry } = useJournalMutations();
 
   // L'export sort TOUT le journal, pas le jour affiché : ce qu'on veut d'un
   // export, c'est pouvoir partir avec ses écrits — pas en découper une page.
@@ -148,6 +152,11 @@ function JournalPageContent() {
     niveauRef.current = surNiveau;
   }, []);
 
+  // Le jour où l'enregistrement a COMMENCÉ. On peut tourner les pages en
+  // parlant : la note appartient au jour qu'on avait sous les yeux quand on a
+  // ouvert le micro, pas à celui qu'on regarde en le refermant.
+  const jourRef = useRef(day);
+
   const commencer = async () => {
     // La feuille est démontée pendant une recherche : sans ça, la note
     // s'enregistrerait pour n'avoir nulle part où se poser.
@@ -155,6 +164,7 @@ function JournalPageContent() {
     try {
       sessionRef.current = await ouvrirLeMicro((n) => niveauRef.current(n));
       departRef.current = performance.now();
+      jourRef.current = day;
       setEnregistre(true);
     } catch (e) {
       console.error("voix:", e);
@@ -183,9 +193,21 @@ function JournalPageContent() {
         note.dureeMs,
         note.cretes,
       );
-      // Au CURSEUR, comme une image collée : la note se pose là où l'on en
-      // était, pas au bout de la journée.
-      feuilleRef.current?.poser(piece.id);
+      if (jourRef.current === day) {
+        // Au CURSEUR, comme une image collée : la note se pose là où l'on en
+        // était, pas au bout de la journée.
+        feuilleRef.current?.poser(piece.id);
+      } else {
+        // On a tourné la page en parlant. La feuille affichée est celle d'un
+        // AUTRE jour — y poser la note au curseur la déposerait dans une
+        // journée où elle n'a pas été dite. Elle rejoint donc la sienne, par
+        // la même porte que la capture rapide, et on dit où elle est allée :
+        // sinon elle semblerait perdue.
+        await appendEntry(jourRef.current, `![](piece:${piece.id})`);
+        toast.success(
+          `Note vocale gardée au ${format(parseLocalISODate(jourRef.current), "d MMMM", { locale: fr })}.`,
+        );
+      }
     } catch (e) {
       console.error("attach_journal_voice:", e);
       toast.error("La note vocale n'a pas pu être enregistrée.");
