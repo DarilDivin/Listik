@@ -21,6 +21,8 @@ import {
   $isRangeSelection,
   $parseSerializedNode,
   COMMAND_PRIORITY_LOW,
+  DRAGOVER_COMMAND,
+  DROP_COMMAND,
   KEY_BACKSPACE_COMMAND,
   PASTE_COMMAND,
   type LexicalNode,
@@ -382,7 +384,23 @@ function PiecePlugin({
 
     poserRef.current = () => void depuisFichier();
 
-    const stop = editor.registerCommand(
+    /** Le chemin commun au collage et au dépôt : des octets, un nom. */
+    const depuisOctets = async (fichier: File) => {
+      try {
+        const octets = new Uint8Array(await fichier.arrayBuffer());
+        // Une capture d'écran n'a pas de nom de fichier : on lui en donne un,
+        // avec l'extension que son type MIME annonce — c'est elle qui décide
+        // si Rust sait le ranger.
+        const ext = (fichier.type.split("/")[1] ?? "png").replace("jpeg", "jpg");
+        const nom = fichier.name || `collage.${ext}`;
+        const piece = await journalApi.attacherOctets(nom, Array.from(octets));
+        inserer(piece.id);
+      } catch (e) {
+        onErreur(String(e));
+      }
+    };
+
+    const stopColle = editor.registerCommand(
       PASTE_COMMAND,
       (event) => {
         // `PASTE_COMMAND` porte trois formes d'événement selon la façon de
@@ -394,20 +412,51 @@ function PiecePlugin({
         // type — c'est `db::nature` qui décide, et lui seul.
         if (!fichier) return false;
         event.preventDefault();
-        void (async () => {
-          try {
-            const octets = new Uint8Array(await fichier.arrayBuffer());
-            // Une capture d'écran n'a pas de nom de fichier : on lui en donne
-            // un, avec l'extension que son type MIME annonce — c'est elle qui
-            // décide si Rust sait le ranger.
-            const ext = (fichier.type.split("/")[1] ?? "png").replace("jpeg", "jpg");
-            const nom = fichier.name || `collage.${ext}`;
-            const piece = await journalApi.attacherOctets(nom, Array.from(octets));
-            inserer(piece.id);
-          } catch (e) {
-            onErreur(String(e));
-          }
-        })();
+        void depuisOctets(fichier);
+        return true;
+      },
+      COMMAND_PRIORITY_LOW,
+    );
+
+    /**
+     * Pendant le SURVOL, le navigateur cache le contenu du presse-glisser :
+     * `files` est vide par sécurité tant que rien n'est lâché. Seul `types`
+     * est lisible, et c'est lui qui dit si des fichiers arrivent.
+     */
+    const porteUnFichier = (dt: DataTransfer | null) =>
+      Array.from(dt?.types ?? []).includes("Files");
+
+    const stopSurvol = editor.registerCommand(
+      DRAGOVER_COMMAND,
+      (event) => {
+        if (!porteUnFichier(event.dataTransfer)) return false;
+        // Sans ce `preventDefault`, WebView2 fait ce que fait un navigateur :
+        // il QUITTE la page pour afficher le fichier lâché, et l'app est
+        // perdue jusqu'au rechargement.
+        event.preventDefault();
+        return true;
+      },
+      COMMAND_PRIORITY_LOW,
+    );
+
+    const stopDepot = editor.registerCommand(
+      DROP_COMMAND,
+      (event) => {
+        const fichier = Array.from(event.dataTransfer?.files ?? [])[0];
+        // Pas de fichier : c'est un déplacement INTERNE (un nœud qu'on tire
+        // dans le texte). Lexical le fait mieux que nous.
+        if (!fichier) return false;
+        event.preventDefault();
+        // Poser le curseur là où on a lâché : une pièce doit atterrir sous le
+        // geste, pas au bout de la journée. Fait tout de suite, pendant qu'on
+        // tient les coordonnées — la copie du fichier, elle, prend un moment.
+        const portee = document.caretRangeFromPoint?.(event.clientX, event.clientY);
+        if (portee) {
+          const selection = window.getSelection();
+          selection?.removeAllRanges();
+          selection?.addRange(portee);
+        }
+        void depuisOctets(fichier);
         return true;
       },
       COMMAND_PRIORITY_LOW,
@@ -415,7 +464,9 @@ function PiecePlugin({
 
     return () => {
       poserRef.current = null;
-      stop();
+      stopColle();
+      stopSurvol();
+      stopDepot();
     };
   }, [editor, poserRef, onErreur]);
 
