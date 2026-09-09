@@ -886,6 +886,48 @@
 }
 /* La LÉGENDE, pas le nom de fichier : `IMG_4821.jpg` ne dira rien dans dix
    ans. Le champ est là, vide et discret ; on écrit ou on n'écrit pas. */
+/* Un document ne se montre pas, il se nomme : une rangée close par deux
+   filets, l'idiome des Réglages. Pas de fond, pas de bordure dure — ce n'est
+   pas une carte posée sur la page, c'est une ligne DE la page. */
+.journal-piece-ligne {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  width: 100%;
+  padding: 0.7rem 0.25rem;
+  border-top: 1px solid var(--color-border);
+  border-bottom: 1px solid var(--color-border);
+  text-align: left;
+  outline: none;
+  transition: background-color 140ms ease;
+}
+.journal-piece-ligne:hover {
+  background-color: color-mix(in oklch, var(--color-foreground) 4%, transparent);
+}
+.journal-piece-ligne:focus-visible {
+  box-shadow: 0 0 0 2px var(--color-ring);
+  border-radius: 3px;
+}
+.journal-piece-ligne svg {
+  flex: none;
+  color: var(--color-muted-foreground);
+}
+.journal-piece-nom {
+  font-size: 0.9375rem;
+  font-weight: 500;
+  line-height: 1.4;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.journal-piece-meta {
+  margin-left: auto;
+  flex: none;
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 0.6875rem;
+  font-variant-numeric: tabular-nums;
+  color: var(--color-muted-foreground);
+}
 .journal-piece-legende {
   display: block;
   margin-top: 0.55em;

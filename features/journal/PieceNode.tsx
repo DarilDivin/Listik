@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import useSWR from "swr";
 import { convertFileSrc } from "@tauri-apps/api/core";
+import { openPath } from "@tauri-apps/plugin-opener";
 import { DecoratorNode } from "lexical";
 import type {
   LexicalEditor,
@@ -13,6 +14,8 @@ import type {
 } from "lexical";
 import type { JSX } from "react";
 import { journalApi } from "./api";
+import { poids } from "./poids";
+import type { JournalPiece } from "./types";
 // Import RELATIF, pas `@/` : vitest ne resout pas l alias, et ce fichier est
 // atteint depuis `feuille.test.ts` par la chaine des transformeurs.
 import { SWR_KEYS } from "../../lib/swr-config";
@@ -155,9 +158,17 @@ function PieceVue({ pieceId, legende, onLegende }: PieceVueProps) {
   if (error || piece === null) {
     return (
       <span className="journal-piece-absente">
-        Image introuvable — le fichier a été déplacé ou effacé.
+        Pièce introuvable — le fichier a été déplacé ou effacé.
       </span>
     );
+  }
+
+  // Un document se NOMME, il ne se montre pas : il n'y a pas de moteur de
+  // rendu par format, et un `.xlsx` affiché serait de toute façon illisible à
+  // la taille d'une vignette. La rangée est close par deux filets, comme les
+  // Réglages — l'ouvrir passe par la visionneuse du système.
+  if (piece && piece.kind !== "image") {
+    return <DocumentVue piece={piece} />;
   }
 
   return (
@@ -189,6 +200,51 @@ function PieceVue({ pieceId, legende, onLegende }: PieceVueProps) {
         onInput={(e) => onLegende(e.currentTarget.textContent ?? "")}
       />
     </>
+  );
+}
+
+/**
+ * Un document posé dans la journée : son nom, son poids, et de quoi l'ouvrir.
+ *
+ * Le nom d'origine plutôt que l'UUID du disque — c'est `bail-signe-2026.pdf`
+ * qu'on reconnaît. La taille manque pour les pièces attachées avant que la
+ * colonne existe : `poids` rend alors une chaîne vide, et la ligne se contente
+ * du nom (voir `poids.ts`).
+ */
+function DocumentVue({ piece }: { piece: JournalPiece }) {
+  const [erreur, setErreur] = useState(false);
+  const taille = poids(piece.taille);
+
+  return (
+    <button
+      type="button"
+      className="journal-piece-ligne"
+      title={`Ouvrir ${piece.nom_origine}`}
+      onClick={() => {
+        // La visionneuse du système, pas une nôtre : elle sait déjà ouvrir un
+        // PDF, un tableur et un traitement de texte, et elle le fait mieux.
+        openPath(piece.chemin).catch(() => setErreur(true));
+      }}
+    >
+      <svg
+        width="17"
+        height="17"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.6"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        aria-hidden
+      >
+        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+        <path d="M14 2v6h6" />
+      </svg>
+      <span className="journal-piece-nom">{piece.nom_origine}</span>
+      <span className="journal-piece-meta">
+        {erreur ? "Impossible à ouvrir" : taille}
+      </span>
+    </button>
   );
 }
 

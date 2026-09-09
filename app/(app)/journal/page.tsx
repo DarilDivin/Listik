@@ -244,8 +244,8 @@ function JournalPageContent() {
           <Button
             variant="ghost"
             size="icon-sm"
-            aria-label="Joindre une image"
-            title="Joindre une image"
+            aria-label="Joindre un fichier"
+            title="Joindre un fichier"
             onClick={() => feuilleRef.current?.attacher()}
           >
             <Paperclip />

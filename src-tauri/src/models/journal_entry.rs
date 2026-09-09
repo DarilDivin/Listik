@@ -31,10 +31,16 @@ pub struct JournalEntry {
 #[derive(Debug, Clone, Serialize, TS)]
 #[ts(export, export_to = "../../features/journal/generated/")]
 pub struct JournalPiece {
-    pub id: String,
+    /// `image`, `pdf` ou `document` — voir `db::nature`. Le PDF a sa propre
+    /// nature parce qu'il est le seul qui s'aperçoit.
     pub kind: String,
+    pub id: String,
     pub nom_origine: String,
     pub chemin: String,
+    /// Taille en octets. `None` pour les pièces attachées avant que la
+    /// colonne existe : une taille inconnue ne s'affiche pas, elle ne
+    /// s'invente pas non plus.
+    pub taille: Option<i64>,
     pub created_at: String,
 }
 

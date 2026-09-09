@@ -8,4 +8,15 @@
  * avec `convertFileSrc`. On ne renvoie pas les octets — une photo de trois
  * méga-octets traverserait l'IPC en base64 à chaque rendu.
  */
-export type JournalPiece = { id: string, kind: string, nom_origine: string, chemin: string, created_at: string, };
+export type JournalPiece = { 
+/**
+ * `image`, `pdf` ou `document` — voir `db::nature`. Le PDF a sa propre
+ * nature parce qu'il est le seul qui s'aperçoit.
+ */
+kind: string, id: string, nom_origine: string, chemin: string, 
+/**
+ * Taille en octets. `None` pour les pièces attachées avant que la
+ * colonne existe : une taille inconnue ne s'affiche pas, elle ne
+ * s'invente pas non plus.
+ */
+taille: bigint | null, created_at: string, };

@@ -21,6 +21,7 @@ fn main() {
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_opener::init())
         .setup(|app| {
             // --- Base de données (accès SQL côté Rust) ---
             let handle = app.handle().clone();

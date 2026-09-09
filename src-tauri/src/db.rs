@@ -1039,7 +1039,21 @@ pub fn dossier_pieces(app: &AppHandle) -> Result<std::path::PathBuf, String> {
 /// fichier accepté puis muet à l'écran serait pire qu'un fichier refusé.
 const IMAGES: [&str; 6] = ["png", "jpg", "jpeg", "gif", "webp", "avif"];
 
+/// Les documents qu'une journée reçoit : un bail, une facture, un article, un
+/// tableur, des notes.
+///
+/// Pas d'archives : un `.zip` n'est pas ce qu'on pose dans un journal, et
+/// l'accepter inviterait à y déposer quatre gigaoctets — la pièce est COPIÉE,
+/// le poids reste.
+const DOCUMENTS: [&str; 13] = [
+    "doc", "docx", "odt", "rtf", "txt", "md", "xls", "xlsx", "ods", "csv", "ppt", "pptx", "odp",
+];
+
 /// La nature d'un fichier, d'après son extension.
+///
+/// Le PDF a sa propre nature parce qu'il est le seul qui s'APERÇOIT : sa
+/// première page se rend en image. Les autres documents se nomment, ils ne se
+/// montrent pas — il faudrait un moteur de rendu par format.
 pub fn nature(nom: &str) -> Option<&'static str> {
     let ext = std::path::Path::new(nom)
         .extension()
@@ -1047,6 +1061,12 @@ pub fn nature(nom: &str) -> Option<&'static str> {
         .to_ascii_lowercase();
     if IMAGES.contains(&ext.as_str()) {
         return Some("image");
+    }
+    if ext == "pdf" {
+        return Some("pdf");
+    }
+    if DOCUMENTS.contains(&ext.as_str()) {
+        return Some("document");
     }
     None
 }
@@ -1063,7 +1083,7 @@ pub async fn create_journal_piece(
     octets: &[u8],
 ) -> Result<JournalPiece, String> {
     let Some(kind) = nature(nom_origine) else {
-        return Err(format!("« {nom_origine} » n'est pas une image que Listik sait afficher."));
+        return Err(format!("« {nom_origine} » n'est pas un fichier que Listik sait ranger."));
     };
     let ext = std::path::Path::new(nom_origine)
         .extension()
@@ -1077,14 +1097,16 @@ pub async fn create_journal_piece(
     std::fs::write(&chemin, octets).map_err(|e| e.to_string())?;
 
     let created_at = now_iso();
+    let taille = octets.len() as i64;
     sqlx::query(
-        "INSERT INTO journal_pieces (id, kind, fichier, nom_origine, created_at) \
-         VALUES (?, ?, ?, ?, ?)",
+        "INSERT INTO journal_pieces (id, kind, fichier, nom_origine, taille, created_at) \
+         VALUES (?, ?, ?, ?, ?, ?)",
     )
     .bind(&id)
     .bind(kind)
     .bind(&fichier)
     .bind(nom_origine)
+    .bind(taille)
     .bind(&created_at)
     .execute(pool)
     .await
@@ -1095,6 +1117,7 @@ pub async fn create_journal_piece(
         kind: kind.to_string(),
         nom_origine: nom_origine.to_string(),
         chemin: chemin.to_string_lossy().into_owned(),
+        taille: Some(taille),
         created_at,
     })
 }
@@ -1114,7 +1137,7 @@ pub async fn list_journal_pieces(
         return Ok(Vec::new());
     }
     let mut qb: QueryBuilder<Sqlite> = QueryBuilder::new(
-        "SELECT id, kind, fichier, nom_origine, created_at FROM journal_pieces WHERE id IN (",
+        "SELECT id, kind, fichier, nom_origine, taille, created_at FROM journal_pieces WHERE id IN (",
     );
     let mut sep = qb.separated(", ");
     for id in ids {
@@ -1123,17 +1146,18 @@ pub async fn list_journal_pieces(
     qb.push(")");
 
     let lignes = qb
-        .build_query_as::<(String, String, String, String, String)>()
+        .build_query_as::<(String, String, String, String, Option<i64>, String)>()
         .fetch_all(pool)
         .await?;
 
     Ok(lignes
         .into_iter()
-        .map(|(id, kind, fichier, nom_origine, created_at)| JournalPiece {
+        .map(|(id, kind, fichier, nom_origine, taille, created_at)| JournalPiece {
             id,
             kind,
             nom_origine,
             chemin: dossier.join(fichier).to_string_lossy().into_owned(),
+            taille,
             created_at,
         })
         .collect())
@@ -1232,14 +1256,27 @@ fn cible_lien(cible: &str) -> String {
     }
 }
 
+/// Ce qu'une pièce devient dans l'export.
+pub struct Sortie {
+    /// Son nom dans le dossier voisin. `None` quand la copie a échoué — le
+    /// fichier avait disparu du disque.
+    pub fichier: Option<String>,
+    /// Une image se MONTRE (`![…]`), un document se CITE (`[…]`) : un lecteur
+    /// de Markdown à qui l'on donne `![](bail.pdf)` n'affiche rien du tout.
+    pub image: bool,
+    /// Le nom d'origine. Il fait le texte du lien quand un document n'a pas de
+    /// légende : `[](bail.pdf)` serait un lien sans prise.
+    pub nom: String,
+}
+
 /// Remplace les renvois internes par des liens vers le dossier voisin.
 ///
 /// `piece:<id>` est un schéma PRIVÉ : hors de l'app il ne pointe nulle part.
-/// Une pièce absente de `noms` (fichier disparu, copie échouée) laisse sa
-/// légende en texte simple — mieux vaut une phrase orpheline qu'un lien mort.
+/// Une pièce dont le fichier a disparu laisse son texte en clair — mieux vaut
+/// une phrase orpheline qu'un lien mort.
 fn reecrire_pieces(
     contenu: &str,
-    noms: &std::collections::HashMap<String, String>,
+    sorties: &std::collections::HashMap<String, Sortie>,
     dossier: &str,
 ) -> String {
     const OUVERTURE: &str = "](piece:";
@@ -1266,11 +1303,25 @@ fn reecrire_pieces(
         let legende = &apres[..j];
         let id = &queue[OUVERTURE.len()..k];
         out.push_str(&reste[..i]);
-        match noms.get(id) {
-            Some(fichier) => out.push_str(&format!(
-                "![{legende}]({})",
-                cible_lien(&format!("{dossier}/{fichier}"))
-            )),
+        match sorties.get(id) {
+            Some(s) => {
+                // Une image sans légende reste une image — `![]` est valide et
+                // porte le fichier. Un document sans légende n'aurait aucun
+                // texte à cliquer : c'est son nom qui le fait.
+                let texte = match (s.image, legende.is_empty()) {
+                    (false, true) => s.nom.as_str(),
+                    _ => legende,
+                };
+                match &s.fichier {
+                    Some(fichier) => out.push_str(&format!(
+                        "{}[{texte}]({})",
+                        if s.image { "!" } else { "" },
+                        cible_lien(&format!("{dossier}/{fichier}"))
+                    )),
+                    // Le fichier a disparu : il reste ce qu'on en disait.
+                    None => out.push_str(texte),
+                }
+            }
             None => out.push_str(legende),
         }
         reste = &queue[k + 1..];
@@ -1296,31 +1347,43 @@ pub fn ecrire_export(
         cible.file_stem().and_then(|s| s.to_str()).unwrap_or("journal")
     );
 
-    let mut noms: std::collections::HashMap<String, String> = std::collections::HashMap::new();
+    let mut sorties: std::collections::HashMap<String, Sortie> = std::collections::HashMap::new();
+    let mut copiees = 0u32;
     if !fiches.is_empty() {
         let dossier = cible.with_file_name(&nom_dossier);
         std::fs::create_dir_all(&dossier).map_err(|e| e.to_string())?;
         let mut pris = std::collections::HashSet::new();
         for f in fiches {
             let nom = nom_unique(&mut pris, &f.nom_origine);
-            // Une photo disparue du disque n'arrête pas l'export : sa légende
-            // restera en texte plutôt qu'en lien mort.
-            if std::fs::copy(&f.chemin, dossier.join(&nom)).is_ok() {
-                noms.insert(f.id.clone(), nom);
+            // Une pièce disparue du disque n'arrête pas l'export : elle entre
+            // quand même dans la table, sans fichier, pour que le document
+            // garde une trace de ce qu'il y avait là.
+            let fichier = if std::fs::copy(&f.chemin, dossier.join(&nom)).is_ok() {
+                copiees += 1;
+                Some(nom)
             } else {
                 pris.remove(&nom);
-            }
+                None
+            };
+            sorties.insert(
+                f.id.clone(),
+                Sortie {
+                    fichier,
+                    image: f.kind == "image",
+                    nom: f.nom_origine.clone(),
+                },
+            );
         }
     }
 
-    std::fs::write(cible, markdown_du_journal(entries, &noms, &nom_dossier))
+    std::fs::write(cible, markdown_du_journal(entries, &sorties, &nom_dossier))
         .map_err(|e| e.to_string())?;
 
     let mut jours: Vec<&str> = entries.iter().map(|e| e.target_day.as_str()).collect();
     jours.dedup();
     Ok(JournalExport {
         jours: jours.len() as u32,
-        pieces: noms.len() as u32,
+        pieces: copiees,
     })
 }
 
@@ -1331,11 +1394,11 @@ pub fn ecrire_export(
 /// en un fichier par bloc rendrait à l'export ce que la page a justement
 /// cessé de montrer.
 ///
-/// `noms` associe l'identifiant d'une pièce au nom qu'elle porte dans le
+/// `sorties` dit, pour chaque identifiant de pièce, ce qu'elle devient dans le
 /// dossier voisin `dossier`.
 pub fn markdown_du_journal(
     entries: &[JournalEntry],
-    noms: &std::collections::HashMap<String, String>,
+    sorties: &std::collections::HashMap<String, Sortie>,
     dossier: &str,
 ) -> String {
     let mut out = String::from("# Journal\n\n");
@@ -1344,7 +1407,7 @@ pub fn markdown_du_journal(
     for e in entries {
         // On rogne APRÈS la réécriture : une pièce introuvable en tête de bloc
         // s'efface, et laisserait sinon ses lignes vides derrière elle.
-        let corps = reecrire_pieces(&e.content, noms, dossier).trim().to_string();
+        let corps = reecrire_pieces(&e.content, sorties, dossier).trim().to_string();
         // Un bloc vidé mais jamais effacé ne mérite pas une heure à lui seul.
         if corps.trim().is_empty() {
             continue;
@@ -2097,7 +2160,7 @@ mod tests {
         ecrire_export, list_journal_entries_for_day, list_journal_pieces, markdown_du_journal,
         nature, nom_unique,
         requete_fts, search_journal, session_ouverte, update_journal_entry, MARQUE_DEBUT,
-        MARQUE_FIN,
+        MARQUE_FIN, Sortie,
         create, create_area, create_note, create_project, create_subtask, create_tag, delete,
         delete_area, delete_note, delete_project, delete_tag, due_reminders, duplicate_project,
         duplicate_todo, get, get_settings, list_all, list_areas, list_by_date, list_notes,
@@ -3287,10 +3350,60 @@ La suite, dans la foulée.");
         }
     }
 
+    /// Une pièce copiée sans encombre dans le dossier voisin.
+    fn sortie(fichier: &str, image: bool) -> Sortie {
+        Sortie {
+            fichier: Some(fichier.to_string()),
+            image,
+            nom: fichier.to_string(),
+        }
+    }
+
+    #[test]
+    fn un_document_se_cite_quand_une_photo_se_montre() {
+        // `![](bail.pdf)` n'affiche RIEN chez un lecteur de Markdown : un
+        // document est un lien, pas une image.
+        let mut sorties = std::collections::HashMap::new();
+        sorties.insert("photo".to_string(), sortie("capture.png", true));
+        sorties.insert("bail".to_string(), sortie("bail-signe-2026.pdf", false));
+
+        let entries = vec![bloc(
+            "2026-09-09",
+            "2026-09-09T09:00:00.000Z",
+            "![Le muret](piece:photo)\n\n![](piece:bail)\n\n![Relu par le notaire](piece:bail)",
+        )];
+        let md = markdown_du_journal(&entries, &sorties, "p");
+
+        assert!(md.contains("![Le muret](p/capture.png)"), "{md}");
+        // Sans légende, c'est le NOM du fichier qui fait le texte du lien :
+        // `[](p/bail…)` serait un lien sans prise.
+        assert!(md.contains("[bail-signe-2026.pdf](p/bail-signe-2026.pdf)"), "{md}");
+        assert!(md.contains("[Relu par le notaire](p/bail-signe-2026.pdf)"), "{md}");
+        // Et jamais la forme image pour un document.
+        assert!(!md.contains("![bail"), "{md}");
+        assert!(!md.contains("![Relu"), "{md}");
+    }
+
+    #[test]
+    fn un_document_disparu_garde_son_nom_dans_l_export() {
+        // Une photo envolée laisse sa légende ; un document envolé sans
+        // légende ne laisserait RIEN — son nom est tout ce qu'on en savait.
+        let mut sorties = std::collections::HashMap::new();
+        sorties.insert(
+            "bail".to_string(),
+            Sortie { fichier: None, image: false, nom: "bail-signe-2026.pdf".to_string() },
+        );
+        let entries = vec![bloc("2026-09-09", "2026-09-09T09:00:00.000Z", "![](piece:bail)")];
+        let md = markdown_du_journal(&entries, &sorties, "p");
+
+        assert!(md.contains("bail-signe-2026.pdf"), "{md}");
+        assert!(!md.contains("]("), "aucun lien ne doit pointer vers le vide — {md}");
+    }
+
     #[test]
     fn l_export_rend_un_document_par_jour_et_des_liens_qui_pointent_quelque_part() {
         let mut noms = std::collections::HashMap::new();
-        noms.insert("f9aa0944".to_string(), "capture.png".to_string());
+        noms.insert("f9aa0944".to_string(), sortie("capture.png", true));
 
         let entries = vec![
             bloc("2026-09-07", "2026-09-07T09:15:00.000Z", "Une première journée."),
@@ -3387,6 +3500,7 @@ La suite, dans la foulée.");
             kind: "image".to_string(),
             nom_origine: nom.to_string(),
             chemin: chemin.to_string_lossy().into_owned(),
+            taille: Some(3),
             created_at: "2026-09-08T09:00:00.000Z".to_string(),
         };
         let fiches = vec![
@@ -3513,7 +3627,16 @@ La suite, dans la foulée.");
         for nom in ["photo.png", "PHOTO.JPG", "vue.jpeg", "anim.gif", "x.webp", "y.avif"] {
             assert_eq!(nature(nom), Some("image"), "{nom} aurait dû être une image");
         }
-        for nom in ["notes.pdf", "voix.m4a", "archive.zip", "sans-extension", ""] {
+        // Le PDF a sa propre nature : c'est le seul document qui s'aperçoit.
+        for nom in ["bail.pdf", "BAIL.PDF"] {
+            assert_eq!(nature(nom), Some("pdf"), "{nom} aurait dû être un pdf");
+        }
+        for nom in ["lettre.docx", "budget.xlsx", "liste.csv", "notes.md", "expose.odp"] {
+            assert_eq!(nature(nom), Some("document"), "{nom} aurait dû être un document");
+        }
+        // Une archive n'est pas ce qu'on pose dans un journal, et la pièce est
+        // COPIÉE : accepter un `.zip` inviterait à y déposer quatre gigaoctets.
+        for nom in ["archive.zip", "voix.m4a", "film.mp4", "sans-extension", ""] {
             assert_eq!(nature(nom), None, "{nom} n'aurait pas dû passer");
         }
     }
@@ -3558,9 +3681,16 @@ La suite, dans la foulée.");
 
         assert!(list_journal_pieces(&pool, &dossier, &[]).await.unwrap().is_empty());
 
-        // Ce que Listik ne sait pas afficher est refusé, et rien n'est écrit.
+        // Un document, lui, est accepté — et sa taille est celle des octets.
+        let doc = create_journal_piece(&pool, &dossier, "bail.pdf", b"%PDF-1.7")
+            .await
+            .unwrap();
+        assert_eq!(doc.kind, "pdf");
+        assert_eq!(doc.taille, Some(8));
+
+        // Ce que Listik ne sait pas ranger est refusé, et rien n'est écrit.
         let avant = std::fs::read_dir(&dossier).unwrap().count();
-        assert!(create_journal_piece(&pool, &dossier, "notes.pdf", b"%PDF")
+        assert!(create_journal_piece(&pool, &dossier, "archive.zip", b"PK\x03\x04")
             .await
             .is_err());
         assert_eq!(std::fs::read_dir(&dossier).unwrap().count(), avant);
