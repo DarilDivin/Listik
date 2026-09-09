@@ -11,6 +11,10 @@
  * Effet de bord heureux : l'export emporte alors une VRAIE image.
  */
 
+import { convertFileSrc } from "@tauri-apps/api/core";
+import { journalApi } from "./api";
+import type { JournalPiece } from "./types";
+
 /** Assez large pour rester net sur un écran dense, assez petit pour ne rien peser. */
 const LARGEUR = 420;
 
@@ -71,5 +75,41 @@ export async function apercuDuPdf(octets: Uint8Array): Promise<Apercu> {
     return { octets: new Uint8Array(await blob.arrayBuffer()), pages: doc.numPages };
   } finally {
     await tache.destroy();
+  }
+}
+
+/**
+ * Les pièces déjà tentées dans cette session.
+ *
+ * Un PDF protégé par mot de passe ne se rendra jamais : sans ce garde, on
+ * relancerait le rendu à chaque affichage de la journée, en boucle.
+ */
+const tentees = new Set<string>();
+
+/**
+ * S'assure qu'un PDF a sa vignette, et la rend si elle manque.
+ *
+ * Déclenché à l'AFFICHAGE, et non au moment d'attacher — c'est ce qui rend la
+ * chose RÉPARABLE. Un PDF joint pendant que l'app redémarrait, un rendu qui a
+ * échoué une fois, un fichier arrivé avant que la fonctionnalité existe : la
+ * journée se rouvre, et la vignette se fait. Le déclencher à l'ajout laissait
+ * au contraire une rangée nue définitive, sans rien pour le dire ni le
+ * rattraper.
+ *
+ * Rend `true` quand une vignette a été posée — à l'appelant de revalider.
+ */
+export async function assurerApercu(piece: JournalPiece): Promise<boolean> {
+  if (piece.kind !== "pdf" || piece.apercu || tentees.has(piece.id)) return false;
+  tentees.add(piece.id);
+  try {
+    const reponse = await fetch(convertFileSrc(piece.chemin));
+    const rendu = await apercuDuPdf(new Uint8Array(await reponse.arrayBuffer()));
+    await journalApi.poserApercu(piece.id, Array.from(rendu.octets), rendu.pages);
+    return true;
+  } catch (e) {
+    // La pièce garde sa rangée nue, qui reste juste : rien n'a été perdu, et
+    // le document s'ouvre toujours.
+    console.warn("apercu:", e);
+    return false;
   }
 }

@@ -14,6 +14,7 @@ import type {
 } from "lexical";
 import type { JSX } from "react";
 import { journalApi } from "./api";
+import { assurerApercu } from "./apercu";
 import { poids } from "./poids";
 import type { JournalPiece } from "./types";
 // Import RELATIF, pas `@/` : vitest ne resout pas l alias, et ce fichier est
@@ -139,11 +140,22 @@ interface PieceVueProps {
  * chose à voir.
  */
 function PieceVue({ pieceId, legende, onLegende }: PieceVueProps) {
-  const { data: piece, error } = useSWR(
+  const { data: piece, error, mutate: revalider } = useSWR(
     SWR_KEYS.JOURNAL_PIECE(pieceId),
     async () => (await journalApi.pieces([pieceId]))[0] ?? null,
     { revalidateOnFocus: false },
   );
+
+  // La vignette d'un PDF se fait ICI, à l'affichage, quand elle manque — et
+  // non au moment d'attacher. C'est ce qui la rend rattrapable : un PDF joint
+  // pendant que l'app redémarrait resterait sinon une rangée nue pour
+  // toujours, sans rien pour le dire.
+  useEffect(() => {
+    if (!piece) return;
+    void assurerApercu(piece).then((fait) => {
+      if (fait) void revalider();
+    });
+  }, [piece, revalider]);
 
   if (error || piece === null) {
     return (
