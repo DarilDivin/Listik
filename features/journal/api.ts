@@ -67,6 +67,13 @@ export const journalApi = {
   /** Les fiches des pièces citées par le document. */
   pieces: (ids: string[]) =>
     invoke<JournalPiece[]>("list_journal_pieces", { ids }),
+  /**
+   * Range la vignette d'un PDF — sa première page, rendue par le webview
+   * (`apercu.ts`). En deux temps : la pièce est posée dans la page tout de
+   * suite, la vignette arrive après.
+   */
+  poserApercu: (id: string, octets: number[], pages: number) =>
+    invoke<JournalPiece>("set_journal_piece_apercu", { id, octets, pages }),
 
   /**
    * Tout le journal en Markdown, ses photos dans un dossier voisin. `path`

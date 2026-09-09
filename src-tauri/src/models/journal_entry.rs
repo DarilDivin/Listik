@@ -41,6 +41,13 @@ pub struct JournalPiece {
     /// colonne existe : une taille inconnue ne s'affiche pas, elle ne
     /// s'invente pas non plus.
     pub taille: Option<i64>,
+    /// Chemin ABSOLU de la vignette — la première page d'un PDF, rendue à
+    /// l'ajout. `None` quand il n'y en a pas : un autre format, un PDF
+    /// protégé, ou une pièce attachée avant que la colonne existe. La pièce
+    /// retombe alors sur la rangée nue.
+    pub apercu: Option<String>,
+    /// Nombre de pages du document, quand on a su le lire.
+    pub pages: Option<i64>,
     pub created_at: String,
 }
 

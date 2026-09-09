@@ -19,4 +19,15 @@ kind: string, id: string, nom_origine: string, chemin: string,
  * colonne existe : une taille inconnue ne s'affiche pas, elle ne
  * s'invente pas non plus.
  */
-taille: bigint | null, created_at: string, };
+taille: bigint | null, 
+/**
+ * Chemin ABSOLU de la vignette — la première page d'un PDF, rendue à
+ * l'ajout. `None` quand il n'y en a pas : un autre format, un PDF
+ * protégé, ou une pièce attachée avant que la colonne existe. La pièce
+ * retombe alors sur la rangée nue.
+ */
+apercu: string | null, 
+/**
+ * Nombre de pages du document, quand on a su le lire.
+ */
+pages: bigint | null, created_at: string, };

@@ -886,6 +886,60 @@
 }
 /* La LÉGENDE, pas le nom de fichier : `IMG_4821.jpg` ne dira rien dans dix
    ans. Le champ est là, vide et discret ; on écrit ou on n'écrit pas. */
+/* Un PDF dont la première page est rendue : une feuille debout dans la
+   colonne, le nom à côté. À sa vraie proportion — un contrat de douze pages
+   n'a pas à occuper l'écran comme un paysage. */
+.journal-piece-posee {
+  display: flex;
+  align-items: flex-start;
+  gap: 1.1rem;
+}
+.journal-piece-feuille {
+  flex: none;
+  width: 8.25rem;
+  padding: 0;
+  border: none;
+  background: none;
+  border-radius: 3px;
+  outline: none;
+  cursor: pointer;
+  transition: transform 140ms ease;
+}
+.journal-piece-feuille:hover {
+  transform: translateY(-1px);
+}
+.journal-piece-feuille:focus-visible {
+  box-shadow: 0 0 0 2px var(--color-ring);
+}
+.journal-piece-feuille img {
+  display: block;
+  width: 100%;
+  height: auto;
+  border-radius: 3px;
+  user-select: none;
+  /* L'ombre porte le papier : c'est elle qui dit « feuille » plutôt que
+     « vignette ». Une bordure dure en aurait fait une carte. */
+  box-shadow:
+    0 1px 2px oklch(0 0 0 / 12%),
+    0 6px 18px -8px oklch(0 0 0 / 22%);
+}
+.journal-piece-a-cote {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  padding-top: 0.3rem;
+  min-width: 0;
+}
+.journal-piece-a-cote .journal-piece-nom {
+  white-space: normal;
+}
+.journal-piece-a-cote .journal-piece-meta {
+  margin-left: 0;
+}
+.journal-piece-a-cote .journal-piece-legende {
+  margin-top: 0.35em;
+}
+
 /* Un document ne se montre pas, il se nomme : une rangée close par deux
    filets, l'idiome des Réglages. Pas de fond, pas de bordure dure — ce n'est
    pas une carte posée sur la page, c'est une ligne DE la page. */

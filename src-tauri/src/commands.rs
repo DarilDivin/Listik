@@ -276,6 +276,24 @@ pub async fn attach_journal_piece_bytes(
     db::create_journal_piece(&state.pool, &dossier, &nom, &octets).await
 }
 
+/// Range la vignette d'un PDF, rendue par le webview.
+///
+/// Deux temps plutôt qu'un : la pièce est attachée et POSÉE dans la page tout
+/// de suite, la vignette arrive après. Un PDF de trois méga-octets met un
+/// moment à se rendre, et faire attendre la page devant un écran vide pour
+/// une image qui n'est qu'un confort serait un mauvais marché.
+#[tauri::command]
+pub async fn set_journal_piece_apercu(
+    state: State<'_, AppState>,
+    app: AppHandle,
+    id: String,
+    octets: Vec<u8>,
+    pages: i64,
+) -> Result<JournalPiece, String> {
+    let dossier = db::dossier_pieces(&app)?;
+    db::set_journal_piece_apercu(&state.pool, &dossier, &id, &octets, pages).await
+}
+
 /// Les fiches des pièces citées par le document.
 #[tauri::command]
 pub async fn list_journal_pieces(

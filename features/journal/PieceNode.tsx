@@ -131,11 +131,12 @@ interface PieceVueProps {
 }
 
 /**
- * L'image, et sa légende.
+ * La pièce, sous la forme que sa NATURE appelle.
  *
- * `IMG_4821.jpg` ne dira rien dans dix ans : le champ de légende est là, vide
- * et discret, sur le papier plutôt que dans une boîte. On écrit, ou on
- * n'écrit pas.
+ * Une photo se regarde en grand ; un PDF se pose comme une feuille, à sa vraie
+ * proportion ; le reste se nomme. Le nœud, lui, ne sait rien de tout ça — il
+ * ne porte qu'un identifiant, et c'est ici que le fichier redevient quelque
+ * chose à voir.
  */
 function PieceVue({ pieceId, legende, onLegende }: PieceVueProps) {
   const { data: piece, error } = useSWR(
@@ -143,17 +144,6 @@ function PieceVue({ pieceId, legende, onLegende }: PieceVueProps) {
     async () => (await journalApi.pieces([pieceId]))[0] ?? null,
     { revalidateOnFocus: false },
   );
-
-  // Le champ de légende n'est pas contrôlé par React : il est
-  // `contenteditable`, et le reprendre à chaque frappe replacerait le curseur
-  // au début. On ne pose son texte qu'au montage, puis on écoute.
-  const champRef = useRef<HTMLElement>(null);
-  const [pose, setPose] = useState(false);
-  useEffect(() => {
-    if (pose || !champRef.current) return;
-    champRef.current.textContent = legende;
-    setPose(true);
-  }, [legende, pose]);
 
   if (error || piece === null) {
     return (
@@ -163,12 +153,16 @@ function PieceVue({ pieceId, legende, onLegende }: PieceVueProps) {
     );
   }
 
-  // Un document se NOMME, il ne se montre pas : il n'y a pas de moteur de
-  // rendu par format, et un `.xlsx` affiché serait de toute façon illisible à
-  // la taille d'une vignette. La rangée est close par deux filets, comme les
-  // Réglages — l'ouvrir passe par la visionneuse du système.
   if (piece && piece.kind !== "image") {
-    return <DocumentVue piece={piece} />;
+    // Un PDF dont on a rendu la première page se POSE comme une feuille : on
+    // reconnaît un document sans lui donner le poids d'une photo. Les autres
+    // se nomment — il n'y a pas de moteur de rendu par format, et un `.xlsx`
+    // serait de toute façon illisible à cette taille.
+    return piece.apercu ? (
+      <FeuillePosee piece={piece} legende={legende} onLegende={onLegende} />
+    ) : (
+      <LigneDocument piece={piece} />
+    );
   }
 
   return (
@@ -188,32 +182,110 @@ function PieceVue({ pieceId, legende, onLegende }: PieceVueProps) {
       ) : (
         <span className="journal-piece-attente" aria-hidden />
       )}
-      <figcaption
-        ref={champRef}
-        contentEditable
-        suppressContentEditableWarning
-        spellCheck={false}
-        role="textbox"
-        aria-label="Légende de l'image"
-        data-invite="Ajouter une légende…"
-        className="journal-piece-legende"
-        onInput={(e) => onLegende(e.currentTarget.textContent ?? "")}
-      />
+      <Legende texte={legende} onTexte={onLegende} />
     </>
   );
 }
 
 /**
- * Un document posé dans la journée : son nom, son poids, et de quoi l'ouvrir.
+ * Le champ de légende, partagé par la photo et la feuille posée.
  *
- * Le nom d'origine plutôt que l'UUID du disque — c'est `bail-signe-2026.pdf`
- * qu'on reconnaît. La taille manque pour les pièces attachées avant que la
- * colonne existe : `poids` rend alors une chaîne vide, et la ligne se contente
- * du nom (voir `poids.ts`).
+ * `IMG_4821.jpg` ne dira rien dans dix ans : le champ est là, vide et discret,
+ * sur le papier plutôt que dans une boîte. On écrit, ou on n'écrit pas.
+ *
+ * Il n'est PAS contrôlé par React : c'est un `contenteditable`, et lui
+ * reprendre son texte à chaque frappe replacerait le curseur au début. On ne
+ * pose son contenu qu'au montage, puis on écoute.
  */
-function DocumentVue({ piece }: { piece: JournalPiece }) {
+function Legende({
+  texte,
+  onTexte,
+}: {
+  texte: string;
+  onTexte: (t: string) => void;
+}) {
+  const champRef = useRef<HTMLElement>(null);
+  const [pose, setPose] = useState(false);
+  useEffect(() => {
+    if (pose || !champRef.current) return;
+    champRef.current.textContent = texte;
+    setPose(true);
+  }, [texte, pose]);
+
+  return (
+    <figcaption
+      ref={champRef}
+      contentEditable
+      suppressContentEditableWarning
+      spellCheck={false}
+      role="textbox"
+      aria-label="Légende de la pièce"
+      data-invite="Ajouter une légende…"
+      className="journal-piece-legende"
+      onInput={(e) => onTexte(e.currentTarget.textContent ?? "")}
+    />
+  );
+}
+
+/** « 12 pages · 1,4 Mo » — et seulement ce qu'on sait vraiment. */
+function apposition(piece: JournalPiece): string {
+  const bouts = [
+    piece.pages ? `${Number(piece.pages)} page${Number(piece.pages) > 1 ? "s" : ""}` : "",
+    poids(piece.taille),
+  ].filter(Boolean);
+  return bouts.join(" · ");
+}
+
+/**
+ * Un PDF, sa première page debout dans la colonne, le nom à côté.
+ *
+ * À sa vraie proportion, et non à la largeur d'une photo : un contrat de
+ * douze pages n'a pas à occuper l'écran comme un paysage. On le reconnaît,
+ * c'est tout ce qu'on lui demande — pour le lire, on l'ouvre.
+ */
+function FeuillePosee({
+  piece,
+  legende,
+  onLegende,
+}: {
+  piece: JournalPiece;
+  legende: string;
+  onLegende: (t: string) => void;
+}) {
+  return (
+    <span className="journal-piece-posee">
+      <button
+        type="button"
+        className="journal-piece-feuille"
+        title={`Ouvrir ${piece.nom_origine}`}
+        onClick={() => void openPath(piece.chemin).catch(() => {})}
+      >
+        {/* Voir la note sur `next/image` plus haut : export statique, fichier
+            local servi par le protocole `asset`. */}
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src={convertFileSrc(piece.apercu!)} alt="" draggable={false} />
+      </button>
+      <span className="journal-piece-a-cote">
+        <span className="journal-piece-nom">{piece.nom_origine}</span>
+        <span className="journal-piece-meta">{apposition(piece)}</span>
+        <Legende texte={legende} onTexte={onLegende} />
+      </span>
+    </span>
+  );
+}
+
+/**
+ * Un document qui ne s'aperçoit pas : son nom, son poids, et de quoi l'ouvrir.
+ *
+ * Une rangée close par deux filets, l'idiome des Réglages — pas une carte
+ * posée sur la page, une ligne DE la page. Le nom d'origine plutôt que l'UUID
+ * du disque : c'est `bail-signe-2026.pdf` qu'on reconnaît. La taille manque
+ * pour les pièces attachées avant que la colonne existe, et `poids` rend
+ * alors une chaîne vide (voir `poids.ts`).
+ */
+function LigneDocument({ piece }: { piece: JournalPiece }) {
   const [erreur, setErreur] = useState(false);
-  const taille = poids(piece.taille);
+  const meta = apposition(piece);
 
   return (
     <button
@@ -242,7 +314,7 @@ function DocumentVue({ piece }: { piece: JournalPiece }) {
       </svg>
       <span className="journal-piece-nom">{piece.nom_origine}</span>
       <span className="journal-piece-meta">
-        {erreur ? "Impossible à ouvrir" : taille}
+        {erreur ? "Impossible à ouvrir" : meta}
       </span>
     </button>
   );

@@ -1118,6 +1118,10 @@ pub async fn create_journal_piece(
         nom_origine: nom_origine.to_string(),
         chemin: chemin.to_string_lossy().into_owned(),
         taille: Some(taille),
+        // La vignette n'existe pas encore : c'est le webview qui la rend, et
+        // il vient tout juste d'apprendre que la pièce existe.
+        apercu: None,
+        pages: None,
         created_at,
     })
 }
@@ -1137,7 +1141,7 @@ pub async fn list_journal_pieces(
         return Ok(Vec::new());
     }
     let mut qb: QueryBuilder<Sqlite> = QueryBuilder::new(
-        "SELECT id, kind, fichier, nom_origine, taille, created_at FROM journal_pieces WHERE id IN (",
+        "SELECT id, kind, fichier, nom_origine, taille, apercu, pages, created_at \n         FROM journal_pieces WHERE id IN (",
     );
     let mut sep = qb.separated(", ");
     for id in ids {
@@ -1146,21 +1150,57 @@ pub async fn list_journal_pieces(
     qb.push(")");
 
     let lignes = qb
-        .build_query_as::<(String, String, String, String, Option<i64>, String)>()
+        .build_query_as::<(String, String, String, String, Option<i64>, Option<String>, Option<i64>, String)>()
         .fetch_all(pool)
         .await?;
 
     Ok(lignes
         .into_iter()
-        .map(|(id, kind, fichier, nom_origine, taille, created_at)| JournalPiece {
+        .map(|(id, kind, fichier, nom_origine, taille, apercu, pages, created_at)| JournalPiece {
             id,
             kind,
             nom_origine,
             chemin: dossier.join(fichier).to_string_lossy().into_owned(),
             taille,
+            apercu: apercu.map(|a| dossier.join(a).to_string_lossy().into_owned()),
+            pages,
             created_at,
         })
         .collect())
+}
+
+/// Range la vignette d'une pièce et rend sa fiche à jour.
+///
+/// Le rendu vient du WEBVIEW : c'est lui qui a pdf.js, et le faire en Rust
+/// aurait embarqué une bibliothèque native dans chaque livraison pour le même
+/// résultat. Rust ne fait ici que ce qu'il fait déjà pour les pièces — écrire
+/// un fichier et tenir la ligne en base.
+pub async fn set_journal_piece_apercu(
+    pool: &SqlitePool,
+    dossier: &std::path::Path,
+    id: &str,
+    octets: &[u8],
+    pages: i64,
+) -> Result<JournalPiece, String> {
+    // À côté du document, sous son propre identifiant : la vignette suit la
+    // pièce, et l'effacement de l'une trouvera l'autre.
+    let fichier = format!("{id}-apercu.png");
+    std::fs::write(dossier.join(&fichier), octets).map_err(|e| e.to_string())?;
+
+    sqlx::query("UPDATE journal_pieces SET apercu = ?, pages = ? WHERE id = ?")
+        .bind(&fichier)
+        .bind(pages)
+        .bind(id)
+        .execute(pool)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    list_journal_pieces(pool, dossier, &[id.to_string()])
+        .await
+        .map_err(|e| e.to_string())?
+        .into_iter()
+        .next()
+        .ok_or_else(|| format!("La pièce {id} n'existe pas."))
 }
 
 // ---------------------------------------------------------------------------
@@ -2160,7 +2200,7 @@ mod tests {
         ecrire_export, list_journal_entries_for_day, list_journal_pieces, markdown_du_journal,
         nature, nom_unique,
         requete_fts, search_journal, session_ouverte, update_journal_entry, MARQUE_DEBUT,
-        MARQUE_FIN, Sortie,
+        MARQUE_FIN, Sortie, set_journal_piece_apercu,
         create, create_area, create_note, create_project, create_subtask, create_tag, delete,
         delete_area, delete_note, delete_project, delete_tag, due_reminders, duplicate_project,
         duplicate_todo, get, get_settings, list_all, list_areas, list_by_date, list_notes,
@@ -3501,6 +3541,8 @@ La suite, dans la foulée.");
             nom_origine: nom.to_string(),
             chemin: chemin.to_string_lossy().into_owned(),
             taille: Some(3),
+            apercu: None,
+            pages: None,
             created_at: "2026-09-08T09:00:00.000Z".to_string(),
         };
         let fiches = vec![
@@ -3687,6 +3729,19 @@ La suite, dans la foulée.");
             .unwrap();
         assert_eq!(doc.kind, "pdf");
         assert_eq!(doc.taille, Some(8));
+
+        // La vignette se range à côté du document et remonte dans la fiche.
+        let vu = set_journal_piece_apercu(&pool, &dossier, &doc.id, b"\x89PNG", 12)
+            .await
+            .unwrap();
+        assert_eq!(vu.pages, Some(12));
+        let chemin_apercu = vu.apercu.expect("la vignette devrait avoir un chemin");
+        assert!(chemin_apercu.ends_with(&format!("{}-apercu.png", doc.id)));
+        assert_eq!(std::fs::read(&chemin_apercu).unwrap(), b"\x89PNG");
+        // Et la relecture la retrouve — c'est ce qui évite de la rendre deux fois.
+        let relu = list_journal_pieces(&pool, &dossier, &[doc.id.clone()]).await.unwrap();
+        assert_eq!(relu[0].pages, Some(12));
+        assert!(relu[0].apercu.is_some());
 
         // Ce que Listik ne sait pas ranger est refusé, et rien n'est écrit.
         let avant = std::fs::read_dir(&dossier).unwrap().count();
