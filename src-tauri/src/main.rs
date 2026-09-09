@@ -4,6 +4,7 @@ mod cli_agent;
 mod commands;
 mod db;
 mod models;
+mod permissions;
 mod reminders;
 
 use std::sync::Arc;
@@ -59,6 +60,15 @@ fn main() {
             };
 
             app.manage(AppState { pool: pool.clone(), mcp_port });
+
+            // --- Permissions de la webview ---
+            // Le micro, pour les notes vocales du journal. Sans gestionnaire,
+            // WebView2 laisse `getUserMedia` suspendu indefiniment.
+            if let Some(principale) = app.get_webview_window("main") {
+                if let Err(e) = permissions::autoriser_le_micro(&principale) {
+                    eprintln!("⚠️ Permissions micro : {e}");
+                }
+            }
 
             // --- Planificateur de rappels (notifications en arrière-plan) ---
             reminders::spawn_scheduler(app.handle().clone());

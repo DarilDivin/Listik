@@ -49,6 +49,12 @@ axum = "0.8"
 [target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
 tauri-plugin-global-shortcut = "2"
 
+# Repondre a `PermissionRequested` de WebView2 : sans ca `getUserMedia` reste
+# suspendu pour toujours. Versions alignees sur celles que tire deja Tauri.
+[target.'cfg(windows)'.dependencies]
+webview2-com = "0.38"
+windows = { version = "0.61", features = ["Win32_System_Com"] }
+
 [dev-dependencies]
 # Mock IPC (tauri::test) pour vérifier la frontière invoke() -> #[tauri::command]
 # sans dépendre d'une vraie fenêtre native.

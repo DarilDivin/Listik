@@ -88,6 +88,8 @@ dependencies = [
  "tokio",
  "ts-rs",
  "uuid",
+ "webview2-com",
+ "windows",
 ]
 
 [[package]]
