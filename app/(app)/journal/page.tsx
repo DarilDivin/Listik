@@ -143,6 +143,10 @@ function JournalPageContent() {
    * Le micro s'ouvre donc au CLIC, une fois, comme le geste le demande.
    */
   const [enregistre, setEnregistre] = useState(false);
+  // La lueur ne disparaît pas d'un coup quand on arrête : elle a une sortie à
+  // jouer. `sortie` la laisse montée le temps de s'éteindre, et c'est ELLE
+  // qui dit quand la page peut la démonter.
+  const [sortie, setSortie] = useState(false);
   const sessionRef = useRef<Enregistrement | null>(null);
   const departRef = useRef(0);
   // La bande y dépose son écouteur : sans ce relais, la page se rendrait
@@ -165,6 +169,7 @@ function JournalPageContent() {
       sessionRef.current = await ouvrirLeMicro((n) => niveauRef.current(n));
       departRef.current = performance.now();
       jourRef.current = day;
+      setSortie(false);
       setEnregistre(true);
     } catch (e) {
       console.error("voix:", e);
@@ -175,16 +180,22 @@ function JournalPageContent() {
   const abandonner = () => {
     sessionRef.current?.annuler();
     sessionRef.current = null;
-    setEnregistre(false);
+    setSortie(true);
   };
+
+  // La sortie est jouée : on démonte pour de bon.
+  const partie = useCallback(() => {
+    setSortie(false);
+    setEnregistre(false);
+  }, []);
 
   const terminer = async () => {
     const session = sessionRef.current;
     if (!session) return;
-    // Repris tout de suite : la bande s'en va, et rien ne doit pouvoir
-    // arrêter deux fois la même session.
+    // Repris tout de suite : rien ne doit pouvoir arrêter deux fois la même
+    // session. La lueur, elle, part jouer sa sortie.
     sessionRef.current = null;
-    setEnregistre(false);
+    setSortie(true);
     try {
       const note = await session.arreter();
       const piece = await journalApi.attacherVoix(
@@ -283,6 +294,8 @@ function JournalPageContent() {
         <BandeEnregistrement
           depart={departRef.current}
           abonner={abonner}
+          partant={sortie}
+          onParti={partie}
           onTerminer={() => void terminer()}
           onAbandonner={abandonner}
         />
@@ -366,6 +379,7 @@ function JournalPageContent() {
             aria-label={enregistre ? "Abandonner l'enregistrement" : "Enregistrer une note vocale"}
             title="Enregistrer une note vocale"
             data-actif={enregistre || undefined}
+            disabled={sortie}
             onClick={() => (enregistre ? abandonner() : void commencer())}
             className="data-[actif]:bg-brand-soft data-[actif]:text-brand"
           >

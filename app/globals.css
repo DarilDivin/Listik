@@ -1144,7 +1144,6 @@
   position: absolute;
   bottom: 1.25rem;
   left: 50%;
-  transform: translateX(-50%);
   display: flex;
   align-items: center;
   gap: 0.6rem;
@@ -1155,6 +1154,46 @@
     0 1px 2px oklch(0 0 0 / 10%),
     0 8px 24px -10px oklch(0 0 0 / 26%);
   pointer-events: auto;
+  /* Elle vient du BAS, comme la lueur : une seule origine pour un seul
+     événement. Et APRÈS elle — le halo est le héros, la pilule sa
+     conséquence. Les 120 ms de retard laissent la lumière se déclarer avant
+     que les commandes se présentent. */
+  animation: journal-ecoute-venue 400ms cubic-bezier(0.05, 0.7, 0.1, 1) 120ms both;
+}
+@keyframes journal-ecoute-venue {
+  from {
+    opacity: 0;
+    transform: translate(-50%, 14px) scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, 0) scale(1);
+  }
+}
+/* À la sortie elle part la PREMIÈRE, et plus vite qu'elle n'est venue : on se
+   soucie de ce qui arrive, pas de ce qui s'en va. */
+.journal-ecoute-commandes[data-partant] {
+  animation: journal-ecoute-depart 240ms cubic-bezier(0.3, 0, 1, 1) both;
+}
+@keyframes journal-ecoute-depart {
+  from {
+    opacity: 1;
+    transform: translate(-50%, 0) scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: translate(-50%, 10px) scale(0.97);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .journal-ecoute-commandes,
+  .journal-ecoute-commandes[data-partant] {
+    animation: none;
+    transform: translate(-50%, 0);
+  }
+  .journal-ecoute-commandes[data-partant] {
+    opacity: 0;
+  }
 }
 .journal-ecoute-point {
   flex: none;

@@ -174,6 +174,7 @@ export function peindreHalo(
   pal: Palette,
   t: number,
   niveau: number,
+  ouverture = 1,
 ): void {
   // La moitié de la résolution : c'est du flou, et ça couvre toute la largeur
   // de la fenêtre soixante fois par seconde.
@@ -189,9 +190,16 @@ export function peindreHalo(
   if (typeof ctx.filter === "string") ctx.filter = `blur(${flou}px)`;
   ctx.globalCompositeOperation = pal.melange;
 
-  for (const nappe of NAPPES) {
+  for (const [rang, nappe] of NAPPES.entries()) {
     const couleur = nappe.teinte === "a" ? pal.a : pal.b;
-    const crete = h * (0.22 + 0.62 * niveau) * nappe.h;
+    // Chaque nappe monte avec un peu de RETARD sur la précédente. C'est ce
+    // qui donne de la profondeur à la lueur quand elle apparaît : trois plans
+    // qui se lèvent ensemble seraient un bloc, trois plans décalés sont de
+    // l'épaisseur. Le retard s'annule une fois l'ouverture faite.
+    const retard = rang * 0.12;
+    const o = Math.max(0, Math.min(1, (ouverture - retard) / (1 - retard)));
+    if (o <= 0) continue;
+    const crete = h * (0.22 + 0.62 * niveau) * nappe.h * o;
     ctx.beginPath();
     // On déborde de part et d'autre : sans ça le flou laisse voir les deux
     // bords verticaux de la nappe, et la lueur a des côtés.
@@ -205,8 +213,8 @@ export function peindreHalo(
     ctx.closePath();
     const d = ctx.createLinearGradient(0, h - crete * 1.5, 0, h);
     d.addColorStop(0, rgba(couleur, 0));
-    d.addColorStop(0.55, rgba(couleur, pal.force * nappe.o * 0.75));
-    d.addColorStop(1, rgba(couleur, pal.force * nappe.o));
+    d.addColorStop(0.55, rgba(couleur, pal.force * nappe.o * 0.75 * o));
+    d.addColorStop(1, rgba(couleur, pal.force * nappe.o * o));
     ctx.fillStyle = d;
     ctx.fill();
   }
