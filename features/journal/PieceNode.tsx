@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import useSWR from "swr";
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { openPath } from "@tauri-apps/plugin-opener";
@@ -15,6 +15,7 @@ import type {
 import type { JSX } from "react";
 import { journalApi } from "./api";
 import { assurerApercu } from "./apercu";
+import { palette, peindreBande } from "./halo";
 import { poids } from "./poids";
 import { minutage } from "./voix";
 import type { JournalPiece } from "./types";
@@ -300,17 +301,21 @@ function FeuillePosee({
 }
 
 /**
- * Une voix dans la journée : sa silhouette, et de quoi l'écouter.
+ * Une voix dans la journée : sa lueur, et de quoi l'écouter.
  *
- * La forme d'onde n'est pas une décoration. C'est ce qui distingue deux notes
+ * La forme n'est pas une décoration. C'est ce qui distingue deux notes
  * d'affilée — l'une brève et hachée, l'autre longue et posée — là où deux
  * rangées « note-vocale-14h32.webm » se ressembleraient trait pour trait. On
  * retrouve un enregistrement à sa forme comme on retrouve une photo à ce
  * qu'elle montre.
  *
+ * C'est la MÊME matière qu'à l'enregistrement, étirée sur la durée : ce qu'on
+ * a écouté s'allume, le reste attend sous un voile. Un seul langage du début
+ * à la fin, plutôt qu'un halo pour parler et des barres pour réécouter.
+ *
  * Les crêtes viennent de la BASE, mesurées pendant qu'on parlait : les
  * recalculer ici demanderait de décoder tout l'audio à chaque ouverture de la
- * journée, pour dessiner cent barres.
+ * journée, pour dessiner une vignette.
  */
 function OndeVocale({
   piece,
@@ -322,14 +327,43 @@ function OndeVocale({
   onLegende: (t: string) => void;
 }) {
   const audioRef = useRef<HTMLAudioElement>(null);
+  const toileRef = useRef<HTMLCanvasElement>(null);
   const [joue, setJoue] = useState(false);
   const [avance, setAvance] = useState(0);
 
-  const cretes = piece.cretes ?? [];
+  // Mémorisé : `?? []` rendrait un tableau NEUF à chaque rendu, et l'effet de
+  // dessin plus bas rebrancherait ses observateurs à chaque fois.
+  const cretes = useMemo(() => piece.cretes ?? [], [piece.cretes]);
   // La durée MESURÉE, jamais `audio.duration` : un WebM de `MediaRecorder`
   // n'en porte pas dans son en-tête et répond `Infinity`. Toute la barre de
   // progression en dépend.
   const dureeMs = Number(piece.duree_ms ?? 0);
+
+  // Aucune boucle d'animation ici : une note gardée ne bouge pas. On repeint
+  // quand la lecture avance, quand la colonne change de largeur, et quand le
+  // thème ou l'accent change — pas soixante fois par seconde pour des pixels
+  // immobiles. Une journée à quatre notes vocales paierait le reste en
+  // batterie, pour rien.
+  useEffect(() => {
+    const toile = toileRef.current;
+    if (!toile || cretes.length === 0) return;
+    const peindre = () => peindreBande(toile, palette(), cretes, avance);
+    peindre();
+
+    const surTaille = new ResizeObserver(peindre);
+    surTaille.observe(toile);
+    // La palette est mise en cache dans `halo.ts` et invalidée par le même
+    // changement d'attribut : il suffit de redemander un dessin.
+    const surTheme = new MutationObserver(peindre);
+    surTheme.observe(document.documentElement, {
+      attributes: true,
+      attributeFilter: ["class", "data-accent"],
+    });
+    return () => {
+      surTaille.disconnect();
+      surTheme.disconnect();
+    };
+  }, [cretes, avance]);
 
   const basculer = () => {
     const audio = audioRef.current;
@@ -372,17 +406,10 @@ function OndeVocale({
             setAvance(part);
           }}
         >
-          {cretes.map((crete, i) => (
-            <span
-              key={i}
-              // La barre est PASSÉE quand la lecture l'a dépassée : le
-              // remplissage suit la voix, il ne recouvre pas la forme.
-              data-passe={i / cretes.length < avance || undefined}
-              // Un plancher de 9 % : une crête nulle rendrait une barre
-              // invisible, et la bande serait trouée là où l'on s'est tu.
-              style={{ height: `${Math.max(9, crete * 100)}%` }}
-            />
-          ))}
+          {/* Le bouton reste un BOUTON : c'est lui qui porte le déplacement
+              au clic et l'anneau de focus. Un canvas seul ne se focalise
+              pas, et la lueur n'a rien à intercepter. */}
+          <canvas ref={toileRef} className="journal-voix-lueur" aria-hidden />
         </button>
         <Legende texte={legende} onTexte={onLegende} />
       </span>

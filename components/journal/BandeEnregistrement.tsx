@@ -1,12 +1,10 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Check, X } from "lucide-react";
 import { minutage } from "@/features/journal/voix";
+import { palette, peindreHalo } from "@/features/journal/halo";
 import { Button } from "@/components/ui/button";
-
-/** Ce que la bande montre du présent : environ trois secondes de voix. */
-const FENETRE = 64;
 
 interface BandeEnregistrementProps {
   /** L'instant du départ, pour compter le temps écoulé. */
@@ -18,7 +16,7 @@ interface BandeEnregistrementProps {
 }
 
 /**
- * La bande qui bouge pendant qu'on parle.
+ * La bande qui bouge pendant qu'on parle : un halo qui enfle avec la voix.
  *
  * Elle vit dans la PAGE, hors de l'éditeur, et c'est délibéré. La faire vivre
  * dans le document aurait été plus joli — la bande serait apparue là où était
@@ -33,6 +31,10 @@ interface BandeEnregistrementProps {
  * en développement, et le second `getUserMedia` sur un appareil déjà pris rend
  * un flux muet. La bande restait plate d'un bout à l'autre, sans erreur pour
  * le dire. Elle ne fait donc que MONTRER, et les niveaux lui arrivent.
+ *
+ * Elle est plus haute que les autres rangées du journal, et c'est voulu : un
+ * halo a besoin d'air, et enregistrer est un MOMENT, pas une ligne de plus
+ * dans la page.
  */
 export function BandeEnregistrement({
   depart,
@@ -40,12 +42,42 @@ export function BandeEnregistrement({
   onTerminer,
   onAbandonner,
 }: BandeEnregistrementProps) {
-  const [niveaux, setNiveaux] = useState<number[]>(() => Array(FENETRE).fill(0));
+  const toileRef = useRef<HTMLCanvasElement>(null);
+  // Le niveau ne passe PAS par l'état React : il arrive vingt fois par
+  // seconde, et re-rendre la page à cette cadence pour repeindre un canvas
+  // serait payer un arbre entier pour quelques pixels.
+  const niveauRef = useRef(0);
   const [depuis, setDepuis] = useState(0);
 
   useEffect(() => {
-    abonner((niveau) => setNiveaux((precedents) => [...precedents.slice(1), niveau]));
+    abonner((niveau) => {
+      niveauRef.current = niveau;
+    });
   }, [abonner]);
+
+  useEffect(() => {
+    const toile = toileRef.current;
+    if (!toile) return;
+    const calme = window.matchMedia("(prefers-reduced-motion: reduce)");
+    let vivant = true;
+    let image = 0;
+
+    const peindre = (t: number) => {
+      if (!vivant) return;
+      // Le halo suit la voix même quand on demande moins de mouvement : sa
+      // HAUTEUR est une information, pas un ornement. Ce qu'on immobilise,
+      // c'est la dérive des nappes les unes sur les autres.
+      const temps = calme.matches ? 0 : t / 1000;
+      peindreHalo(toile, palette(), temps, niveauRef.current);
+      image = requestAnimationFrame(peindre);
+    };
+    image = requestAnimationFrame(peindre);
+
+    return () => {
+      vivant = false;
+      cancelAnimationFrame(image);
+    };
+  }, []);
 
   useEffect(() => {
     // Le compte se rafraîchit cinq fois par seconde pour rester juste à la
@@ -56,38 +88,30 @@ export function BandeEnregistrement({
 
   return (
     <div className="journal-bande" role="group" aria-label="Enregistrement en cours">
-      {/* Le point rouge, seul écart à l'accent unique de l'app : c'est la
-          convention de l'enregistrement, et personne ne la lit deux fois. */}
-      <span className="journal-bande-point" aria-hidden />
-      <span className="journal-bande-onde" aria-hidden>
-        {niveaux.map((niveau, i) => (
-          <span
-            key={i}
-            // Le niveau brut, non normalisé : ici on montre ce que le micro
-            // ENTEND, à l'instant. La normalisation est l'affaire de la
-            // silhouette gardée, une fois qu'on connaît le plus fort.
-            style={{ height: `${Math.max(8, Math.min(1, niveau * 1.6) * 100)}%` }}
-          />
-        ))}
-      </span>
-      <span className="journal-bande-duree">{minutage(depuis)}</span>
-      <Button
-        variant="ghost"
-        size="icon-sm"
-        aria-label="Abandonner l'enregistrement"
-        title="Abandonner"
-        onClick={onAbandonner}
-      >
-        <X />
-      </Button>
-      <Button
-        size="icon-sm"
-        aria-label="Terminer l'enregistrement"
-        title="Terminer"
-        onClick={onTerminer}
-      >
-        <Check />
-      </Button>
+      <canvas ref={toileRef} className="journal-bande-halo" aria-hidden />
+      <div className="journal-bande-avant">
+        {/* Le point rouge, seul écart à l'accent unique de l'app : c'est la
+            convention de l'enregistrement, et personne ne la lit deux fois. */}
+        <span className="journal-bande-point" aria-hidden />
+        <span className="journal-bande-duree">{minutage(depuis)}</span>
+        <Button
+          variant="ghost"
+          size="icon-sm"
+          aria-label="Abandonner l'enregistrement"
+          title="Abandonner"
+          onClick={onAbandonner}
+        >
+          <X />
+        </Button>
+        <Button
+          size="icon-sm"
+          aria-label="Terminer l'enregistrement"
+          title="Terminer"
+          onClick={onTerminer}
+        >
+          <Check />
+        </Button>
+      </div>
     </div>
   );
 }

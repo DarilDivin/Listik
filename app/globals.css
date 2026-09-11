@@ -1046,13 +1046,13 @@
   min-width: 0;
   flex: 1;
 }
-/* La bande elle-même : cent barres, alignées sur l'axe médian. Pas de miroir
-   sous l'axe — une demi-onde suffit à lire un rythme, et la symétrie n'aurait
-   fait que doubler la hauteur pour la même information. */
+/* La lueur de la note gardée : la matière du halo d'enregistrement, étirée
+   sur la durée. Ce qui a été écouté s'allume, le reste attend sous un voile.
+   Tout est PEINT (voir `features/journal/halo.ts`) — le bouton ne porte que
+   le déplacement au clic et l'anneau de focus. */
 .journal-voix-onde {
-  display: flex;
-  align-items: center;
-  gap: 1.5px;
+  position: relative;
+  display: block;
   width: 100%;
   height: 2.25rem;
   padding: 0;
@@ -1065,17 +1065,14 @@
   box-shadow: 0 0 0 2px var(--color-ring);
   border-radius: 3px;
 }
-.journal-voix-onde > span {
-  flex: 1;
-  min-width: 1px;
-  border-radius: 1px;
-  background-color: color-mix(in oklch, var(--color-foreground) 22%, transparent);
-  transition: background-color 90ms linear;
-}
-/* Ce qui est PASSÉ prend l'accent : le remplissage suit la voix, il ne
-   recouvre pas la forme d'un bandeau. */
-.journal-voix-onde > span[data-passe] {
-  background-color: var(--color-brand);
+.journal-voix-lueur {
+  position: absolute;
+  inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+  /* Le clic appartient au bouton : la lueur n'a rien à intercepter. */
+  pointer-events: none;
 }
 .journal-voix-duree {
   flex: none;
@@ -1095,15 +1092,35 @@
    gardé. Elle n'entre pas dans le document — elle se tient sous lui, le temps
    qu'on parle, et s'efface en laissant une pièce. */
 .journal-bande {
-  display: flex;
-  align-items: center;
-  gap: 0.7rem;
+  position: relative;
+  /* PLUS HAUTE que les autres rangées, et c'est voulu : un halo a besoin
+     d'air, et enregistrer est un MOMENT, pas une ligne de plus dans la page.
+     Elle disparaît dès qu'on a fini. */
+  height: 4.5rem;
   margin-top: 1rem;
-  padding: 0.5rem 0.75rem 0.5rem 0.9rem;
   border-radius: 10px;
   /* Le seul fond de la colonne de texte : la bande est un état, pas de
      l'encre. C'est ce qui dit qu'elle partira. */
   background-color: color-mix(in oklch, var(--color-foreground) 4%, transparent);
+  /* La lueur s'arrête aux coins arrondis plutôt que de déborder en carré. */
+  overflow: hidden;
+}
+/* Le halo, peint au canvas et posé SOUS les commandes. */
+.journal-bande-halo {
+  position: absolute;
+  inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+.journal-bande-avant {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  height: 100%;
+  padding: 0 0.75rem 0 0.9rem;
 }
 .journal-bande-point {
   flex: none;
@@ -1123,26 +1140,9 @@
     animation: none;
   }
 }
-/* Ce que le micro entend à l'instant : les trois dernières secondes, les plus
-   récentes à droite. Ce n'est PAS la silhouette qui sera gardée — celle-là se
-   calcule à l'arrêt, quand on sait enfin ce qui a été le plus fort. */
-.journal-bande-onde {
-  display: flex;
-  align-items: center;
-  gap: 2px;
-  flex: 1;
-  height: 1.75rem;
-  min-width: 0;
-}
-.journal-bande-onde > span {
-  flex: 1;
-  min-width: 1px;
-  border-radius: 1px;
-  background-color: var(--color-brand);
-  transition: height 90ms linear;
-}
 .journal-bande-duree {
   flex: none;
+  margin-right: auto;
   font-family: var(--font-mono), ui-monospace, monospace;
   font-size: 0.6875rem;
   font-variant-numeric: tabular-nums;
