@@ -276,6 +276,17 @@ function JournalPageContent() {
 
   return (
     <div className="mx-auto flex h-full w-full max-w-4xl flex-col overflow-hidden px-8">
+      {/* Hors de la colonne de texte, et même hors de cette page une fois
+          rendu : la lueur d'enregistrement se pose au bord bas de l'app par
+          un portail. Elle n'entre pas dans le document. */}
+      {enregistre && !cherche && (
+        <BandeEnregistrement
+          depart={departRef.current}
+          abonner={abonner}
+          onTerminer={() => void terminer()}
+          onAbandonner={abandonner}
+        />
+      )}
       {/* Le SEUL filet de la page : il sépare le chrome du texte. */}
       <div className="flex items-start justify-between gap-4 border-b border-border/60 pb-5 pt-8">
         <div className="min-w-0">
@@ -423,17 +434,6 @@ function JournalPageContent() {
             />
           )}
 
-          {/* Sous le texte, dans la colonne : la bande n'entre pas dans le
-              document — elle se tient à côté du temps de l'enregistrement,
-              puis s'efface en laissant une pièce. */}
-          {enregistre && !cherche && (
-            <BandeEnregistrement
-              depart={departRef.current}
-              abonner={abonner}
-              onTerminer={() => void terminer()}
-              onAbandonner={abandonner}
-            />
-          )}
 
           {/* Il y a un an. Séparé par de l'ESPACE, pas par un filet : le gris
               et la distance disent déjà que ce n'est plus aujourd'hui. */}

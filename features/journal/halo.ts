@@ -25,7 +25,6 @@ export interface Palette {
   /** L'encre du texte, pour ce qui n'est pas lumineux. */
   encre: [number, number, number];
   force: number;
-  flou: number;
   melange: GlobalCompositeOperation;
 }
 
@@ -95,7 +94,6 @@ export function palette(): Palette {
     b: decaler(a, 22),
     encre: versRgb(style.getPropertyValue("--foreground").trim() || "#3a3630"),
     force: sombre ? 0.62 : 0.52,
-    flou: sombre ? 20 : 16,
     melange: sombre ? "lighter" : "source-over",
   };
   return cache;
@@ -116,10 +114,18 @@ if (typeof document !== "undefined") {
   });
 }
 
-/** Met le canvas à la taille de sa boîte, à la densité de l'écran. */
-export function ajuster(canvas: HTMLCanvasElement) {
+/**
+ * Met le canvas à la taille de sa boîte, à la densité de l'écran.
+ *
+ * `echelle` permet de peindre PLUS PETIT que la boîte et de laisser le
+ * navigateur agrandir. Sur une lueur, personne ne peut le voir — elle est
+ * floue par construction — et une surface pleine largeur repeinte soixante
+ * fois par seconde coûte quatre fois moins cher à la moitié de sa
+ * résolution. Les dessins nets (la bande d'une note gardée) restent à 1.
+ */
+export function ajuster(canvas: HTMLCanvasElement, echelle = 1) {
   const boite = canvas.getBoundingClientRect();
-  const densite = Math.min(2.5, window.devicePixelRatio || 1);
+  const densite = Math.min(2.5, window.devicePixelRatio || 1) * echelle;
   const w = Math.max(1, Math.round(boite.width));
   const h = Math.max(1, Math.round(boite.height));
   if (canvas.width !== Math.round(w * densite) || canvas.height !== Math.round(h * densite)) {
@@ -144,7 +150,13 @@ const NAPPES = [
 ] as const;
 
 /**
- * Le halo de l'ENREGISTREMENT : ancré en bas, il monte avec la voix.
+ * Le halo de l'ENREGISTREMENT : une lueur couchée au bord BAS de l'app, qui
+ * monte avec la voix.
+ *
+ * Pleine largeur et collée au châssis, pas posée dans la colonne de texte :
+ * c'est ce qui la fait appartenir à l'application plutôt qu'au document. Tant
+ * qu'on parle, c'est le bas de l'écran qui s'allume ; la page, elle, reste ce
+ * qu'elle est et on peut continuer d'y écrire.
  *
  * `t` est un temps en secondes — il fait dériver les nappes les unes par
  * rapport aux autres. `niveau` (0 à 1) commande la HAUTEUR et non l'opacité :
@@ -157,25 +169,33 @@ export function peindreHalo(
   t: number,
   niveau: number,
 ): void {
-  const mesure = ajuster(canvas);
+  // La moitié de la résolution : c'est du flou, et ça couvre toute la largeur
+  // de la fenêtre soixante fois par seconde.
+  const mesure = ajuster(canvas, 0.5);
   if (!mesure) return;
   const { ctx, w, h } = mesure;
   ctx.clearRect(0, 0, w, h);
+  // Le flou suit la hauteur : le même nombre de pixels sur une bande de 70 px
+  // et sur une lueur de 200 en ferait un liseré net d'un côté, une purée de
+  // l'autre.
+  const flou = Math.max(12, Math.min(48, h * 0.22));
   ctx.save();
-  if (typeof ctx.filter === "string") ctx.filter = `blur(${pal.flou}px)`;
+  if (typeof ctx.filter === "string") ctx.filter = `blur(${flou}px)`;
   ctx.globalCompositeOperation = pal.melange;
 
   for (const nappe of NAPPES) {
     const couleur = nappe.teinte === "a" ? pal.a : pal.b;
     const crete = h * (0.22 + 0.62 * niveau) * nappe.h;
     ctx.beginPath();
-    ctx.moveTo(-pal.flou, h + pal.flou);
+    // On déborde de part et d'autre : sans ça le flou laisse voir les deux
+    // bords verticaux de la nappe, et la lueur a des côtés.
+    ctx.moveTo(-flou, h + flou);
     const pas = Math.max(6, w / 48);
-    for (let x = -pal.flou; x <= w + pal.flou; x += pas) {
+    for (let x = -flou; x <= w + flou; x += pas) {
       const onde = Math.sin((x / w) * Math.PI * nappe.k + t * nappe.v * 2.2);
       ctx.lineTo(x, h - crete * (0.55 + 0.45 * onde));
     }
-    ctx.lineTo(w + pal.flou, h + pal.flou);
+    ctx.lineTo(w + flou, h + flou);
     ctx.closePath();
     const d = ctx.createLinearGradient(0, h - crete * 1.5, 0, h);
     d.addColorStop(0, rgba(couleur, 0));

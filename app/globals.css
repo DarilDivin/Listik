@@ -1088,61 +1088,68 @@
   margin-top: 0.15em;
 }
 
-/* La bande d'enregistrement : ce qui se passe MAINTENANT, pas ce qui est
-   gardé. Elle n'entre pas dans le document — elle se tient sous lui, le temps
-   qu'on parle, et s'efface en laissant une pièce. */
-.journal-bande {
-  position: relative;
-  /* PLUS HAUTE que les autres rangées, et c'est voulu : un halo a besoin
-     d'air, et enregistrer est un MOMENT, pas une ligne de plus dans la page.
-     Elle disparaît dès qu'on a fini. */
-  height: 4.5rem;
-  margin-top: 1rem;
-  border-radius: 10px;
-  /* Le seul fond de la colonne de texte : la bande est un état, pas de
-     l'encre. C'est ce qui dit qu'elle partira. */
-  background-color: color-mix(in oklch, var(--color-foreground) 4%, transparent);
-  /* La lueur s'arrête aux coins arrondis plutôt que de déborder en carré. */
-  overflow: hidden;
+/* Pendant qu'on parle, c'est le BAS DE L'APP qui s'allume — pas une rangée
+   ajoutée au document. Une lueur couchée sur toute la largeur, au bord de la
+   fenêtre, comme si elle appartenait au châssis : la différence entre « le
+   document contient un enregistreur » et « l'application écoute ».
+   La page ne bouge pas, et on peut continuer d'y écrire. */
+.journal-ecoute {
+  position: fixed;
+  inset: auto 0 0 0;
+  /* Assez haut pour que la lueur ait où enfler, et rien de plus : elle
+     n'occupe pas l'écran, elle le borde. */
+  height: 13rem;
+  z-index: 40;
+  /* RIEN n'intercepte ici : on doit pouvoir écrire dans la page pendant que
+     ça enregistre. Seules les commandes reprennent le clic. */
+  pointer-events: none;
 }
-/* Le halo, peint au canvas et posé SOUS les commandes. */
-.journal-bande-halo {
+.journal-ecoute-lueur {
   position: absolute;
   inset: 0;
   display: block;
   width: 100%;
   height: 100%;
-  pointer-events: none;
 }
-.journal-bande-avant {
-  position: relative;
+/* Les commandes flottent au-dessus de la lueur : l'idiome des surfaces qui
+   passent par-dessus le contenu (dock, capture rapide), parce qu'elles
+   doivent rester lisibles sur une couleur qui bouge. */
+.journal-ecoute-commandes {
+  position: absolute;
+  bottom: 1.25rem;
+  left: 50%;
+  transform: translateX(-50%);
   display: flex;
   align-items: center;
-  gap: 0.7rem;
-  height: 100%;
-  padding: 0 0.75rem 0 0.9rem;
+  gap: 0.6rem;
+  padding: 0.4rem 0.5rem 0.4rem 0.9rem;
+  border-radius: 999px;
+  background-color: var(--color-card);
+  box-shadow:
+    0 1px 2px oklch(0 0 0 / 10%),
+    0 8px 24px -10px oklch(0 0 0 / 26%);
+  pointer-events: auto;
 }
-.journal-bande-point {
+.journal-ecoute-point {
   flex: none;
   width: 0.5rem;
   height: 0.5rem;
   border-radius: 999px;
   background-color: oklch(0.58 0.21 25);
-  animation: journal-bande-pouls 1.6s ease-in-out infinite;
+  animation: journal-ecoute-pouls 1.6s ease-in-out infinite;
 }
-@keyframes journal-bande-pouls {
+@keyframes journal-ecoute-pouls {
   50% {
     opacity: 0.25;
   }
 }
 @media (prefers-reduced-motion: reduce) {
-  .journal-bande-point {
+  .journal-ecoute-point {
     animation: none;
   }
 }
-.journal-bande-duree {
+.journal-ecoute-duree {
   flex: none;
-  margin-right: auto;
   font-family: var(--font-mono), ui-monospace, monospace;
   font-size: 0.6875rem;
   font-variant-numeric: tabular-nums;

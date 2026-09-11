@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { Check, X } from "lucide-react";
 import { minutage } from "@/features/journal/voix";
 import { palette, peindreHalo } from "@/features/journal/halo";
@@ -16,25 +17,23 @@ interface BandeEnregistrementProps {
 }
 
 /**
- * La bande qui bouge pendant qu'on parle : un halo qui enfle avec la voix.
+ * Ce qui se passe pendant qu'on parle : le BAS DE L'APP s'allume.
  *
- * Elle vit dans la PAGE, hors de l'éditeur, et c'est délibéré. La faire vivre
- * dans le document aurait été plus joli — la bande serait apparue là où était
- * le curseur — mais l'éditeur s'enregistre tout seul toutes les sept dixièmes
- * de seconde : un nœud d'enregistrement s'y serait retrouvé écrit dans le
- * markdown de la journée, pour un objet qui n'existe que le temps qu'on parle
- * et n'a aucune forme en Markdown. Rien ne touche au texte enregistré tant
- * qu'il n'y a pas une vraie pièce à poser.
+ * Pas une rangée dans la colonne de texte — une lueur couchée sur toute la
+ * largeur, au bord inférieur de la fenêtre, comme si elle appartenait au
+ * châssis. C'est la différence entre « le document contient un enregistreur »
+ * et « l'application est en train d'écouter ». La page ne bouge pas d'un
+ * pixel, et on peut continuer d'y écrire pendant qu'on parle.
+ *
+ * Elle passe par un PORTAIL vers `document.body` : ainsi elle ne dépend
+ * d'aucun ancêtre — un `transform` ou un `filter` posé un jour sur le shell
+ * piègerait un `position: fixed` et la recollerait au milieu de la page.
  *
  * Elle ne PILOTE rien : le micro s'ouvre dans la page, au clic. Le faire ici,
  * au montage, ouvrait DEUX micros — React monte, démonte et remonte les effets
  * en développement, et le second `getUserMedia` sur un appareil déjà pris rend
- * un flux muet. La bande restait plate d'un bout à l'autre, sans erreur pour
+ * un flux muet. La lueur restait plate d'un bout à l'autre, sans erreur pour
  * le dire. Elle ne fait donc que MONTRER, et les niveaux lui arrivent.
- *
- * Elle est plus haute que les autres rangées du journal, et c'est voulu : un
- * halo a besoin d'air, et enregistrer est un MOMENT, pas une ligne de plus
- * dans la page.
  */
 export function BandeEnregistrement({
   depart,
@@ -48,6 +47,10 @@ export function BandeEnregistrement({
   // serait payer un arbre entier pour quelques pixels.
   const niveauRef = useRef(0);
   const [depuis, setDepuis] = useState(0);
+  // `document` n'existe pas au prérendu de l'export statique.
+  const [monte, setMonte] = useState(false);
+
+  useEffect(() => setMonte(true), []);
 
   useEffect(() => {
     abonner((niveau) => {
@@ -64,7 +67,7 @@ export function BandeEnregistrement({
 
     const peindre = (t: number) => {
       if (!vivant) return;
-      // Le halo suit la voix même quand on demande moins de mouvement : sa
+      // La lueur suit la voix même quand on demande moins de mouvement : sa
       // HAUTEUR est une information, pas un ornement. Ce qu'on immobilise,
       // c'est la dérive des nappes les unes sur les autres.
       const temps = calme.matches ? 0 : t / 1000;
@@ -77,7 +80,7 @@ export function BandeEnregistrement({
       vivant = false;
       cancelAnimationFrame(image);
     };
-  }, []);
+  }, [monte]);
 
   useEffect(() => {
     // Le compte se rafraîchit cinq fois par seconde pour rester juste à la
@@ -86,14 +89,19 @@ export function BandeEnregistrement({
     return () => clearInterval(horloge);
   }, [depart]);
 
-  return (
-    <div className="journal-bande" role="group" aria-label="Enregistrement en cours">
-      <canvas ref={toileRef} className="journal-bande-halo" aria-hidden />
-      <div className="journal-bande-avant">
+  if (!monte) return null;
+
+  return createPortal(
+    <div className="journal-ecoute" role="group" aria-label="Enregistrement en cours">
+      <canvas ref={toileRef} className="journal-ecoute-lueur" aria-hidden />
+      {/* Les commandes flottent AU-DESSUS de la lueur, au centre : c'est là
+          qu'on les cherche quand tout le bas de l'écran s'allume. Elles sont
+          le seul élément de l'ensemble qui prenne le clic. */}
+      <div className="journal-ecoute-commandes">
         {/* Le point rouge, seul écart à l'accent unique de l'app : c'est la
             convention de l'enregistrement, et personne ne la lit deux fois. */}
-        <span className="journal-bande-point" aria-hidden />
-        <span className="journal-bande-duree">{minutage(depuis)}</span>
+        <span className="journal-ecoute-point" aria-hidden />
+        <span className="journal-ecoute-duree">{minutage(depuis)}</span>
         <Button
           variant="ghost"
           size="icon-sm"
@@ -112,6 +120,7 @@ export function BandeEnregistrement({
           <Check />
         </Button>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
