@@ -1020,6 +1020,9 @@
   justify-content: center;
   width: 2.25rem;
   height: 2.25rem;
+  /* Une grille d'une seule case : les deux icônes s'y superposent. */
+  display: grid;
+  place-items: center;
   /* Le seul rond de la page : c'est un bouton de lecture, et il n'y a pas
      d'autre forme qui dise « écouter » sans mot. */
   border-radius: 999px;
@@ -1039,6 +1042,29 @@
 }
 .journal-voix-bouton:focus-visible {
   box-shadow: 0 0 0 2px var(--color-ring);
+}
+/* Lecture et pause se CROISENT au lieu de se remplacer : superposées dans la
+   même case, l'une s'efface pendant que l'autre vient. Un glyphe qui claque
+   d'un état à l'autre trahit un bouton qu'on presse pour écouter. */
+.journal-voix-icone {
+  grid-area: 1 / 1;
+  transition:
+    opacity 160ms cubic-bezier(0.4, 0, 0.2, 1),
+    transform 160ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+.journal-voix-icone[data-pause],
+.journal-voix-bouton[data-joue] .journal-voix-icone {
+  opacity: 0;
+  transform: scale(0.72);
+}
+.journal-voix-bouton[data-joue] .journal-voix-icone[data-pause] {
+  opacity: 1;
+  transform: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  .journal-voix-icone {
+    transition: none;
+  }
 }
 .journal-voix-corps {
   display: flex;

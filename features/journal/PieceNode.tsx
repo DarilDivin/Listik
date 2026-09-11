@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import useSWR from "swr";
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { openPath } from "@tauri-apps/plugin-opener";
@@ -329,7 +329,12 @@ function OndeVocale({
   const audioRef = useRef<HTMLAudioElement>(null);
   const toileRef = useRef<HTMLCanvasElement>(null);
   const [joue, setJoue] = useState(false);
-  const [avance, setAvance] = useState(0);
+  // L'avancement ne passe PAS par l'état React : il change soixante fois par
+  // seconde pendant la lecture, et re-rendre le nœud à cette cadence pour
+  // repeindre un canvas serait payer un arbre entier pour quelques pixels.
+  const partRef = useRef(0);
+  // Le chiffre, lui, ne bouge qu'à la seconde — c'est tout ce qu'il affiche.
+  const [seconde, setSeconde] = useState(0);
 
   // Mémorisé : `?? []` rendrait un tableau NEUF à chaque rendu, et l'effet de
   // dessin plus bas rebrancherait ses observateurs à chaque fois.
@@ -339,22 +344,30 @@ function OndeVocale({
   // progression en dépend.
   const dureeMs = Number(piece.duree_ms ?? 0);
 
-  // Aucune boucle d'animation ici : une note gardée ne bouge pas. On repeint
-  // quand la lecture avance, quand la colonne change de largeur, et quand le
-  // thème ou l'accent change — pas soixante fois par seconde pour des pixels
-  // immobiles. Une journée à quatre notes vocales paierait le reste en
-  // batterie, pour rien.
+  const peindre = useCallback(
+    (tete = 0) => {
+      const toile = toileRef.current;
+      if (!toile || cretes.length === 0) return;
+      peindreBande(toile, palette(), cretes, partRef.current, tete);
+    },
+    [cretes],
+  );
+
+  // AU REPOS : aucune boucle. Une note qu'on n'écoute pas ne bouge pas, et on
+  // ne repeint qu'au redimensionnement de la colonne ou au changement de
+  // thème. Une journée à quatre notes vocales paierait le reste en batterie,
+  // pour rien.
   useEffect(() => {
     const toile = toileRef.current;
     if (!toile || cretes.length === 0) return;
-    const peindre = () => peindreBande(toile, palette(), cretes, avance);
-    peindre();
+    const redessiner = () => peindre(0);
+    redessiner();
 
-    const surTaille = new ResizeObserver(peindre);
+    const surTaille = new ResizeObserver(redessiner);
     surTaille.observe(toile);
     // La palette est mise en cache dans `halo.ts` et invalidée par le même
     // changement d'attribut : il suffit de redemander un dessin.
-    const surTheme = new MutationObserver(peindre);
+    const surTheme = new MutationObserver(redessiner);
     surTheme.observe(document.documentElement, {
       attributes: true,
       attributeFilter: ["class", "data-accent"],
@@ -363,7 +376,60 @@ function OndeVocale({
       surTaille.disconnect();
       surTheme.disconnect();
     };
-  }, [cretes, avance]);
+  }, [cretes, peindre]);
+
+  // PENDANT LA LECTURE : soixante images par seconde, lues sur l'horloge du
+  // média.
+  //
+  // C'est là qu'était le défaut. On repeignait sur `timeupdate`, qui ne bat
+  // QUE QUATRE FOIS PAR SECONDE dans Chromium : le remplissage avançait par
+  // sauts de deux cents millisecondes. L'horloge de l'élément audio, elle,
+  // est continue — il suffit de la lire à chaque image.
+  useEffect(() => {
+    if (!joue || dureeMs <= 0) return;
+    let image = 0;
+    const suivre = (t: number) => {
+      const audio = audioRef.current;
+      if (audio) {
+        partRef.current = Math.min(1, (audio.currentTime * 1000) / dureeMs);
+        // La tête respire lentement — une sinusoïde, sans rebond : c'est une
+        // voix qui se rejoue, pas un indicateur d'activité.
+        peindre(0.82 + 0.18 * Math.sin(t / 420));
+        const s = Math.round((partRef.current * dureeMs) / 1000);
+        setSeconde((p) => (p === s ? p : s));
+      }
+      image = requestAnimationFrame(suivre);
+    };
+    image = requestAnimationFrame(suivre);
+    return () => cancelAnimationFrame(image);
+  }, [joue, dureeMs, peindre]);
+
+  /**
+   * À la fin, le remplissage se RETIRE au lieu de disparaître.
+   *
+   * Remettre l'avancement à zéro d'un coup donnait l'impression d'un bug :
+   * la note s'éteignait sans qu'on sache si elle était allée au bout. Un
+   * retrait de quatre dixièmes de seconde, décéléré, dit « c'est fini » et
+   * rend la forme intacte pour la prochaine écoute.
+   */
+  const refluer = useCallback(() => {
+    const depuis = partRef.current;
+    const debut = performance.now();
+    const DUREE = 420;
+    const pas = (t: number) => {
+      const u = Math.min(1, (t - debut) / DUREE);
+      // Décélération cubique : rapide au départ, posée à l'arrivée.
+      partRef.current = depuis * (1 - (1 - (1 - u) ** 3));
+      peindre((1 - u) * 0.6);
+      if (u < 1) requestAnimationFrame(pas);
+      else {
+        partRef.current = 0;
+        peindre(0);
+        setSeconde(0);
+      }
+    };
+    requestAnimationFrame(pas);
+  }, [peindre]);
 
   const basculer = () => {
     const audio = audioRef.current;
@@ -377,19 +443,27 @@ function OndeVocale({
       <button
         type="button"
         className="journal-voix-bouton"
+        data-joue={joue || undefined}
         aria-label={joue ? "Mettre en pause" : "Écouter la note"}
         onClick={basculer}
       >
-        {joue ? (
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor" aria-hidden>
-            <rect x="6" y="4.5" width="4" height="15" rx="1.2" />
-            <rect x="14" y="4.5" width="4" height="15" rx="1.2" />
-          </svg>
-        ) : (
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor" aria-hidden>
-            <path d="M7.5 4.8a1 1 0 0 1 1.53-.85l10 7.2a1 1 0 0 1 0 1.7l-10 7.2A1 1 0 0 1 7.5 19.2z" />
-          </svg>
-        )}
+        {/* Les deux icônes sont POSÉES l'une sur l'autre et se croisent. Les
+            échanger par un rendu conditionnel faisait claquer le glyphe d'un
+            état à l'autre, ce qui est exactement ce qu'on ne veut pas d'un
+            bouton qu'on presse pour écouter. */}
+        <svg
+          className="journal-voix-icone"
+          width="15" height="15" viewBox="0 0 24 24" fill="currentColor" aria-hidden
+        >
+          <path d="M7.5 4.8a1 1 0 0 1 1.53-.85l10 7.2a1 1 0 0 1 0 1.7l-10 7.2A1 1 0 0 1 7.5 19.2z" />
+        </svg>
+        <svg
+          className="journal-voix-icone" data-pause
+          width="15" height="15" viewBox="0 0 24 24" fill="currentColor" aria-hidden
+        >
+          <rect x="6" y="4.5" width="4" height="15" rx="1.2" />
+          <rect x="14" y="4.5" width="4" height="15" rx="1.2" />
+        </svg>
       </button>
 
       <span className="journal-voix-corps">
@@ -403,7 +477,11 @@ function OndeVocale({
             const boite = e.currentTarget.getBoundingClientRect();
             const part = Math.min(1, Math.max(0, (e.clientX - boite.left) / boite.width));
             audio.currentTime = (part * dureeMs) / 1000;
-            setAvance(part);
+            partRef.current = part;
+            setSeconde(Math.round((part * dureeMs) / 1000));
+            // Repeint TOUT DE SUITE : à l'arrêt, aucune boucle ne viendrait
+            // le faire, et le clic resterait sans effet visible.
+            peindre(joue ? 0.9 : 0);
           }}
         >
           {/* Le bouton reste un BOUTON : c'est lui qui porte le déplacement
@@ -415,7 +493,7 @@ function OndeVocale({
       </span>
 
       <span className="journal-voix-duree">
-        {minutage(joue || avance > 0 ? avance * dureeMs : dureeMs)}
+        {minutage(joue || seconde > 0 ? seconde * 1000 : dureeMs)}
       </span>
 
       {/* Pas de `controls` : la barre du navigateur afficherait une durée
@@ -429,12 +507,7 @@ function OndeVocale({
         onPause={() => setJoue(false)}
         onEnded={() => {
           setJoue(false);
-          setAvance(0);
-        }}
-        onTimeUpdate={(e) => {
-          if (dureeMs > 0) {
-            setAvance(Math.min(1, (e.currentTarget.currentTime * 1000) / dureeMs));
-          }
+          refluer();
         }}
       />
     </span>

@@ -25,6 +25,8 @@ export interface Palette {
   /** L'encre du texte, pour ce qui n'est pas lumineux. */
   encre: [number, number, number];
   force: number;
+  /** Force de la tête de lecture — voir `peindreBande`. */
+  foyer: number;
   melange: GlobalCompositeOperation;
 }
 
@@ -94,6 +96,10 @@ export function palette(): Palette {
     b: decaler(a, 22),
     encre: versRgb(style.getPropertyValue("--foreground").trim() || "#3a3630"),
     force: sombre ? 0.62 : 0.52,
+    // Bien plus discrète sur le papier : là, la tête se DÉPOSE sur le trait
+    // et le fonce. Au réglage du thème sombre, elle le lavait de blanc et
+    // effaçait la crête au lieu de la désigner.
+    foyer: sombre ? 0.6 : 0.3,
     melange: sombre ? "lighter" : "source-over",
   };
   return cache;
@@ -214,14 +220,16 @@ export function peindreHalo(
  * l'enregistrement. `part` (0 à 1) est la fraction écoutée : elle s'allume,
  * le reste attend sous un voile.
  *
- * Rien ne bouge ici — c'est un dessin, pas une animation. Il ne se refait
- * qu'au changement d'avancement, de taille ou de thème.
+ * `tete` (0 à 1) allume une TÊTE au point de lecture — le foyer du son, qui
+ * voyage avec lui. À zéro, rien n'est dessiné : une note au repos est un
+ * dessin immobile, et c'est ce qu'elle doit rester.
  */
 export function peindreBande(
   canvas: HTMLCanvasElement,
   pal: Palette,
   cretes: number[],
   part: number,
+  tete = 0,
 ): void {
   const mesure = ajuster(canvas);
   if (!mesure) return;
@@ -306,4 +314,25 @@ export function peindreBande(
   ctx.clip();
   peindre(1);
   ctx.restore();
+
+  // La TÊTE : un foyer doux posé sur la crête, au point de lecture. Ce n'est
+  // pas un curseur — un trait vertical dirait « position » ; celui-ci dit
+  // « c'est ici que ça sonne », et c'est la seule chose de la note qui bouge.
+  if (tete > 0 && part > 0 && part < 1) {
+    const i = Math.min(n - 1, Math.round(part * (n - 1)));
+    const x = part * w;
+    const y = h - Math.max(0.07, doux[i]) * h * 0.88;
+    // Serré : un foyer large déborde sur les crêtes voisines et brouille la
+    // forme au lieu de pointer un endroit.
+    const rayon = h * 0.55;
+    ctx.save();
+    ctx.globalCompositeOperation = pal.melange;
+    const foyer = ctx.createRadialGradient(x, y, 0, x, y, rayon);
+    foyer.addColorStop(0, rgba(pal.a, pal.foyer * tete));
+    foyer.addColorStop(0.4, rgba(pal.b, pal.foyer * 0.42 * tete));
+    foyer.addColorStop(1, rgba(pal.a, 0));
+    ctx.fillStyle = foyer;
+    ctx.fillRect(x - rayon, 0, rayon * 2, h);
+    ctx.restore();
+  }
 }
