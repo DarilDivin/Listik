@@ -359,8 +359,11 @@ function JournalPageContent() {
               Aujourd&apos;hui
             </Button>
           )}
-          {/* Quatre des six outils de l'en-tête. La musique et le verrou
-              viendront à côté. */}
+          {/* Les quatre outils de l'en-tête, et ce sera tout pour un moment.
+              Il en avait été annoncé six : le verrou est écarté, la musique
+              attend le déploiement de la première version (2026-09-12). Ni
+              l'un ni l'autre n'a jamais été spécifié — s'ils reviennent, tout
+              est à définir. */}
           <Button
             variant="ghost"
             size="icon-sm"
