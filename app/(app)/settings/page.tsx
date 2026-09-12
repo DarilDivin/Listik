@@ -31,7 +31,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { SettingsGroup } from "@/components/settings/SettingsGroup";
 import { SettingsRow } from "@/components/settings/SettingsRow";
-import { exportBackup } from "@/features/backup/export";
+import { exportBackup, manquants, resume } from "@/features/backup/export";
 
 const APP_VERSION = "0.1.0";
 
@@ -54,8 +54,16 @@ export default function SettingsPage() {
   const handleExport = async () => {
     setExporting(true);
     try {
-      const path = await exportBackup();
-      if (path) toast.success("Sauvegarde enregistrée");
+      const bilan = await exportBackup();
+      // Rien à dire quand le dialogue a été refermé : ce n'est pas un échec.
+      if (!bilan) return;
+      // Les nombres, pas « Enregistré » : c'est ce qui dit que le fichier
+      // contient bien ce qu'on croit.
+      toast.success(`Sauvegarde enregistrée — ${resume(bilan)}.`);
+      const perdu = manquants(bilan);
+      // Une pièce dont le fichier a disparu garde sa fiche, pas ses octets.
+      // Le taire ferait croire la sauvegarde complète.
+      if (perdu) toast.warning(perdu);
     } catch (e) {
       console.error("export_backup:", e);
       toast.error("Échec de la sauvegarde");
@@ -185,7 +193,7 @@ export default function SettingsPage() {
           <SettingsGroup title="Données" index={4}>
             <SettingsRow
               label="Sauvegarder mes données"
-              description="Exporte toutes tes tâches et notes dans un fichier JSON."
+              description="Tâches, projets, journal et réglages dans un fichier JSON — les pièces jointes dans un dossier à côté."
               icon={Download}
               iconClassName="bg-emerald-500/8 text-emerald-600 dark:text-emerald-400"
             >

@@ -698,30 +698,149 @@ fn agent_prompt(text: &str, history: &[AiChatMessage]) -> String {
 // Sauvegarde (export JSON complet)
 // ---------------------------------------------------------------------------
 
+/// Une pièce jointe dans la sauvegarde : sa fiche, et son nom DANS LE DOSSIER
+/// voisin.
+///
+/// `chemin` (absolu, propre à cette machine) est conservé tel quel — il dit
+/// d'où la pièce venait — mais c'est `fichier` qui compte pour retrouver les
+/// octets. `None` quand la copie a échoué : le fichier avait disparu du
+/// disque, et la fiche reste pour garder trace de ce qu'il y avait là.
 #[derive(serde::Serialize)]
-struct Backup {
-    version: u32,
-    exported_at: String,
-    todos: Vec<Todo>,
-    notes: Vec<Note>,
+struct PieceSauvee {
+    #[serde(flatten)]
+    fiche: JournalPiece,
+    fichier: Option<String>,
 }
 
-/// Écrit un backup JSON (toutes les tâches + notes) à l'emplacement choisi
-/// par l'utilisateur (dialogue "Enregistrer sous" géré côté frontend).
-#[tauri::command]
-pub async fn export_backup(state: State<'_, AppState>, path: String) -> Result<(), String> {
-    let todos = db::list_all(&state.pool).await.map_err(|e| e.to_string())?;
-    let notes = db::list_notes(&state.pool).await.map_err(|e| e.to_string())?;
+/// Tout ce que l'application détient.
+///
+/// Version 2. La 1 ne portait que les tâches et les NOTES — un module mort,
+/// remplacé par le Journal — et laissait dehors les projets, domaines et
+/// rubriques que les tâches référencent pourtant : même pour les tâches, elle
+/// produisait des renvois orphelins.
+#[derive(serde::Serialize)]
+struct Sauvegarde {
+    version: u32,
+    exported_at: String,
+    /// Le dossier voisin où sont les pièces, relatif au fichier JSON.
+    pieces_dossier: String,
+    todos: Vec<Todo>,
+    areas: Vec<Area>,
+    projects: Vec<Project>,
+    headings: Vec<db::Entete>,
+    tags: Vec<Tag>,
+    orderings: Vec<db::Ordering>,
+    journal: Vec<JournalEntry>,
+    pieces: Vec<PieceSauvee>,
+    settings: Settings,
+}
 
-    let backup = Backup {
-        version: 1,
-        exported_at: chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, true),
-        todos,
-        notes,
+/// Ce qu'une sauvegarde a emporté, pour pouvoir le dire.
+///
+/// « Enregistré » ne prouve rien : ce sont les nombres qui disent si le
+/// fichier contient bien ce qu'on croit.
+#[derive(serde::Serialize, ts_rs::TS)]
+#[ts(export, export_to = "../../features/backup/generated/")]
+pub struct SauvegardeBilan {
+    pub taches: u32,
+    pub jours: u32,
+    pub pieces: u32,
+    /// Pièces dont le fichier a disparu du disque — leur fiche est gardée.
+    pub pieces_manquantes: u32,
+}
+
+/// Écrit la sauvegarde : un JSON à l'emplacement choisi, et les pièces
+/// jointes dans un dossier voisin.
+///
+/// DEUX OBJETS, PAS UN. Les photos, PDF et notes vocales sont la seule chose
+/// irremplaçable ici — le texte se retape, une voix non — et un disque mort
+/// emporte la base ET les fichiers. Les mettre en base64 dans le JSON aurait
+/// tenu en un fichier, au prix d'un tiers de poids en plus et d'un document
+/// qu'aucun éditeur n'ouvre. C'est l'idiome que l'export du journal utilise
+/// déjà : un fichier, et son dossier à côté.
+#[tauri::command]
+pub async fn export_backup(
+    state: State<'_, AppState>,
+    app: AppHandle,
+    path: String,
+) -> Result<SauvegardeBilan, String> {
+    let pool = &state.pool;
+    let cible = std::path::PathBuf::from(&path);
+    let dossier_source = db::dossier_pieces(&app)?;
+
+    let todos = db::list_all(pool).await.map_err(|e| e.to_string())?;
+    let areas = db::list_areas(pool).await.map_err(|e| e.to_string())?;
+    let projects = db::list_projects(pool).await.map_err(|e| e.to_string())?;
+    let headings = db::list_headings(pool).await.map_err(|e| e.to_string())?;
+    let tags = db::list_tags(pool).await.map_err(|e| e.to_string())?;
+    let orderings = db::get_orderings(pool).await.map_err(|e| e.to_string())?;
+    let journal = db::list_all_journal_entries_with_tags(pool)
+        .await
+        .map_err(|e| e.to_string())?;
+    let fiches = db::list_all_journal_pieces(pool, &dossier_source)
+        .await
+        .map_err(|e| e.to_string())?;
+    let settings = db::get_settings(pool).await.map_err(|e| e.to_string())?;
+
+    // Le dossier porte le nom du fichier : deux sauvegardes dans le même
+    // répertoire ne se mélangent pas.
+    let nom_dossier = format!(
+        "{}-pieces",
+        cible.file_stem().and_then(|s| s.to_str()).unwrap_or("listik")
+    );
+
+    let mut pieces = Vec::with_capacity(fiches.len());
+    let mut copiees = 0u32;
+    let mut manquantes = 0u32;
+    if !fiches.is_empty() {
+        let dossier = cible.with_file_name(&nom_dossier);
+        std::fs::create_dir_all(&dossier).map_err(|e| e.to_string())?;
+        let mut pris = std::collections::HashSet::new();
+        for fiche in fiches {
+            // Le nom d'ORIGINE, dédupliqué — c'est lui qu'on reconnaît dans un
+            // dossier, pas l'UUID du disque.
+            let nom = db::nom_unique(&mut pris, &fiche.nom_origine);
+            let fichier = if std::fs::copy(&fiche.chemin, dossier.join(&nom)).is_ok() {
+                copiees += 1;
+                Some(nom)
+            } else {
+                // Une pièce disparue n'arrête pas la sauvegarde : sa fiche
+                // entre quand même, sans fichier.
+                pris.remove(&nom);
+                manquantes += 1;
+                None
+            };
+            pieces.push(PieceSauvee { fiche, fichier });
+        }
+    }
+
+    let mut jours: Vec<&str> = journal.iter().map(|e| e.target_day.as_str()).collect();
+    jours.dedup();
+    let bilan = SauvegardeBilan {
+        taches: todos.len() as u32,
+        jours: jours.len() as u32,
+        pieces: copiees,
+        pieces_manquantes: manquantes,
     };
 
-    let json = serde_json::to_string_pretty(&backup).map_err(|e| e.to_string())?;
-    std::fs::write(&path, json).map_err(|e| e.to_string())
+    let sauvegarde = Sauvegarde {
+        version: 2,
+        exported_at: chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, true),
+        pieces_dossier: nom_dossier,
+        todos,
+        areas,
+        projects,
+        headings,
+        tags,
+        orderings,
+        journal,
+        pieces,
+        settings,
+    };
+
+    let json = serde_json::to_string_pretty(&sauvegarde).map_err(|e| e.to_string())?;
+    std::fs::write(&cible, json).map_err(|e| e.to_string())?;
+    Ok(bilan)
 }
 
 // ---------------------------------------------------------------------------

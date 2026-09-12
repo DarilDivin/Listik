@@ -930,6 +930,18 @@ pub async fn list_all_journal_entries(
     sqlx::query_as::<_, JournalEntry>(&query).fetch_all(pool).await
 }
 
+/// Le journal entier, étiquettes comprises — pour la SAUVEGARDE.
+///
+/// L'export Markdown se passe des étiquettes : il rend un document à lire. Une
+/// sauvegarde, elle, doit pouvoir tout rendre — y compris ce qui ne se voit
+/// pas dans le texte.
+pub async fn list_all_journal_entries_with_tags(
+    pool: &SqlitePool,
+) -> Result<Vec<JournalEntry>, sqlx::Error> {
+    let entries = list_all_journal_entries(pool).await?;
+    attach_journal_relations(pool, entries).await
+}
+
 /// Blocs écrits en avance : `target_day` strictement après `after_day`.
 pub async fn list_upcoming_journal_entries(
     pool: &SqlitePool,
@@ -1177,6 +1189,44 @@ pub async fn create_journal_voice(
         cretes: Some(cretes.to_vec()),
         ..piece
     })
+}
+
+/// TOUTES les pièces, y compris celles qu'aucun texte ne cite plus.
+///
+/// Pour la sauvegarde, et c'est délibéré : on ne balaie pas les orphelines
+/// (une pièce détachée par un retour arrière, un jour qu'on rouvrira), donc
+/// une sauvegarde qui ne prendrait que les pièces citées les perdrait
+/// définitivement. Une sauvegarde emporte ce qu'il y a, pas ce qui est en
+/// service.
+pub async fn list_all_journal_pieces(
+    pool: &SqlitePool,
+    dossier: &std::path::Path,
+) -> Result<Vec<JournalPiece>, sqlx::Error> {
+    let ids: Vec<String> = sqlx::query_scalar("SELECT id FROM journal_pieces ORDER BY created_at")
+        .fetch_all(pool)
+        .await?;
+    list_journal_pieces(pool, dossier, &ids).await
+}
+
+/// Les rubriques d'un projet. Lues d'un bloc pour la sauvegarde : une tâche
+/// porte un `heading_id`, et sans cette table il pointerait dans le vide.
+pub async fn list_headings(pool: &SqlitePool) -> Result<Vec<Entete>, sqlx::Error> {
+    sqlx::query_as::<_, Entete>(
+        "SELECT id, project_id, name, position, created_at FROM headings \
+         ORDER BY project_id, position",
+    )
+    .fetch_all(pool)
+    .await
+}
+
+/// Une rubrique dans un projet.
+#[derive(Debug, Clone, serde::Serialize, sqlx::FromRow)]
+pub struct Entete {
+    pub id: String,
+    pub project_id: String,
+    pub name: String,
+    pub position: i64,
+    pub created_at: String,
 }
 
 /// Les fiches de plusieurs pièces, dans l'ordre demandé.
@@ -2269,6 +2319,7 @@ pub async fn set_todo_tags(
 mod tests {
     use super::{
         append_journal_entry, create_journal_piece, create_journal_voice, delete_journal_entry,
+        list_all_journal_pieces, list_headings,
         ids_pieces,
         ecrire_export, list_journal_entries_for_day, list_journal_pieces, markdown_du_journal,
         nature, nom_unique,
@@ -3735,6 +3786,68 @@ La suite, dans la foulée.");
 
         // La limite est respectée.
         assert_eq!(search_journal(&pool, "garage", 2).await.unwrap().len(), 2);
+    }
+
+    #[tokio::test]
+    async fn les_rubriques_se_relisent() {
+        // `list_headings` sert a la SAUVEGARDE, et une table vide ne prouve
+        // rien : sans ligne, `FromRow` n'est jamais exerce et une colonne mal
+        // nommee passerait inapercue jusqu'au jour ou quelqu'un aurait des
+        // rubriques a sauver.
+        let pool = memory_pool().await;
+        sqlx::query("INSERT INTO projects (id, name, status, position, created_at, updated_at)                      VALUES ('p1', 'Maison', 'active', 0, '2026-09-13', '2026-09-13')")
+            .execute(&pool)
+            .await
+            .unwrap();
+        for (id, nom, pos) in [("h2", "Plus tard", 1), ("h1", "Cette semaine", 0)] {
+            sqlx::query(
+                "INSERT INTO headings (id, project_id, name, position, created_at)                  VALUES (?, 'p1', ?, ?, '2026-09-13')",
+            )
+            .bind(id)
+            .bind(nom)
+            .bind(pos)
+            .execute(&pool)
+            .await
+            .unwrap();
+        }
+
+        let rubriques = list_headings(&pool).await.unwrap();
+        assert_eq!(rubriques.len(), 2);
+        // Triees par position, pas par identifiant : c'est l'ordre du projet.
+        assert_eq!(rubriques[0].name, "Cette semaine");
+        assert_eq!(rubriques[1].name, "Plus tard");
+        assert_eq!(rubriques[0].project_id, "p1");
+    }
+
+    #[tokio::test]
+    async fn la_sauvegarde_emporte_les_pieces_orphelines() {
+        // On ne balaie jamais les pieces qu'aucun texte ne cite plus. Une
+        // sauvegarde qui ne prendrait que les pieces citees les perdrait donc
+        // definitivement.
+        let pool = memory_pool().await;
+        let dossier = std::env::temp_dir().join(format!("listik-sauve-{}", Uuid::new_v4()));
+        std::fs::create_dir_all(&dossier).unwrap();
+
+        let citee = create_journal_piece(&pool, &dossier, "bail.pdf", b"%PDF-1.7")
+            .await
+            .unwrap();
+        let orpheline = create_journal_piece(&pool, &dossier, "oubliee.png", b"faux png")
+            .await
+            .unwrap();
+        // Seule la premiere est citee par un texte.
+        append_journal_entry(&pool, "2026-09-13", &format!("![](piece:{})", citee.id))
+            .await
+            .unwrap();
+
+        let toutes = list_all_journal_pieces(&pool, &dossier).await.unwrap();
+        let ids: Vec<&str> = toutes.iter().map(|p| p.id.as_str()).collect();
+        assert!(ids.contains(&citee.id.as_str()));
+        assert!(
+            ids.contains(&orpheline.id.as_str()),
+            "la piece orpheline doit entrer dans la sauvegarde"
+        );
+
+        std::fs::remove_dir_all(&dossier).ok();
     }
 
     #[test]

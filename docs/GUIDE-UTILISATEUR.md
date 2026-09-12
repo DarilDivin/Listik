@@ -229,8 +229,16 @@ Assistant) :
 - **Résumé quotidien** — une notification listant les tâches du jour, à une heure fixe que
   vous choisissez.
 - **Capture rapide** — rappel du raccourci `Alt+Q`.
-- **Sauvegarder mes données** — exporte vos tâches dans un fichier JSON de votre choix
-  (bouton « Exporter »). Le Journal n'y est pas encore inclus.
+- **Sauvegarder mes données** — écrit **deux** choses à l'emplacement de votre choix
+  (bouton « Exporter ») : un fichier JSON avec vos tâches, projets, domaines, rubriques,
+  étiquettes, ordres manuels, tout le Journal et vos réglages ; et, à côté, un dossier
+  `…-pieces` contenant vos pièces jointes — photos, documents, notes vocales. **Gardez les
+  deux ensemble** : le JSON seul ne contient pas les fichiers.
+
+  L'application vous dit ce qu'elle a emporté (« 128 tâches, 43 jours de journal,
+  12 pièces ») et vous prévient si un fichier a disparu du disque. Cette sauvegarde ne se
+  **relit pas** encore depuis l'application : c'est une archive, pas encore une
+  restauration.
 
 Les lignes affichées **« Bientôt »** signalent des fonctionnalités prévues mais pas encore
 disponibles.
