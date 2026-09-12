@@ -34,7 +34,6 @@ import {
 } from "@/features/journal/RepereNode";
 import { $createPieceNode, $isPieceNode } from "@/features/journal/PieceNode";
 import { journalApi } from "@/features/journal/api";
-import { SWR_KEYS } from "@/lib/swr-config";
 import {
   decouperEnSegments,
   NOEUDS,
