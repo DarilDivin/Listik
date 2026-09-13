@@ -24,6 +24,11 @@ import {
   type JournalSheetHandle,
 } from "@/components/journal/JournalSheet";
 import { JournalDensity } from "@/components/journal/JournalDensity";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
@@ -372,51 +377,79 @@ function JournalPageContent() {
               attend le déploiement de la première version (2026-09-12). Ni
               l'un ni l'autre n'a jamais été spécifié — s'ils reviennent, tout
               est à définir. */}
-          <Button
-            variant="ghost"
-            size="icon-sm"
-            aria-label="Joindre un fichier"
-            title="Joindre un fichier"
-            onClick={() => feuilleRef.current?.attacher()}
-          >
-            <Paperclip />
-          </Button>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                aria-label="Joindre un fichier"
+                onClick={() => feuilleRef.current?.attacher()}
+              >
+                <Paperclip />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent side="bottom" sideOffset={8}>
+              Joindre un fichier
+            </TooltipContent>
+          </Tooltip>
           {/* Il BASCULE, comme la loupe : rappuyer abandonne, tout comme la
               croix de la bande. Deux gestes pour la même chose, parce qu'on ne
               cherche pas où arrêter ce qu'on vient de commencer. */}
-          <Button
-            variant="ghost"
-            size="icon-sm"
-            aria-label={enregistre ? "Abandonner l'enregistrement" : "Enregistrer une note vocale"}
-            title="Enregistrer une note vocale"
-            data-actif={enregistre || undefined}
-            disabled={sortie}
-            onClick={() => (enregistre ? abandonner() : void commencer())}
-            className="data-[actif]:bg-brand-soft data-[actif]:text-brand"
-          >
-            <Mic />
-          </Button>
-          <Button
-            variant="ghost"
-            size="icon-sm"
-            aria-label="Exporter le journal"
-            title="Exporter le journal"
-            disabled={exporte}
-            onClick={exporter}
-          >
-            <Download />
-          </Button>
-          <Button
-            variant="ghost"
-            size="icon-sm"
-            aria-label="Chercher dans le journal"
-            title="Chercher dans le journal"
-            data-actif={cherche || undefined}
-            onClick={() => setCherche((c) => !c)}
-            className="data-[actif]:bg-brand-soft data-[actif]:text-brand"
-          >
-            <Search />
-          </Button>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                aria-label={
+                  enregistre ? "Abandonner l'enregistrement" : "Enregistrer une note vocale"
+                }
+                data-actif={enregistre || undefined}
+                disabled={sortie}
+                onClick={() => (enregistre ? abandonner() : void commencer())}
+                className="data-[actif]:bg-brand-soft data-[actif]:text-brand"
+              >
+                <Mic />
+              </Button>
+            </TooltipTrigger>
+            {/* L'infobulle suit l'ÉTAT, comme l'étiquette : pendant qu'on
+                parle, ce bouton n'enregistre plus, il abandonne. */}
+            <TooltipContent side="bottom" sideOffset={8}>
+              {enregistre ? "Abandonner l'enregistrement" : "Enregistrer une note vocale"}
+            </TooltipContent>
+          </Tooltip>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                aria-label="Exporter le journal"
+                disabled={exporte}
+                onClick={exporter}
+              >
+                <Download />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent side="bottom" sideOffset={8}>
+              Exporter le journal
+            </TooltipContent>
+          </Tooltip>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                aria-label="Chercher dans le journal"
+                data-actif={cherche || undefined}
+                onClick={() => setCherche((c) => !c)}
+                className="data-[actif]:bg-brand-soft data-[actif]:text-brand"
+              >
+                <Search />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent side="bottom" sideOffset={8}>
+              {cherche ? "Fermer la recherche" : "Chercher dans le journal"}
+            </TooltipContent>
+          </Tooltip>
         </div>
       </div>
 

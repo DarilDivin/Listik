@@ -6,6 +6,11 @@ import { Check, X } from "lucide-react";
 import { minutage } from "@/features/journal/voix";
 import { palette, peindreHalo } from "@/features/journal/halo";
 import { Button } from "@/components/ui/button";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 
 /**
  * Le récit, en trois temps : la lumière monte du bord, elle atteint son
@@ -164,25 +169,39 @@ export function BandeEnregistrement({
             convention de l'enregistrement, et personne ne la lit deux fois. */}
         <span className="journal-ecoute-point" aria-hidden />
         <span className="journal-ecoute-duree">{minutage(depuis)}</span>
-        <Button
-          variant="ghost"
-          size="icon-sm"
-          aria-label="Abandonner l'enregistrement"
-          title="Abandonner"
-          disabled={partant}
-          onClick={onAbandonner}
-        >
-          <X />
-        </Button>
-        <Button
-          size="icon-sm"
-          aria-label="Terminer l'enregistrement"
-          title="Terminer"
-          disabled={partant}
-          onClick={onTerminer}
-        >
-          <Check />
-        </Button>
+        {/* Au-DESSUS : la pilule est posée au bas de l'écran, une infobulle
+            dessous sortirait de la fenêtre. */}
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              aria-label="Abandonner l'enregistrement"
+              disabled={partant}
+              onClick={onAbandonner}
+            >
+              <X />
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent side="top" sideOffset={8}>
+            Abandonner — rien ne sera gardé
+          </TooltipContent>
+        </Tooltip>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              size="icon-sm"
+              aria-label="Terminer l'enregistrement"
+              disabled={partant}
+              onClick={onTerminer}
+            >
+              <Check />
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent side="top" sideOffset={8}>
+            Terminer et poser la note
+          </TooltipContent>
+        </Tooltip>
       </div>
     </div>,
     document.body,
