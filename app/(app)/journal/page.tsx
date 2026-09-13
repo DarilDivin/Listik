@@ -198,6 +198,14 @@ function JournalPageContent() {
     setSortie(true);
     try {
       const note = await session.arreter();
+      // RIEN N'A ÉTÉ CAPTÉ. Rust refuse aussi — c'est lui qui écrit les
+      // fichiers et la garantie vit là — mais le dire ICI évite un aller-
+      // retour pour rien et permet de nommer la cause : ce n'est pas
+      // l'enregistrement qui a échoué, c'est le micro qui n'a rien donné.
+      if (note.octets.length === 0) {
+        toast.error("Rien n'a été enregistré — le micro n'a rien donné.");
+        return;
+      }
       const piece = await journalApi.attacherVoix(
         nomDeNote(),
         Array.from(note.octets),
@@ -402,6 +410,7 @@ function JournalPageContent() {
             variant="ghost"
             size="icon-sm"
             aria-label="Chercher dans le journal"
+            title="Chercher dans le journal"
             data-actif={cherche || undefined}
             onClick={() => setCherche((c) => !c)}
             className="data-[actif]:bg-brand-soft data-[actif]:text-brand"

@@ -1170,6 +1170,19 @@ pub async fn create_journal_voice(
     duree_ms: i64,
     cretes: &[f32],
 ) -> Result<JournalPiece, String> {
+    // RIEN N'A ÉTÉ CAPTÉ : on n'écrit pas. C'est arrivé — quarante-deux
+    // secondes d'enregistrement, zéro octet en sortie, et la journée gardait
+    // une note muette qui ne s'ouvrirait jamais. Une pièce dont le fichier est
+    // vide n'est pas une pièce, c'est une trace de panne.
+    //
+    // Le seuil est ZÉRO et pas « quelques centaines d'octets » : un WebM
+    // d'en-tête seul reste un fichier que le système sait ouvrir, et deviner
+    // où s'arrête le trop-court, c'est refuser un jour une note d'une seconde
+    // qui était bonne.
+    if octets.is_empty() {
+        return Err("Rien n'a été enregistré — le micro n'a rien donné.".to_string());
+    }
+
     let piece = create_journal_piece(pool, dossier, nom_origine, octets).await?;
     if piece.kind != "voix" {
         return Err(format!("« {nom_origine} » n'est pas une note vocale."));
@@ -3909,6 +3922,18 @@ La suite, dans la foulée.");
         assert!(create_journal_voice(&pool, &dossier, "photo.png", b"\x89PNG", 100, &[])
             .await
             .is_err());
+
+        // Un enregistrement VIDE non plus, et rien n'est ecrit sur le disque.
+        // Le cas s'est produit : quarante-deux secondes, zero octet, et la
+        // journee gardait une note muette qui ne s'ouvrirait jamais.
+        let avant = std::fs::read_dir(&dossier).unwrap().count();
+        let refus = create_journal_voice(&pool, &dossier, "vide.webm", b"", 42_000, &cretes).await;
+        assert!(refus.is_err(), "un enregistrement vide doit etre refuse");
+        assert_eq!(
+            std::fs::read_dir(&dossier).unwrap().count(),
+            avant,
+            "aucun fichier ne doit avoir ete ecrit"
+        );
 
         std::fs::remove_dir_all(&dossier).ok();
     }
