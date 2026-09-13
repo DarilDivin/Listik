@@ -64,6 +64,29 @@ export function useFeuille(day: string, withUpcoming = true) {
    * ne doit pas le fermer sous les doigts.
    */
   const isToday = day === todayLocalISODate();
+
+  /**
+   * UNE HORLOGE, parce que le temps passe sans que rien ne re-rende.
+   *
+   * `ouverte` se calcule pendant le rendu, à partir de `Date.now()` — mais
+   * rien ne provoque de rendu quand une heure s'écoule. Une feuille laissée
+   * ouverte ne voyait donc JAMAIS sa session se fermer : on revenait deux
+   * heures plus tard, on écrivait, et la phrase rejoignait le moment d'avant
+   * au lieu d'en ouvrir un nouveau. Le journal perdait ses heures.
+   *
+   * `revalidateOnFocus` ne suffisait pas : SWR ne re-rend pas quand la
+   * revalidation ramène les mêmes données, et c'est le cas normal.
+   *
+   * Trente secondes : la frontière se voit passer à la demi-minute près, pour
+   * un rendu toutes les trente secondes sur la seule page du jour.
+   */
+  const [, battement] = useState(0);
+  useEffect(() => {
+    if (!isToday) return;
+    const horloge = setInterval(() => battement((n) => n + 1), 30_000);
+    return () => clearInterval(horloge);
+  }, [isToday]);
+
   const derniere = entries[entries.length - 1];
   const ouverte =
     derniere !== undefined &&
@@ -112,7 +135,20 @@ export function useFeuille(day: string, withUpcoming = true) {
         if (s.entryId === "") {
           if (estVide(s.markdown)) continue;
           const cree = await track(appendEntry(day, s.markdown));
-          if (cree) setAStamper({ id: cree.id, heure: heureDe(cree.written_at) });
+          if (!cree) continue;
+          // RUST ARBITRE, et il peut dire non. S'il a jugé la session d'avant
+          // encore ouverte, il a fondu le texte dedans et rend CETTE
+          // entrée-là : il n'y a pas de moment nouveau à marquer.
+          //
+          // L'estampiller quand même posait deux repères portant la même
+          // heure, jusqu'au prochain rechargement. Les deux surfaces peuvent
+          // diverger — la page mesure sur la copie qu'elle a des entrées, et
+          // la capture rapide a pu écrire depuis.
+          if (connues.some((e) => e.id === cree.id)) {
+            setHeureVierge(null);
+            continue;
+          }
+          setAStamper({ id: cree.id, heure: heureDe(cree.written_at) });
           continue;
         }
         vues.add(s.entryId);
