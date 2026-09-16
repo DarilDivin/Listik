@@ -156,7 +156,7 @@ Chaque étape laisse l'app utilisable — aucune ne dépend de la suivante.
   solidifie. Pas conservé « pour les experts » : deux chemins pour la même chose,
   c'est deux choses à documenter et à maintenir.
 
-## ⚠️ Bug trouvé en vérifiant l'étape 3 (2026-09-16, pas encore corrigé)
+## ✅ Bug trouvé en vérifiant l'étape 3 — corrigé (2026-09-16)
 
 `SauvegardePlugin` (`components/journal/JournalSheet.tsx`) peut dupliquer une
 reprise : `minuteur.current` garde l'ID du timer même une fois qu'il a
@@ -166,11 +166,12 @@ plus de 700 ms (la sauvegarde automatique part), puis cliquer ailleurs
 avant que la feuille ait eu le temps de se reposer avec le vrai id —
 `enregistrer` revoit un segment `entryId: ""` et crée une deuxième entrée
 avec le même texte. Touche `JournalSheet` en entier, donc la page complète
-et `JournalWidget` aussi, pas seulement `BarreJournal`. Correctif proposé,
-pas encore appliqué : `pousser()` remet `minuteur.current` à `null` en
-s'exécutant, et `surBlur` ne repousse que si `minuteur.current` est encore
-posé. Hors périmètre de l'étape 3 (c'est `JournalSheet`, pas `BarreJournal`)
-— signalé à l'utilisateur plutôt que corrigé en silence.
+et `JournalWidget` aussi, pas seulement `BarreJournal`. Corrigé : `pousser()` remet `minuteur.current` à `null` en s'exécutant, et
+`surBlur` ne repousse que si `minuteur.current` est encore posé. Reproduit
+avant/après sur la vraie page Journal via CDP (écrire, attendre 700 ms,
+cliquer ailleurs) : sans le correctif, le texte apparaissait deux fois ;
+avec, une seule fois, confirmé après un rechargement complet (donc bien
+persisté ainsi, pas juste l'état local de l'éditeur).
 
 ## Décisions supplémentaires (artifact du 2026-09-02, revu le 2026-09-16)
 

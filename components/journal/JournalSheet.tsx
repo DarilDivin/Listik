@@ -227,6 +227,11 @@ function SauvegardePlugin({
 
   useEffect(() => {
     const pousser = () => {
+      // Remis à null EN sonnant : c'est ce qui dit à `surBlur` qu'il n'y a
+      // plus rien en attente. Un `ReturnType<typeof setTimeout>` qui a sonné
+      // reste un nombre « vrai » pour toujours si personne ne l'efface — voir
+      // plus bas pourquoi ça a fait doubler des reprises.
+      minuteur.current = null;
       const racine = editor.getEditorState().toJSON().root.children;
       onSegments(decouperEnSegments(racine));
     };
@@ -238,8 +243,20 @@ function SauvegardePlugin({
     });
 
     const dom = editor.getRootElement();
+    /**
+     * Rien en attente : déjà poussé par le minuteur, ou rien à pousser.
+     *
+     * Sans cette garde, un blur arrivant APRÈS que le minuteur ait sonné
+     * repoussait quand même — avant que la feuille ait eu le temps de se
+     * reposer avec le vrai id (bloqué tant qu'on a le focus, voir
+     * `ChargementPlugin`), `enregistrer` revoyait un segment sans id et
+     * créait une DEUXIÈME entrée avec le même texte. Repro : écrire, laisser
+     * passer 700 ms, cliquer ailleurs.
+     */
     const surBlur = () => {
-      if (minuteur.current) clearTimeout(minuteur.current);
+      if (!minuteur.current) return;
+      clearTimeout(minuteur.current);
+      minuteur.current = null;
       pousser();
     };
     dom?.addEventListener("blur", surBlur);
