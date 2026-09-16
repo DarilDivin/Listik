@@ -124,10 +124,9 @@ Chaque étape laisse l'app utilisable — aucune ne dépend de la suivante.
    Presque rien n'a changé à l'écran — sauf un point assumé, pas un oubli :
    `CaptureRow` perd `/note` (elle l'offrait, aucun appelant ne le montrait).
    Voir « Décisions supplémentaires ».
-2. **Extraire `BarreAssistant`**, brancher la page Assistant. ⚠️ Cette page est
-   du **travail non commité** de l'utilisateur : à faire avec lui, pas à sa
-   place. *(Le travail non commité a été committé le 2026-09-16 pour ne pas
-   bloquer l'étape 1 dessus — l'extraction elle-même reste à faire avec lui.)*
+2. **✅ FAIT (2026-09-16) — Extraire `BarreAssistant`**, brancher la page
+   Assistant. `/tâche` et `/note` en sont partis (voir « Décisions
+   supplémentaires ») : envoyer, attendre, recommencer, rien d'autre.
 3. **Écrire `BarreJournal`** — plus « la plus petite » (dépassé, voir mise à
    jour en tête de document) : une feuille courte, `appendEntry`.
 4. **La fenêtre rapide** : coque qui héberge une barre, pastilles, et la
@@ -182,6 +181,11 @@ qui restait sur l'état du 2026-08-30.
 - **`CaptureRow` perd `/note`.** Redondant avec le `JournalWidget`, toujours
   visible sur la même page (Aujourd'hui) — et cohérent avec « `BarreJournal`
   utilisée par la fenêtre rapide seulement ».
+- **`BarreAssistant` perd `/tâche` et `/note`.** L'agent sait déjà créer une
+  tâche ou une note en langage naturel (function-calling MCP, D4 — vérifié à
+  nouveau le 2026-09-16 : une vraie question posée dans l'app réelle a
+  correctement listé les tâches du jour, notes et priorités comprises). Le
+  raccourci slash ne contournait donc rien que l'agent ne sache déjà faire.
 - **À vérifier avant de coder la bulle (pas encore fait)** : l'artifact simule
   ~1,5s de réflexion ; un vrai tour `ai_agent_run` (CLI Claude) tourne plutôt
   autour de **12s**. Une bulle de 54px sans bouton d'annulation pendant 12s

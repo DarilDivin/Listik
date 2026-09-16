@@ -93,6 +93,16 @@ le seul moment où « voir la page » a un sens.
 - **`TaskStop` ne suffit pas** pour arrêter proprement — voir §1. Vérifier
   avant de relancer, sinon le nouveau `pnpm tauri dev` échoue sur le port
   3000 déjà pris.
+- **`goto` change l'URL qui sert à retrouver la page.** Le matching
+  (`endsWith` puis `includes`) se fait sur l'URL *actuelle*, pas sur un nom
+  stable — après un `goto` foireux (ex. l'argument mangé par MSYS, voir
+  ci-dessus) la page atterrit sur `chrome-error://chromewebdata/` ou un
+  `file://…`, et le prochain `urlMatch` qu'on tapait pour LA retrouver ne
+  correspond plus plus à rien, ou pire, correspond par erreur à l'AUTRE
+  fenêtre (`/` et `/quick` contiennent tous les deux `/`). Après un `goto`,
+  toujours vérifier avec `list` que la bonne page a atterri au bon endroit
+  avant d'enchaîner une capture ou un clic — ne pas supposer que le
+  `urlMatch` d'avant décrit encore la page d'avant.
 
 ## Ce que ça ne remplace pas
 

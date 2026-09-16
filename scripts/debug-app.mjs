@@ -33,6 +33,14 @@ async function main() {
   const browser = await chromium.connectOverCDP(CDP_URL);
 
   switch (cmd) {
+    case "goto": {
+      const [match, path] = rest;
+      const page = pickPage(browser, match);
+      const target = new URL(path, page.url()).toString();
+      await page.goto(target);
+      console.log(`Navigue : ${target}`);
+      break;
+    }
     case "list": {
       for (const p of browser.contexts().flatMap((c) => c.pages())) {
         console.log(p.url());
@@ -84,7 +92,7 @@ async function main() {
     }
     default:
       console.error(
-        "Usage: node scripts/debug-app.mjs <list|screenshot|eval|html|click|type|key> [urlMatch] [args...]",
+        "Usage: node scripts/debug-app.mjs <list|goto|screenshot|eval|html|click|type|key> [urlMatch] [args...]",
       );
       process.exitCode = 1;
   }

@@ -1,11 +1,10 @@
 "use client";
 
 import { useRef, useState } from "react";
-import { toast } from "sonner";
 import { motion } from "motion/react";
 import { Sparkles } from "lucide-react";
 
-import Omnibar from "@/components/Omnibar";
+import BarreAssistant from "@/components/BarreAssistant";
 import { AssistantHeader } from "@/components/assistant/AssistantHeader";
 import { ChatMessage } from "@/components/assistant/ChatMessage";
 import { ScrollToBottomButton } from "@/components/assistant/ScrollToBottomButton";
@@ -21,10 +20,6 @@ import {
 } from "@/components/ui/empty";
 import { buildHistory, type Turn } from "@/features/assistant/conversation";
 import { aiAgent } from "@/features/omnibar/agent";
-import type { SmartTaskData } from "@/features/todos/useTaskMode";
-import { useJournalMutations } from "@/features/journal/useJournalMutations";
-import { usePlannerTodos } from "@/hooks/usePlannerTodos";
-import { todayLocalISODate } from "@/lib/date";
 import { spring } from "@/lib/motion";
 
 /**
@@ -32,16 +27,16 @@ import { spring } from "@/lib/motion";
  * (titre, agent, nouvelle conversation) → fil de messages ancré → barre de
  * saisie en pied, avec l'état vide en `Empty` + amorces.
  *
- * Ce qui reste à nous, et pourquoi : la saisie est l'**Omnibar** (jetons,
- * `/note`, `/tâche` — le `PromptForm` du template ne sait qu'envoyer du
- * texte), le modèle de données est le **tour** question+réponse (voir
+ * Ce qui reste à nous, et pourquoi : la saisie est la **`BarreAssistant`**
+ * (voir docs/ROADMAP-BARRES.md, étape 2 — le `PromptForm` du template ne
+ * sait qu'envoyer du texte, sans état occupé propre au design system), le
+ * modèle de données est le **tour** question+réponse (voir
  * `features/assistant/conversation.ts`), et la couleur/le mouvement suivent
- * le design system plutôt que le thème du registre.
+ * le design system plutôt que le thème du registre. Créer une tâche ou une
+ * note reste possible en langage naturel — c'est l'agent qui s'en charge
+ * (function-calling MCP), pas un raccourci `/` de la barre.
  */
 export default function AssistantPage() {
-  const { createTodoFromSmart, lists } = usePlannerTodos();
-  const { createEntry: createJournalEntry } = useJournalMutations();
-
   const [turns, setTurns] = useState<Turn[]>([]);
   const [pending, setPending] = useState(false);
   // Garde de réentrance. `pending` est figé dans la closure de la soumission
@@ -96,18 +91,6 @@ export default function AssistantPage() {
     if (pendingRef.current) return;
     pendingRef.current = true;
     void runAsk(text);
-  };
-
-  const handleCreateTodo = async (data: SmartTaskData) => {
-    await createTodoFromSmart(data);
-    toast.success("Tâche créée");
-  };
-
-  // Même repointage que dans le Planificateur et Alt+Q (Phase P) : /note crée
-  // un bloc de Journal pour aujourd'hui, pas une note classique.
-  const handleCreateNote = async (text: string) => {
-    await createJournalEntry({ target_day: todayLocalISODate(), content: text });
-    toast.success("Bloc ajouté au Journal");
   };
 
   return (
@@ -172,14 +155,10 @@ export default function AssistantPage() {
           className="pointer-events-none absolute inset-x-0 -top-8 h-8 bg-gradient-to-t from-background to-transparent"
         />
         <div className="mx-auto max-w-[44rem] px-8 py-4">
-          <Omnibar
-            defaultMode="ask"
-            onSubmit={handleCreateTodo}
-            onSubmitNote={handleCreateNote}
-            onSubmitAsk={handleAsk}
+          <BarreAssistant
+            onSubmit={handleAsk}
             busy={pending}
             placeholder="Demander, créer, chercher…"
-            lists={lists}
           />
         </div>
       </div>
