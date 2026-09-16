@@ -24,7 +24,7 @@ interface QuickNeutralProps {
 export default function QuickNeutral({ value, onChange, onSubmit, autoFocus }: QuickNeutralProps) {
   return (
     <div
-      className="flex items-center gap-3 rounded-2xl border border-transparent bg-foreground/[0.035] p-2 transition-colors duration-300 focus-within:border-border/60 focus-within:bg-popover dark:bg-foreground/[0.05]"
+      className="flex items-center gap-3 rounded-full border border-transparent bg-foreground/[0.035] p-2 transition-colors duration-300 focus-within:border-border/60 focus-within:bg-popover dark:bg-foreground/[0.05]"
     >
       <span
         aria-hidden

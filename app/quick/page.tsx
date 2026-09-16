@@ -238,9 +238,9 @@ export default function QuickPage() {
       <div className="w-full p-7">
         <div className="flex items-start gap-3.5">
           <motion.div
-            animate={{ height: height ?? "auto" }}
+            animate={{ height: height ?? "auto", borderRadius: mode === "neutre" ? 9999 : 16 }}
             transition={{ duration: 0.44, ease: [0.16, 1, 0.3, 1] }}
-            className="min-w-0 flex-1 overflow-hidden rounded-2xl shadow-floating"
+            className="min-w-0 flex-1 overflow-hidden shadow-floating"
           >
             <div ref={measureRef}>
               {mode === "neutre" && (
