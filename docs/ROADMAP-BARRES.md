@@ -127,8 +127,13 @@ Chaque étape laisse l'app utilisable — aucune ne dépend de la suivante.
 2. **✅ FAIT (2026-09-16) — Extraire `BarreAssistant`**, brancher la page
    Assistant. `/tâche` et `/note` en sont partis (voir « Décisions
    supplémentaires ») : envoyer, attendre, recommencer, rien d'autre.
-3. **Écrire `BarreJournal`** — plus « la plus petite » (dépassé, voir mise à
-   jour en tête de document) : une feuille courte, `appendEntry`.
+3. **✅ FAIT (2026-09-16) — Écrire `BarreJournal`** — plus « la plus petite »
+   (dépassé, voir mise à jour en tête de document) : une feuille courte.
+   Aucune extraction cette fois (l'ancien `/note` de l'Omnibar n'était qu'une
+   ligne) : réutilise `JournalSheet`/`useFeuille` tels quels, avec
+   `variant="widget"` — exactement ce que `JournalWidget` valide déjà sur
+   l'accueil, pas un 3ᵉ rendu de la même journée. Pas encore branchée nulle
+   part (ça, c'est l'étape 4) : composant autonome, vérifié isolément.
 4. **La fenêtre rapide** : coque qui héberge une barre, pastilles, et la
    métamorphose. C'est là qu'est le travail de design — largement fait dans
    l'artifact, reste à porter dans `app/quick/page.tsx` avec la coque à taille
@@ -150,6 +155,22 @@ Chaque étape laisse l'app utilisable — aucune ne dépend de la suivante.
 - **Le `/` est retiré**, remplacé par les pastilles et par le mot qui se
   solidifie. Pas conservé « pour les experts » : deux chemins pour la même chose,
   c'est deux choses à documenter et à maintenir.
+
+## ⚠️ Bug trouvé en vérifiant l'étape 3 (2026-09-16, pas encore corrigé)
+
+`SauvegardePlugin` (`components/journal/JournalSheet.tsx`) peut dupliquer une
+reprise : `minuteur.current` garde l'ID du timer même une fois qu'il a
+sonné, donc `surBlur` le trouve « vrai » et repousse *sans condition* —
+même quand la sauvegarde à 700 ms est déjà partie. Repro : écrire, attendre
+plus de 700 ms (la sauvegarde automatique part), puis cliquer ailleurs
+avant que la feuille ait eu le temps de se reposer avec le vrai id —
+`enregistrer` revoit un segment `entryId: ""` et crée une deuxième entrée
+avec le même texte. Touche `JournalSheet` en entier, donc la page complète
+et `JournalWidget` aussi, pas seulement `BarreJournal`. Correctif proposé,
+pas encore appliqué : `pousser()` remet `minuteur.current` à `null` en
+s'exécutant, et `surBlur` ne repousse que si `minuteur.current` est encore
+posé. Hors périmètre de l'étape 3 (c'est `JournalSheet`, pas `BarreJournal`)
+— signalé à l'utilisateur plutôt que corrigé en silence.
 
 ## Décisions supplémentaires (artifact du 2026-09-02, revu le 2026-09-16)
 

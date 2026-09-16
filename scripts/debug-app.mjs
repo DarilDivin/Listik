@@ -15,11 +15,29 @@ function pickPage(browser, match) {
   const pages = browser.contexts().flatMap((c) => c.pages());
   if (!pages.length) throw new Error(`Aucune page sur ${CDP_URL} — l'app tourne-t-elle avec WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS ?`);
   if (!match) return pages[0];
+  // Repli fiable pour les cas ambigus (deux pages sur la meme route) : l'ORDRE
+  // renvoye par CDP est stable d'un appel a l'autre (lie a la creation des
+  // fenetres cote Tauri, pas a l'ordre de navigation) -- verifie a la main
+  // plusieurs fois dans cette session. "@0" = premiere fenetre listee par
+  // `list` (systematiquement la fenetre quick jusqu'ici), "@1" = deuxieme
+  // (la principale).
+  if (/^@\d+$/.test(match)) {
+    const i = Number(match.slice(1));
+    if (!pages[i]) throw new Error(`Pas de page a l'index ${i}. Pages : ${pages.map((p) => p.url()).join(", ")}`);
+    return pages[i];
+  }
   // Correspondance exacte/en fin d'URL d'abord (sinon "3000/" trouve aussi
   // ".../quick/" avant la racine, puisque "/" y est aussi une sous-chaine).
-  const found =
-    pages.find((p) => p.url() === match || p.url().endsWith(match)) ??
-    pages.find((p) => p.url().includes(match));
+  const exact = pages.find((p) => p.url() === match || p.url().endsWith(match));
+  const includes = pages.filter((p) => p.url().includes(match));
+  // Deuxieme filet : si la sous-chaine reste ambigue ET que le match ne visait
+  // PAS explicitement /quick, on ecarte la fenetre quick du choix par defaut --
+  // la plupart des tests visent la fenetre principale, et cette ambiguite a
+  // deja fait naviguer /quick par erreur a plusieurs reprises en pratique.
+  const preferNonQuick = !match.includes("quick")
+    ? includes.filter((p) => !p.url().includes("/quick"))
+    : includes;
+  const found = exact ?? preferNonQuick[0] ?? includes[0];
   if (!found) {
     throw new Error(
       `Aucune page ne correspond a "${match}". Pages ouvertes : ${pages.map((p) => p.url()).join(", ")}`,

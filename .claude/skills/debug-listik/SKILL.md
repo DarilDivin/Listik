@@ -93,6 +93,17 @@ le seul moment où « voir la page » a un sens.
 - **`TaskStop` ne suffit pas** pour arrêter proprement — voir §1. Vérifier
   avant de relancer, sinon le nouveau `pnpm tauri dev` échoue sur le port
   3000 déjà pris.
+- **Quand les deux fenêtres finissent sur la même route**, un `urlMatch` ne
+  peut plus les distinguer du tout (ça arrive : `/journal` ouvert des deux
+  côtés pour comparer, une capture ratée qui laisse les deux sur la même
+  page d'erreur…). Utiliser `@0`/`@1` (index dans l'ordre renvoyé par
+  `list`) plutôt que deviner un fragment d'URL — cet ordre s'est révélé
+  stable dans cette session (lié à l'ordre de création des fenêtres côté
+  Tauri, pas à la navigation) : `@0` est systématiquement retombé sur la
+  fenêtre quick, `@1` sur la principale. Vérifier une fois avec `eval "@0"
+  "innerWidth"` (680 = quick, 1200 = principale) avant de s'y fier dans une
+  nouvelle session — ce n'est pas une garantie de l'API, juste une
+  observation répétée.
 - **`goto` change l'URL qui sert à retrouver la page.** Le matching
   (`endsWith` puis `includes`) se fait sur l'URL *actuelle*, pas sur un nom
   stable — après un `goto` foireux (ex. l'argument mangé par MSYS, voir
