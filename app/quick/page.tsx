@@ -324,7 +324,10 @@ export default function QuickPage() {
           <motion.div
             animate={{ height: height ?? "auto", borderRadius: shellRadius }}
             transition={{ duration: 0.44, ease: [0.16, 1, 0.3, 1] }}
-            className={cn("overflow-hidden shadow-floating", shellWidth ? "flex-none" : "min-w-0 flex-1")}
+            className={cn(
+              "overflow-hidden bg-popover shadow-floating",
+              shellWidth ? "flex-none" : "min-w-0 flex-1",
+            )}
             style={{
               width: shellWidth,
               transitionProperty: "width",
