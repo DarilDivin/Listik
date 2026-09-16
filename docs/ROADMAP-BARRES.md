@@ -156,8 +156,39 @@ Chaque étape laisse l'app utilisable — aucune ne dépend de la suivante.
      **Effet de bord à noter, pas une régression** : la fenêtre est toujours
      centrée (`"center": true`), donc sa position au repos remonte un peu
      à l'écran par rapport à l'ancienne fenêtre de 180px de haut.
-   - **À faire — pastilles + jetons + trois barres au repos.**
-   - **À faire — bulle de réflexion + réponse (mode Question).**
+   - **✅ FAIT (2026-09-16) — pastilles + trois barres au repos.** `QuickPills`
+     (`components/QuickPills.tsx`, filtre gooey porté de l'artifact) + les
+     trois vraies barres (`BarreTache`/`BarreJournal`/`BarreAssistant`) dans
+     `app/quick/page.tsx`, avec le morph de hauteur mesuré/animé (`--sortie`
+     de l'artifact, jamais `layout` de motion — voir le piège déjà documenté
+     plus haut). Vérifié en app réelle (CDP) : les trois états au repos
+     rendent correctement, la pastille active reste teintée, le panneau
+     grandit/rétrécit avec un vrai écart de hauteur (feuille du jour avec du
+     texte réel, pas juste vide), et une tâche créée depuis Alt+Q apparaît
+     toujours dans la vraie liste (bout en bout inchangé). tsc/lint/tests
+     (257/257) propres.
+
+     **Deux écarts assumés, à trancher avec l'utilisateur :**
+     - **Les pastilles restent toujours visibles** (celle du mode actif
+       simplement teintée) plutôt que de s'absorber dans la barre choisie —
+       le va-et-vient de l'artifact demandait un point de retour dans
+       chacune des trois barres réelles, que `BarreJournal`/`BarreAssistant`
+       n'ont pas et ne doivent pas apprendre à avoir pour cette seule
+       fenêtre.
+     - **Le mot qui se solidifie en pastille n'est PAS fait** — malgré ce
+       que ce document disait plus haut (« les étapes 4 et 5 se sont
+       fondues, 5 n'est plus déferrable »). Vrai au niveau du DESIGN choisi
+       dans l'artifact ; faux au niveau de l'implémentation : `BarreTache`
+       ne remonte pas son texte brut au parent aujourd'hui (il vit dans
+       `useTaskMode`), donc détecter « tâche »/« journal »/« question » en
+       tête de champ demanderait de lui ajouter une prop qui n'existe pas.
+       Les pastilles suffisent déjà à rendre le choix possible ; le mot qui
+       se solidifie reste une amélioration, pas encore faite.
+   - **À faire — bulle de réflexion + réponse (mode Question).** En
+     attendant, envoyer une question depuis la fenêtre rapide cache la
+     fenêtre et montre la fenêtre principale, sans poser la question à sa
+     place (aucun canal n'existe aujourd'hui pour le lui dire) — honnête sur
+     ce que ça fait, pas encore ce que ça devrait faire.
 5. **Le mot devient pastille** — n'est plus une étape séparable de la 4 (voir
    mise à jour en tête de document) : dans l'artifact, choisir une pastille
    ET taper le mot font strictement le même geste, il n'existe pas d'état
