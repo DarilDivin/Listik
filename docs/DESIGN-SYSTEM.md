@@ -235,6 +235,17 @@ Switch, Badge, ScrollArea, Kbd, Input/Textarea, Spinner (boutons en attente,
 `data-icon="inline-start"`). Le `TooltipProvider` global vit dans
 `app/layout.tsx`.
 
+**Conversation** (`Message` / `Bubble`, ajoutés le 2026-08-25) : primitives du
+template shadcn/chatbot, reprises pour l'Assistant. `Message` est un portage
+tel quel (que des `div`) ; `Bubble` est retaillé — le `render`/`useRender` de
+Base UI retiré (notre pile est Radix) et la table de variantes ramenée à deux
+entrées, `brand` (lavis `--brand-soft`, la question) et `ghost`, parce que
+celles du registre peignent avec `--primary` et des `oklch(from …)` en dur
+(§2.1/§2.2). La réponse de l'agent est posée à plat dans le `MessageContent`,
+sans bulle (§2.5). Ne pas importer `@shadcn/react` ni `@base-ui/react` pour en
+ramener le reste : deux piles de primitives se paieraient comme les deux
+copies de Radix ci-dessous.
+
 **Radix : uniquement le paquet unifié `radix-ui`** — jamais les paquets
 fragmentés `@radix-ui/react-*` (retirés du projet le 2026-07-12). Deux copies
 de Radix = deux piles de `FocusScope` distinctes : un Popover modal ouvert
