@@ -3,7 +3,6 @@
 import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { AnimatePresence, LayoutGroup, motion } from "motion/react";
-import { toast } from "sonner";
 import { X } from "lucide-react";
 import { spring } from "@/lib/motion";
 import { usePlannerTodos } from "@/hooks/usePlannerTodos";
@@ -13,7 +12,6 @@ import { useTags } from "@/hooks/useTags";
 import { TagFilterProvider } from "@/features/tags/tag-filter";
 import { DuplicateTodoProvider } from "@/features/todos/duplicate-context";
 import { TodoDetailProvider } from "@/features/todos/detail-context";
-import { useJournalMutations } from "@/features/journal/useJournalMutations";
 import { CaptureRow, type CaptureRowHandle } from "@/components/todo/CaptureRow";
 import { EmptyState } from "@/components/todo/EmptyState";
 import { SidebarSlot } from "@/components/sidebar-slot";
@@ -203,7 +201,6 @@ function PlannerPageContent() {
     updateManyTodos,
     duplicateTodo,
   } = usePlannerTodos();
-  const { createEntry: createJournalEntry } = useJournalMutations();
   const {
     areas,
     projects,
@@ -696,13 +693,6 @@ function PlannerPageContent() {
     await createTodoFromSmart(taskData, captureOptions());
   };
 
-  // `/note` (Omnibar) crée désormais un bloc de Journal pour AUJOURD'HUI —
-  // pas de sélecteur de date depuis la capture rapide (Phase P).
-  const handleCreateJournalEntry = async (text: string) => {
-    await createJournalEntry({ target_day: todayISO, content: text });
-    toast.success("Bloc ajouté au Journal");
-  };
-
   // UNE rangée de capture, définie une fois et posée par la branche courante
   // (vues GTD, projet, domaine) : même place dans la grammaire de la page
   // partout. Les défauts de rangement viennent de `captureOptions()`.
@@ -710,7 +700,6 @@ function PlannerPageContent() {
     <CaptureRow
       ref={captureRef}
       onSubmit={handleCreateTodo}
-      onSubmitNote={handleCreateJournalEntry}
       placeholder="Capturer une tâche…"
       lists={projectNames}
     />
