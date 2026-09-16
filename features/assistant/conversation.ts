@@ -19,6 +19,20 @@ export interface Turn {
 // pour ne pas faire grandir indéfiniment le coût/latence de chaque appel.
 export const MAX_HISTORY_TURNS = 6;
 
+/**
+ * Événement front-à-front (pas de commande Rust : aucune donnée ne change,
+ * ce n'est qu'un signal d'IHM) émis par la fenêtre rapide quand on ouvre
+ * l'Assistant depuis une réponse — voir docs/ROADMAP-BARRES.md étape 4,
+ * décision « la conversation ne continue pas, seule la dernière question
+ * est transmise ».
+ */
+export const QUICK_OPEN_ASSISTANT_EVENT = "quick-open-assistant";
+
+export interface QuickHandoff {
+  question: string;
+  answer: string;
+}
+
 export function buildHistory(turns: Turn[]): AiChatMessage[] {
   return turns
     .filter((t) => t.answer !== undefined && !t.error)

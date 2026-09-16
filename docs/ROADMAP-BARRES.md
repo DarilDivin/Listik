@@ -196,18 +196,55 @@ Chaque étape laisse l'app utilisable — aucune ne dépend de la suivante.
      PAS le reste du texte dans la barre choisie (contrairement à
      l'artifact) — elle démarre vide. Reporter le texte demanderait une
      prop `initialValue` sur les trois barres pour ce seul usage.
-   - **À faire — bulle de réflexion + réponse (mode Question).** En
-     attendant, envoyer une question depuis la fenêtre rapide cache la
-     fenêtre et montre la fenêtre principale, sans poser la question à sa
-     place (aucun canal n'existe aujourd'hui pour le lui dire) — honnête sur
-     ce que ça fait, pas encore ce que ça devrait faire.
-5. **Le mot devient pastille** — n'est plus une étape séparable de la 4 (voir
-   mise à jour en tête de document) : dans l'artifact, choisir une pastille
-   ET taper le mot font strictement le même geste, il n'existe pas d'état
-   « pastille allumée » sans jeton. Les deux s'implémentent ensemble.
-6. **Retirer l'Omnibar à modes** et le `/` : `OmnibarMode`, `useSlashCommands`,
-   le menu slash. En dernier, quand plus rien n'en dépend — sinon on casse la
-   fenêtre rapide et l'Assistant en attendant.
+   - **✅ FAIT (2026-09-16) — bulle de réflexion + réponse (mode Question).**
+     `QuickBubble` (cercle 64px, réutilise `url(#quick-gooey)` — trois
+     gouttes qui dérivent au lieu de trois icônes qui se posent, mêmes
+     matière et filtre que `QuickPills`) puis `QuickAnswer` (panneau 420px,
+     réutilise `ChatMessage`/`Bubble`/`Message` de la page Assistant tels
+     quels — même rendu question-en-bulle/réponse-à-plat, pas un rendu
+     séparé). La largeur du cadre bascule maintenant en CSS natif
+     (`transition-property: width`), la hauteur/le rayon restent portés par
+     `animate` de motion (ResizeObserver, jamais `layout`). Une relance
+     depuis `reponse` ne repasse PAS par la bulle — seule la première
+     question fait tout le chemin, un tour de plus s'ajoute au fil qui
+     défile à l'intérieur (transcription plafonnée à 220px).
+
+     **Décision utilisateur (2026-09-16)** : pas de bouton d'annuler pendant
+     la réflexion, malgré la latence réelle (~12s, contre 1,5s dans
+     l'artifact) — « comme un processus de réflexion ». Assumé, à rouvrir si
+     l'usage le demande.
+
+     **Ouvrir dans l'Assistant** transmet la dernière question/réponse par
+     un événement front-à-front (`QUICK_OPEN_ASSISTANT_EVENT`,
+     `features/assistant/conversation.ts`, écouté par
+     `assistant/page.tsx`) — pas de commande Rust, aucune donnée ne change.
+     Pas toute la conversation : décision déjà actée, rien ne la persiste.
+
+     Vérifié en app réelle (CDP), avec de vraies questions (pas de réponse
+     simulée) : bulle → réponse sur la première question, relance qui reste
+     dans le panneau sans rouvrir la bulle, transmission vers l'Assistant
+     confirmée (le tour apparaît bien dans `/assistant`), réouverture après
+     une fermeture réelle (Échap) qui revient au neutre avec le fil vidé.
+     **Pas vérifié, et pas vérifiable depuis cette session** : la suspension
+     du blur pendant la réflexion/réponse (décision 04) — un clic CDP dans
+     l'autre fenêtre ne déplace pas le focus OS réel entre deux fenêtres
+     natives séparées (`document.hasFocus()` reste vrai des deux côtés à la
+     fois), donc le test ne prouve rien dans un sens ou dans l'autre. La
+     condition dans le code est simple (un booléen `askBusy` de plus dans le
+     `setTimeout` du blur) — à confirmer par l'utilisateur en usage réel.
+     **Et, comme pour la sous-étape précédente : les états vérifient, pas le
+     mouvement entre eux** — une capture d'écran ne montre jamais une
+     transition.
+5. **✅ FAIT (2026-09-16), en même temps que la 4** — n'était plus une étape
+   séparable (voir mise à jour en tête de document) : dans l'artifact,
+   choisir une pastille ET taper le mot font strictement le même geste. Fait
+   dans `QuickNeutral` (`handleNeutralChange`, `app/quick/page.tsx`).
+6. **✅ FAIT (2026-09-16) — Retirer l'Omnibar à modes** et le `/` :
+   `components/Omnibar.tsx`, `useSlashCommands`, `commands.ts`,
+   `ModeBadge.tsx`, supprimés (vérifié par grep : plus aucun importeur hors
+   de ce groupe). Fait avant la troisième sous-étape de l'étape 4 plutôt
+   qu'après — l'ordre écrit disait « en dernier », mais plus rien n'en
+   dépendait déjà.
 
 ## Décisions prises
 

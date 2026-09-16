@@ -1,8 +1,9 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { motion } from "motion/react";
 import { Sparkles } from "lucide-react";
+import { listen } from "@tauri-apps/api/event";
 
 import BarreAssistant from "@/components/BarreAssistant";
 import { AssistantHeader } from "@/components/assistant/AssistantHeader";
@@ -18,7 +19,12 @@ import {
   EmptyMedia,
   EmptyTitle,
 } from "@/components/ui/empty";
-import { buildHistory, type Turn } from "@/features/assistant/conversation";
+import {
+  buildHistory,
+  QUICK_OPEN_ASSISTANT_EVENT,
+  type QuickHandoff,
+  type Turn,
+} from "@/features/assistant/conversation";
 import { aiAgent } from "@/features/omnibar/agent";
 import { spring } from "@/lib/motion";
 
@@ -46,6 +52,23 @@ export default function AssistantPage() {
   const pendingRef = useRef(false);
   const { viewportRef, anchorRef, atBottom, viewportHeight, anchorLatest, scrollToBottom } =
     useConversationScroll();
+
+  // La fenêtre rapide transmet sa DERNIÈRE question/réponse en ouvrant cette
+  // page (bouton « Ouvrir dans l'Assistant » du panneau réponse) — pas toute
+  // la conversation, qui ne persiste nulle part aujourd'hui. On la pose
+  // comme premier tour ; si une conversation était déjà en cours ici, elle
+  // s'ajoute à la suite plutôt que de l'effacer.
+  useEffect(() => {
+    const unlisten = listen<QuickHandoff>(QUICK_OPEN_ASSISTANT_EVENT, (event) => {
+      const { question, answer } = event.payload;
+      setTurns((prev) => [...prev, { id: crypto.randomUUID(), question, answer }]);
+      anchorLatest();
+    });
+    return () => {
+      unlisten.then((stop) => stop());
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const runAsk = async (text: string) => {
     const id = crypto.randomUUID();

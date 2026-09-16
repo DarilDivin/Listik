@@ -3,11 +3,14 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import { emit } from "@tauri-apps/api/event";
 import { motion } from "motion/react";
 import BarreTache from "@/components/BarreTache";
 import BarreJournal from "@/components/BarreJournal";
 import BarreAssistant from "@/components/BarreAssistant";
 import QuickNeutral from "@/components/QuickNeutral";
+import { QuickBubble } from "@/components/QuickBubble";
+import { QuickAnswer } from "@/components/QuickAnswer";
 import { QuickPills, QUICK_ITEMS, type QuickMode } from "@/components/QuickPills";
 import { useTodosSync } from "@/features/todos/useTodosSync";
 import { useTodoMutations } from "@/features/todos/useTodoMutations";
@@ -15,36 +18,40 @@ import { useProjects } from "@/hooks/useProjects";
 import { useTags } from "@/hooks/useTags";
 import { todayLocalISODate, toLocalISODate } from "@/lib/date";
 import type { SmartTaskData } from "@/features/todos/useTaskMode";
+import { aiAgent } from "@/features/omnibar/agent";
+import { buildHistory, QUICK_OPEN_ASSISTANT_EVENT, type Turn } from "@/features/assistant/conversation";
+import { cn } from "@/lib/utils";
+
+type AskPhase = "idle" | "reflexion" | "reponse";
 
 /**
  * Barre de capture rapide (style Spotlight) : la fenêtre `quick` est une barre
  * flottante transparente. On l'ouvre via le raccourci global (Alt+Q) ou le
  * tray. Elle se ferme après validation (mode Tâche), sur Échap, ou quand elle
- * perd le focus (clic ailleurs / changement d'application).
+ * perd le focus (clic ailleurs / changement d'application) — SAUF pendant
+ * qu'une question est en cours de réflexion ou de réponse, voir plus bas.
  *
  * La fenêtre a une taille FIXE (voir `src-tauri/tauri.conf.json`, label
  * `quick`) ; ce qui morphe, c'est le CONTENU à l'intérieur
- * (docs/ROADMAP-BARRES.md étape 4, deuxième sous-étape — revue après un
- * premier essai qui gardait Tâche comme barre par défaut plutôt qu'un vrai
- * neutre, corrigé ici).
+ * (docs/ROADMAP-BARRES.md étape 4).
  *
- * Quatre états : le NEUTRE (rien n'est choisi, `QuickNeutral`) et les trois
- * vraies barres (`BarreTache`/`BarreJournal`/`BarreAssistant`). Deux chemins
- * vers un mode, comme dans l'artifact « La fenêtre rapide » :
- * - cliquer une pastille (`QuickPills`) ;
- * - taper son mot en tête du champ neutre, suivi d'une espace — le mot ne
- *   revient PAS dans la barre choisie (elle démarre vide), à la différence
- *   de l'artifact : reporter le texte demanderait une prop `initialValue`
- *   sur les trois barres, pas ajoutée pour l'instant.
+ * États : le NEUTRE, les trois vraies barres, et — dans le mode Question —
+ * deux sous-états supplémentaires : `reflexion` (`QuickBubble`, un cercle
+ * qui réutilise le filtre gooey des pastilles) puis `reponse`
+ * (`QuickAnswer`, plus étroite que la barre). Une relance depuis `reponse`
+ * NE repasse PAS par la bulle — seule la toute première question fait tout
+ * le chemin.
  *
- * Retour au neutre : l'icône de tête de la barre active (posée ici via sa
- * prop `leading`) redonne la main aux pastilles. Sans elle, Journal et
- * Question seraient des portes sans retour tant que la fenêtre reste ouverte.
+ * Pas de bouton d'annuler pendant `reflexion` (décision utilisateur,
+ * 2026-09-16) : la latence réelle tourne autour de 12s, contre 1,5s dans
+ * l'artifact — volontairement laissé sans échappatoire pour l'instant,
+ * « comme un processus de réflexion ». Échap reste le filet global, lui,
+ * inchangé (ferme toute la fenêtre, pas juste la question).
  *
- * `mountKey` s'incrémente à CHAQUE vraie réouverture (pas un simple regain de
- * focus) et repose sur le neutre : revenir au neutre est prévisible, cohérent
- * avec « rien n'est choisi par défaut » de l'artifact (question 02 du
- * roadmap, tranchée ainsi).
+ * Ouvrir dans l'Assistant transmet la DERNIÈRE question/réponse par un
+ * événement front-à-front (`QUICK_OPEN_ASSISTANT_EVENT`, écouté par
+ * `app/(app)/assistant/page.tsx`) — pas toute la conversation : rien ne la
+ * persiste aujourd'hui (décision déjà actée dans le roadmap).
  */
 function isOverlayOpen() {
   return !!document.querySelector("[data-radix-popper-content-wrapper]");
@@ -67,6 +74,10 @@ export default function QuickPage() {
   const [mode, setMode] = useState<QuickMode>("neutre");
   const [neutralText, setNeutralText] = useState("");
   const [mountKey, setMountKey] = useState(0);
+  const [askPhase, setAskPhase] = useState<AskPhase>("idle");
+  const [turns, setTurns] = useState<Turn[]>([]);
+  const [pending, setPending] = useState(false);
+  const pendingRef = useRef(false); // garde de réentrance, voir assistant/page.tsx
   const wasHidden = useRef(true);
 
   const hide = useCallback(() => {
@@ -74,14 +85,23 @@ export default function QuickPage() {
     invoke("hide_quick_window").catch(() => {});
   }, []);
 
+  const resetAsk = () => {
+    setAskPhase("idle");
+    setTurns([]);
+    pendingRef.current = false;
+    setPending(false);
+  };
+
   const switchMode = useCallback((next: Exclude<QuickMode, "neutre">) => {
     setMode(next);
     setNeutralText("");
+    resetAsk();
   }, []);
 
   const returnToNeutral = useCallback(() => {
     setMode("neutre");
     setNeutralText("");
+    resetAsk();
   }, []);
 
   // Le mot qui se solidifie : premier mot du champ NEUTRE, suivi d'une
@@ -100,10 +120,14 @@ export default function QuickPage() {
     [switchMode],
   );
 
-  // Focus + reset à l'affichage ; fermeture au blur.
+  // Focus + reset à l'affichage ; fermeture au blur — SUSPENDUE tant qu'une
+  // question est en vol ou affichée (decision 04 du roadmap) : une réponse
+  // qu'on veut lire ou dans laquelle on veut cliquer ne peut pas disparaître
+  // au clic suivant.
   useEffect(() => {
     const win = getCurrentWindow();
     let blurTimer: ReturnType<typeof setTimeout> | undefined;
+    const askBusy = mode === "question" && askPhase !== "idle";
 
     const unlisten = win.onFocusChanged(({ payload: focused }) => {
       if (focused) {
@@ -112,6 +136,7 @@ export default function QuickPage() {
           wasHidden.current = false;
           setMode("neutre");
           setNeutralText("");
+          resetAsk();
           setMountKey((k) => k + 1);
         }
         return;
@@ -119,7 +144,7 @@ export default function QuickPage() {
 
       if (blurTimer) clearTimeout(blurTimer);
       blurTimer = setTimeout(() => {
-        if (!document.hasFocus() && !isOverlayOpen()) hide();
+        if (!document.hasFocus() && !isOverlayOpen() && !askBusy) hide();
       }, 120);
     });
 
@@ -127,9 +152,10 @@ export default function QuickPage() {
       if (blurTimer) clearTimeout(blurTimer);
       unlisten.then((stop) => stop());
     };
-  }, [hide]);
+  }, [hide, mode, askPhase]);
 
-  // Échap → fermer.
+  // Échap → fermer TOUTE la fenêtre, même pendant une question : le filet
+  // global reste le filet global, à la différence du blur ci-dessus.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
@@ -173,23 +199,77 @@ export default function QuickPage() {
     [createTodo, createProject, projects, resolveTagNames, setTodoTags, hide],
   );
 
-  // Intérimaire (troisième sous-étape de l'étape 4 la remplacera par la
-  // bulle de réflexion + réponse) : on ne peut pas encore répondre ICI, et
-  // appeler l'agent pour jeter sa réponse serait pire que ne rien faire (~12s
-  // d'attente invisible avant que la fenêtre disparaisse). On ouvre donc la
-  // fenêtre principale sans poser la question à sa place — honnête sur ce
-  // que ça fait, pas encore ce que ça devrait faire. Même chemin pour une
-  // question posée via la pastille Question OU tapée en clair dans le champ
-  // neutre : les deux « vont vers l'assistant ».
-  const goToAssistant = useCallback(() => {
+  // Pose/complète un tour — partagé par la toute première question (qui
+  // vient de la bulle) et les relances (qui restent dans le panneau réponse).
+  const askQuestion = useCallback(
+    async (text: string) => {
+      const id = crypto.randomUUID();
+      const history = buildHistory(turns);
+      setTurns((prev) => [...prev, { id, question: text }]);
+      setPending(true);
+      try {
+        const res = await aiAgent(text, history);
+        setTurns((prev) => prev.map((t) => (t.id === id ? { ...t, answer: res.message } : t)));
+      } catch (e) {
+        console.error("ai_agent_run:", e);
+        setTurns((prev) =>
+          prev.map((t) =>
+            t.id === id
+              ? { ...t, error: true, answer: "L'assistant est indisponible (CLI introuvable, ou délai dépassé)." }
+              : t,
+          ),
+        );
+      } finally {
+        pendingRef.current = false;
+        setPending(false);
+      }
+    },
+    [turns],
+  );
+
+  // Première question : bulle de réflexion jusqu'à la réponse, PUIS bascule
+  // en panneau réponse — jamais l'inverse (le panneau n'a pas de état
+  // "réflexion" à lui, la bulle le porte déjà).
+  const handleAskSubmit = useCallback(
+    (text: string) => {
+      if (pendingRef.current) return;
+      pendingRef.current = true;
+      setAskPhase("reflexion");
+      void askQuestion(text).then(() => setAskPhase("reponse"));
+    },
+    [askQuestion],
+  );
+
+  // Relance : reste dans `reponse`, le tour en attente s'affiche dans le fil.
+  const handleFollowUp = useCallback(
+    (text: string) => {
+      if (pendingRef.current) return;
+      pendingRef.current = true;
+      void askQuestion(text);
+    },
+    [askQuestion],
+  );
+
+  const handleOpenInAssistant = useCallback(() => {
+    const last = turns[turns.length - 1];
+    if (last?.answer !== undefined) {
+      emit(QUICK_OPEN_ASSISTANT_EVENT, { question: last.question, answer: last.answer }).catch(() => {});
+    }
     hide();
     invoke("show_main_window").catch(() => {});
-  }, [hide]);
+  }, [turns, hide]);
 
+  // Neutre sans mot-clé, validé : « va vers l'assistant » veut dire prendre
+  // tout le chemin Question — bascule en mode Question (pastilles repliées),
+  // puis soumission immédiate. Pas de raccourci qui ouvrirait juste la
+  // fenêtre principale : ce serait plus pauvre que la bulle + réponse que la
+  // fenêtre rapide sait déjà montrer.
   const handleNeutralSubmit = useCallback(() => {
-    if (!neutralText.trim()) return;
-    goToAssistant();
-  }, [neutralText, goToAssistant]);
+    const text = neutralText.trim();
+    if (!text) return;
+    switchMode("question");
+    handleAskSubmit(text);
+  }, [neutralText, switchMode, handleAskSubmit]);
 
   // --- Morphing de hauteur : un seul ResizeObserver sur le cadre (posé une
   // fois, jamais recréé — l'élément observé ne change pas d'identité, seul
@@ -212,7 +292,7 @@ export default function QuickPage() {
     return () => ro.disconnect();
   }, []);
 
-  /** Icône de tête cliquable, posée dans la barre active — le seul chemin de retour au neutre. */
+  /** Icône de tête cliquable, posée dans la barre/le panneau actif — le seul chemin de retour au neutre. */
   const returnBadge = (targetMode: Exclude<QuickMode, "neutre">) => {
     const item = QUICK_ITEMS.find((i) => i.mode === targetMode);
     if (!item) return null;
@@ -232,15 +312,25 @@ export default function QuickPage() {
   };
 
   const collapsed = mode !== "neutre" || neutralText.trim().length > 0;
+  const isBubble = mode === "question" && askPhase === "reflexion";
+  const isReponse = mode === "question" && askPhase === "reponse";
+  const shellRadius = isBubble ? 9999 : mode === "neutre" ? 9999 : 16;
+  const shellWidth = isBubble ? 64 : isReponse ? 420 : undefined;
 
   return (
     <div className="flex h-screen w-screen items-start justify-center bg-transparent">
       <div className="w-full p-7">
         <div className="flex items-start gap-3.5">
           <motion.div
-            animate={{ height: height ?? "auto", borderRadius: mode === "neutre" ? 9999 : 16 }}
+            animate={{ height: height ?? "auto", borderRadius: shellRadius }}
             transition={{ duration: 0.44, ease: [0.16, 1, 0.3, 1] }}
-            className="min-w-0 flex-1 overflow-hidden shadow-floating"
+            className={cn("overflow-hidden shadow-floating", shellWidth ? "flex-none" : "min-w-0 flex-1")}
+            style={{
+              width: shellWidth,
+              transitionProperty: "width",
+              transitionDuration: "440ms",
+              transitionTimingFunction: "cubic-bezier(0.16, 1, 0.3, 1)",
+            }}
           >
             <div ref={measureRef}>
               {mode === "neutre" && (
@@ -269,13 +359,23 @@ export default function QuickPage() {
                   leading={returnBadge("journal")}
                 />
               )}
-              {mode === "question" && (
+              {mode === "question" && askPhase === "idle" && (
                 <BarreAssistant
                   key={`question-${mountKey}`}
                   autoFocus
-                  onSubmit={goToAssistant}
+                  onSubmit={handleAskSubmit}
                   placeholder="Demander, créer, chercher…"
                   leading={returnBadge("question")}
+                />
+              )}
+              {isBubble && <QuickBubble />}
+              {isReponse && (
+                <QuickAnswer
+                  turns={turns}
+                  pending={pending}
+                  onFollowUp={handleFollowUp}
+                  leading={returnBadge("question")}
+                  onOpenInAssistant={handleOpenInAssistant}
                 />
               )}
             </div>
