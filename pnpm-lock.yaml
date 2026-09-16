@@ -147,6 +147,9 @@ importers:
       eslint-config-next:
         specifier: 15.4.3
         version: 15.4.3(eslint@9.31.0(jiti@2.5.0))(typescript@5.8.3)
+      playwright-core:
+        specifier: ^1.63.0
+        version: 1.63.0
       tailwindcss:
         specifier: ^4
         version: 4.1.11
@@ -3644,6 +3647,11 @@ packages:
   picomatch@4.0.4:
     resolution: {integrity: sha512-QP88BAKvMam/3NxH6vj2o21R6MjxZUAd6nlwAS/pnGvN9IVLocLHxGYIzFhg6fUQ+5th6P4dv4eW9jX3DSIj7A==}
     engines: {node: '>=12'}
+
+  playwright-core@1.63.0:
+    resolution: {integrity: sha512-rYCsBF/M5HjUch52bbtVONEFjv6Xu8sm8h72dNlR5bzIE1fvC/bxgspzkjSfU+MweEMmPM8KJebG6nnyxo5mCg==}
+    engines: {node: '>=20'}
+    hasBin: true
 
   possible-typed-array-names@1.1.0:
     resolution: {integrity: sha512-/+5VFTchJDoVj3bhoqi6UeymcD00DAwb1nJwamzPvHEszJ4FpF6SNNbUbOS8yI56qHzdV8eK0qEfOSiodkTdxg==}
@@ -7964,6 +7972,8 @@ snapshots:
   picomatch@4.0.3: {}
 
   picomatch@4.0.4: {}
+
+  playwright-core@1.63.0: {}
 
   possible-typed-array-names@1.1.0: {}
 
