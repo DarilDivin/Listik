@@ -454,9 +454,12 @@ pub async fn toggle_quick_window(app: AppHandle) -> Result<(), String> {
         }
     } else {
         // Filet de sécurité : la fenêtre est normalement déclarée en config.
+        // Taille A TENIR IDENTIQUE à "quick" dans tauri.conf.json — rien ne
+        // les synchronise automatiquement, et ce filet a justement pour but
+        // de recréer EXACTEMENT ce que la config aurait posé.
         WebviewWindowBuilder::new(&app, "quick", WebviewUrl::App("/quick".into()))
             .title("Capture rapide")
-            .inner_size(680.0, 180.0)
+            .inner_size(680.0, 460.0)
             .center()
             .resizable(false)
             .decorations(false)

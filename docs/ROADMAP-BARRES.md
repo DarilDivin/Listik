@@ -137,7 +137,27 @@ Chaque étape laisse l'app utilisable — aucune ne dépend de la suivante.
 4. **La fenêtre rapide** : coque qui héberge une barre, pastilles, et la
    métamorphose. C'est là qu'est le travail de design — largement fait dans
    l'artifact, reste à porter dans `app/quick/page.tsx` avec la coque à taille
-   fixe décrite plus haut.
+   fixe décrite plus haut. Trois sous-étapes, chacune son propre commit et sa
+   propre vérification (le risque n'est pas le même) :
+   - **✅ FAIT (2026-09-16) — la coque seule.** `app/quick/page.tsx` : plus de
+     `ResizeObserver`/`MutationObserver`/`win.setSize`/`win.center` — la
+     fenêtre `quick` (`src-tauri/tauri.conf.json`) est fixée à 680×460,
+     l'ancien Omnibar (tâche seule, `defaultMode="task"`) inchangé dedans.
+     Volontairement PAS de BarreTache dans ce commit : une variable à la
+     fois. Vérifié en app réelle (CDP) : la fenêtre s'ouvre à la bonne
+     taille (`toggle_quick_window` invoqué directement), le calendrier
+     s'ouvre SOUS la barre et tient entier dans les 460px (c'était la vraie
+     question — Radix mesure contre la fenêtre, pas l'écran, et aurait pu
+     retourner le popover au-dessus, où il n'y a que 28px). Pas testé : le
+     raccourci global Alt+Q lui-même (par opposition à la commande Rust
+     qu'il appelle) — aucun outil de ce genre dans cette session pour
+     synthétiser un raccourci OS, et le code qui l'enregistre côté Rust
+     n'a de toute façon pas été touché. À confirmer par l'utilisateur.
+     **Effet de bord à noter, pas une régression** : la fenêtre est toujours
+     centrée (`"center": true`), donc sa position au repos remonte un peu
+     à l'écran par rapport à l'ancienne fenêtre de 180px de haut.
+   - **À faire — pastilles + jetons + trois barres au repos.**
+   - **À faire — bulle de réflexion + réponse (mode Question).**
 5. **Le mot devient pastille** — n'est plus une étape séparable de la 4 (voir
    mise à jour en tête de document) : dans l'artifact, choisir une pastille
    ET taper le mot font strictement le même geste, il n'existe pas d'état

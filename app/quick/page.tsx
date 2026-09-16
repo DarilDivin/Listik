@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { getCurrentWindow, LogicalSize } from "@tauri-apps/api/window";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import Omnibar from "@/components/Omnibar";
 import { useTodosSync } from "@/features/todos/useTodosSync";
 import { useTodoMutations } from "@/features/todos/useTodoMutations";
@@ -12,22 +12,23 @@ import { useTags } from "@/hooks/useTags";
 import { todayLocalISODate, toLocalISODate } from "@/lib/date";
 import type { SmartTaskData } from "@/features/todos/useTaskMode";
 
-const WINDOW_WIDTH = 680;
-const MIN_HEIGHT = 96;
-const MAX_HEIGHT = 600; // texte seul : au-delà, la zone scrolle en interne
-const POPOVER_GAP = 24; // marge sous l'input pour le popover ouvert
-
 /**
  * Barre de capture rapide (style Spotlight) : la fenêtre `quick` est une barre
- * flottante transparente qui n'affiche que le SmartTaskInput. On l'ouvre via le
- * raccourci global (Alt+Q) ou le tray. Elle se ferme après validation, sur Échap,
- * ou quand elle perd le focus (clic ailleurs / changement d'application).
+ * flottante transparente. On l'ouvre via le raccourci global (Alt+Q) ou le
+ * tray. Elle se ferme après validation, sur Échap, ou quand elle perd le
+ * focus (clic ailleurs / changement d'application).
  *
- * Le `mountKey` est incrémenté à chaque fois que la fenêtre (re)prend le focus :
- * remonter le SmartTaskInput vide le champ et redéclenche l'autofocus.
+ * La fenêtre a une taille FIXE (voir `src-tauri/tauri.conf.json`, label
+ * `quick`) plutôt que de suivre son contenu : animer un `setSize` OS image
+ * par image jusqu'à une forme aussi étroite qu'une bulle de réflexion (étape
+ * Question à venir, docs/ROADMAP-BARRES.md étape 4) referait sauter la
+ * fenêtre — exactement ce que l'ancien code évitait déjà pendant l'ouverture
+ * d'un popover en ne recentrant pas. La coque est donc posée une fois pour
+ * toutes, assez haute pour que calendrier/priorité aient leur place SOUS la
+ * barre (ancrée en haut, `items-start`) sans jamais avoir besoin de grandir.
  *
- * La hauteur de la fenêtre suit le contenu (croissance/réduction fluide), plafonnée
- * à MAX_HEIGHT au-delà de laquelle la zone scrolle ; on recentre après chaque ajustement.
+ * Le `mountKey` est incrémenté à chaque fois que la fenêtre (re)prend le
+ * focus : remonter l'Omnibar vide le champ et redéclenche l'autofocus.
  */
 /** Un overlay Radix (calendrier / menu de priorité) est-il ouvert ? */
 function isOverlayOpen() {
@@ -51,7 +52,6 @@ export default function QuickPage() {
     [projects],
   );
   const [mountKey, setMountKey] = useState(0);
-  const contentRef = useRef<HTMLDivElement>(null);
   // La barre démarre cachée : on ne réinitialise le champ qu'à une vraie
   // réouverture, pas à chaque regain de focus (ex. fermeture d'un menu).
   const wasHidden = useRef(true);
@@ -60,64 +60,6 @@ export default function QuickPage() {
     wasHidden.current = true;
     invoke("hide_quick_window").catch(() => {});
   }, []);
-
-  // Ajuste la hauteur de la fenêtre au contenu — et l'agrandit vers le bas quand
-  // un popover (calendrier / priorité) est ouvert, sinon il serait coupé par les
-  // bords de la fenêtre. L'input est ancré en haut (items-start) pour laisser la
-  // place au popover en dessous.
-  useEffect(() => {
-    const el = contentRef.current;
-    if (!el) return;
-    const win = getCurrentWindow();
-    let raf = 0;
-    let lastH = 0;
-
-    const apply = () => {
-      // el inclut déjà son propre rembourrage (place pour le halo lumineux).
-      const inputH = Math.ceil(el.scrollHeight);
-
-      // Popover Radix ouvert (rendu dans un portail au niveau du body) ?
-      const popper = document.querySelector<HTMLElement>(
-        "[data-radix-popper-content-wrapper]",
-      );
-      const popperH = popper ? Math.ceil(popper.offsetHeight) : 0;
-
-      let target: number;
-      if (popperH > 0) {
-        const cap = Math.min(720, (window.screen?.availHeight ?? 900) - 80);
-        target = Math.min(inputH + popperH + POPOVER_GAP, cap);
-      } else {
-        target = Math.min(Math.max(inputH, MIN_HEIGHT), MAX_HEIGHT);
-      }
-
-      if (target === lastH) return;
-      lastH = target;
-
-      const resized = win.setSize(new LogicalSize(WINDOW_WIDTH, target));
-      // On ne recentre que sans popover : recentrer pendant l'ouverture ferait
-      // « sauter » l'input et le popover. Sinon, croissance vers le bas (coin fixe).
-      if (popperH === 0) resized.then(() => win.center()).catch(() => {});
-      else resized.catch(() => {});
-    };
-
-    const schedule = () => {
-      cancelAnimationFrame(raf);
-      raf = requestAnimationFrame(apply);
-    };
-
-    const ro = new ResizeObserver(schedule);
-    ro.observe(el);
-    // Détecte l'ouverture/fermeture des poppers (apparition/retrait dans le DOM).
-    const mo = new MutationObserver(schedule);
-    mo.observe(document.body, { childList: true, subtree: true });
-    schedule();
-
-    return () => {
-      cancelAnimationFrame(raf);
-      ro.disconnect();
-      mo.disconnect();
-    };
-  }, [mountKey]);
 
   // Focus + reset à l'affichage ; fermeture au blur.
   useEffect(() => {
@@ -220,10 +162,7 @@ export default function QuickPage() {
 
   return (
     <div className="flex h-screen w-screen items-start justify-center bg-transparent">
-      <div
-        ref={contentRef}
-        className="max-h-screen w-full overflow-y-auto p-7"
-      >
+      <div className="max-h-screen w-full overflow-y-auto p-7">
         {/* Ombre portée profonde : la fenêtre est transparente et sans ombre
             native, c'est elle qui donne l'effet « flotte au-dessus du bureau ».
             `.shadow-floating` = même recette (teintée oklch) que `.card-floating`,

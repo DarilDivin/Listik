@@ -29,7 +29,7 @@
         "title": "Capture rapide",
         "url": "/quick",
         "width": 680,
-        "height": 180,
+        "height": 460,
         "resizable": false,
         "fullscreen": false,
         "alwaysOnTop": true,

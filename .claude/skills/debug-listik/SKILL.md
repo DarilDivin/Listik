@@ -36,8 +36,20 @@ WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS="--remote-debugging-port=9222" pnpm tauri 
 ```
 
 Le premier `cargo` (re)compile : 30s à 2 min selon le cache. Attendre plutôt
-que deviner — surveiller le fichier de sortie du process en arrière-plan
-jusqu'à `Running \`target\debug\app.exe\`` ou une ligne `error`.
+que deviner — mais PAS en grep-ant une fenêtre glissante du fichier de log
+(`tail -n 30` sur un fichier qui grossit fait sortir la ligne cherchée de la
+fenêtre avant qu'on l'ait vue, et une ligne d'un PRÉCÉDENT lancement peut
+aussi faire sortir la boucle immédiatement, à tort). Le signal fiable est
+l'état RÉEL qu'on attend, pas le log qui en parle : `until curl -s -o
+/dev/null http://127.0.0.1:9222/json/version; do sleep 2; done` — sort
+exactement quand CDP répond pour de vrai, ne peut pas se tromper sur un
+lancement précédent.
+
+**Un changement dans `src-tauri/tauri.conf.json` redémarre toute l'app**
+(Tauri le détecte et relance `cargo run` tout seul — pas juste un hot-reload
+Next.js). Le port CDP retombe le temps du redémarrage : la même attente
+`curl` ci-dessus couvre aussi ce cas, pas la peine de relancer `pnpm tauri
+dev` à la main pour ça.
 
 ## 2. Vérifier que CDP répond
 
