@@ -8,6 +8,12 @@ import { todayLocalISODate } from "@/lib/date";
 interface BarreJournalProps {
   /** Pose le curseur au bout de la feuille au montage. */
   autoFocus?: boolean;
+  /**
+   * Icône de tête, à côté de la date. Absente par défaut — le widget de
+   * l'accueil n'en a pas besoin ; seule la fenêtre rapide en pose une
+   * (cliquable, pour redonner la main aux pastilles).
+   */
+  leading?: React.ReactNode;
 }
 
 /**
@@ -23,7 +29,7 @@ interface BarreJournalProps {
  * cette barre a besoin : rien à régler ici, `JournalWidget` l'a déjà validé
  * sur l'accueil.
  */
-export default function BarreJournal({ autoFocus }: BarreJournalProps) {
+export default function BarreJournal({ autoFocus, leading }: BarreJournalProps) {
   const today = todayLocalISODate();
   // Pas de « À venir » ici, comme le widget : cette barre ne montre que le
   // jour courant, écrire pour plus tard se fait depuis la page complète.
@@ -59,9 +65,10 @@ export default function BarreJournal({ autoFocus }: BarreJournalProps) {
       ref={rootRef}
       className="rounded-2xl border border-border/60 bg-popover p-4"
     >
-      <p className="mb-2 text-[13px] font-semibold text-muted-foreground">
-        {jour}
-      </p>
+      <div className="mb-2 flex items-center gap-2">
+        {leading}
+        <p className="text-[13px] font-semibold text-muted-foreground">{jour}</p>
+      </div>
       <JournalSheet
         variant="widget"
         reprises={reprises}

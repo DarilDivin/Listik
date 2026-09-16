@@ -1,13 +1,14 @@
 "use client";
 
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { motion } from "motion/react";
 import BarreTache from "@/components/BarreTache";
 import BarreJournal from "@/components/BarreJournal";
 import BarreAssistant from "@/components/BarreAssistant";
-import { QuickPills, type QuickMode } from "@/components/QuickPills";
+import QuickNeutral from "@/components/QuickNeutral";
+import { QuickPills, QUICK_ITEMS, type QuickMode } from "@/components/QuickPills";
 import { useTodosSync } from "@/features/todos/useTodosSync";
 import { useTodoMutations } from "@/features/todos/useTodoMutations";
 import { useProjects } from "@/hooks/useProjects";
@@ -22,36 +23,28 @@ import type { SmartTaskData } from "@/features/todos/useTaskMode";
  * perd le focus (clic ailleurs / changement d'application).
  *
  * La fenêtre a une taille FIXE (voir `src-tauri/tauri.conf.json`, label
- * `quick`) — voir le commit précédent pour pourquoi. Ce qui morphe ici, c'est
- * le CONTENU à l'intérieur : trois pastilles (`QuickPills`) choisissent entre
- * `BarreTache`, `BarreJournal` et `BarreAssistant` (docs/ROADMAP-BARRES.md
- * étape 4, deuxième sous-étape), chacune une barre entière et autonome —
- * aucune ne sait qu'elle vit dans cette fenêtre plutôt qu'ailleurs.
+ * `quick`) ; ce qui morphe, c'est le CONTENU à l'intérieur
+ * (docs/ROADMAP-BARRES.md étape 4, deuxième sous-étape — revue après un
+ * premier essai qui gardait Tâche comme barre par défaut plutôt qu'un vrai
+ * neutre, corrigé ici).
  *
- * Écarts assumés vis-à-vis de l'artifact de maquettage, pas des oublis :
- * - Les pastilles restent TOUJOURS visibles et cliquables (celle du mode actif
- *   simplement teintée), plutôt que de s'absorber dans la barre choisie et de
- *   n'y redevenir accessibles qu'en défaisant un jeton. Ce va-et-vient
- *   demandait un point de retour dans chacune des trois barres réelles —
- *   BarreJournal et BarreAssistant n'en ont pas, et ne doivent pas apprendre
- *   à en avoir un pour cette seule fenêtre.
- * - Le mot qui se solidifie en pastille (« tâche », « journal », « question »
- *   tapé en tête d'un champ vide) n'est PAS encore fait : il demanderait
- *   d'exposer le texte brut de `BarreTache` à ce composant, qui ne le fait
- *   pas aujourd'hui (son texte vit dans `useTaskMode`). Les pastilles
- *   suffisent déjà à rendre le choix possible (même raisonnement que
- *   l'étape 5 du roadmap).
- * - Envoyer une question ici ne montre pas encore la bulle de réflexion — ça,
- *   c'est la troisième sous-étape. Pour l'instant elle cache la fenêtre
- *   rapide et montre la fenêtre principale (sans forcer la navigation vers
- *   /assistant : aucun canal n'existe aujourd'hui pour le lui dire).
+ * Quatre états : le NEUTRE (rien n'est choisi, `QuickNeutral`) et les trois
+ * vraies barres (`BarreTache`/`BarreJournal`/`BarreAssistant`). Deux chemins
+ * vers un mode, comme dans l'artifact « La fenêtre rapide » :
+ * - cliquer une pastille (`QuickPills`) ;
+ * - taper son mot en tête du champ neutre, suivi d'une espace — le mot ne
+ *   revient PAS dans la barre choisie (elle démarre vide), à la différence
+ *   de l'artifact : reporter le texte demanderait une prop `initialValue`
+ *   sur les trois barres, pas ajoutée pour l'instant.
+ *
+ * Retour au neutre : l'icône de tête de la barre active (posée ici via sa
+ * prop `leading`) redonne la main aux pastilles. Sans elle, Journal et
+ * Question seraient des portes sans retour tant que la fenêtre reste ouverte.
  *
  * `mountKey` s'incrémente à CHAQUE vraie réouverture (pas un simple regain de
- * focus) : remonter la barre active vide son champ, et repartir sur le mode
- * Tâche + pastilles visibles à chaque fois est le choix délibéré pour la
- * question 02 du roadmap (« la fenêtre garde-t-elle sa dernière barre ? ») —
- * revenir au neutre est prévisible, cohérent avec « rien n'est choisi par
- * défaut » de l'artifact.
+ * focus) et repose sur le neutre : revenir au neutre est prévisible, cohérent
+ * avec « rien n'est choisi par défaut » de l'artifact (question 02 du
+ * roadmap, tranchée ainsi).
  */
 function isOverlayOpen() {
   return !!document.querySelector("[data-radix-popper-content-wrapper]");
@@ -71,7 +64,8 @@ export default function QuickPage() {
     [projects],
   );
 
-  const [mode, setMode] = useState<QuickMode>("tache");
+  const [mode, setMode] = useState<QuickMode>("neutre");
+  const [neutralText, setNeutralText] = useState("");
   const [mountKey, setMountKey] = useState(0);
   const wasHidden = useRef(true);
 
@@ -80,9 +74,31 @@ export default function QuickPage() {
     invoke("hide_quick_window").catch(() => {});
   }, []);
 
-  const switchMode = useCallback((next: QuickMode) => {
-    setMode((current) => (current === next ? current : next));
+  const switchMode = useCallback((next: Exclude<QuickMode, "neutre">) => {
+    setMode(next);
+    setNeutralText("");
   }, []);
+
+  const returnToNeutral = useCallback(() => {
+    setMode("neutre");
+    setNeutralText("");
+  }, []);
+
+  // Le mot qui se solidifie : premier mot du champ NEUTRE, suivi d'une
+  // espace. Vérifié sur la valeur ENTRANTE (avant `setNeutralText`) pour ne
+  // pas dépendre d'un rendu supplémentaire.
+  const handleNeutralChange = useCallback(
+    (text: string) => {
+      const lower = text.toLowerCase();
+      const trigger = QUICK_ITEMS.find((item) => lower.startsWith(`${item.mot} `));
+      if (trigger) {
+        switchMode(trigger.mode);
+        return;
+      }
+      setNeutralText(text);
+    },
+    [switchMode],
+  );
 
   // Focus + reset à l'affichage ; fermeture au blur.
   useEffect(() => {
@@ -94,7 +110,8 @@ export default function QuickPage() {
         if (blurTimer) clearTimeout(blurTimer);
         if (wasHidden.current) {
           wasHidden.current = false;
-          setMode("tache");
+          setMode("neutre");
+          setNeutralText("");
           setMountKey((k) => k + 1);
         }
         return;
@@ -161,27 +178,60 @@ export default function QuickPage() {
   // appeler l'agent pour jeter sa réponse serait pire que ne rien faire (~12s
   // d'attente invisible avant que la fenêtre disparaisse). On ouvre donc la
   // fenêtre principale sans poser la question à sa place — honnête sur ce
-  // que ça fait, pas encore ce que ça devrait faire.
-  const handleAskInterim = useCallback(async () => {
+  // que ça fait, pas encore ce que ça devrait faire. Même chemin pour une
+  // question posée via la pastille Question OU tapée en clair dans le champ
+  // neutre : les deux « vont vers l'assistant ».
+  const goToAssistant = useCallback(() => {
     hide();
     invoke("show_main_window").catch(() => {});
   }, [hide]);
 
-  // --- Morphing de hauteur : on mesure le contenu qui vient de se poser, et
-  // on anime le CADRE vers cette valeur — jamais de `layout` de motion sur ce
-  // cadre (il applique un scale qui écrase le contenu pendant la transition,
-  // piège déjà documenté lors de la refonte Omnibar du 2026-08-24). Courbe
-  // `--sortie` de l'artifact (cubic-bezier(0.16,1,0.3,1)), pas les presets de
-  // lib/motion.ts : c'est le ressenti approuvé par l'utilisateur sur la
-  // maquette, pas le vocabulaire général de l'app.
+  const handleNeutralSubmit = useCallback(() => {
+    if (!neutralText.trim()) return;
+    goToAssistant();
+  }, [neutralText, goToAssistant]);
+
+  // --- Morphing de hauteur : un seul ResizeObserver sur le cadre (posé une
+  // fois, jamais recréé — l'élément observé ne change pas d'identité, seul
+  // son contenu est remplacé), qui anime le CADRE vers la hauteur mesurée.
+  // Jamais de `layout` de motion ici : il applique un scale qui écrase le
+  // contenu pendant la transition (piège documenté lors de la refonte
+  // Omnibar du 2026-08-24). Courbe `--sortie` de l'artifact
+  // (cubic-bezier(0.16,1,0.3,1)), pas les presets de lib/motion.ts : c'est le
+  // ressenti approuvé sur la maquette, pas le vocabulaire général de l'app.
   const measureRef = useRef<HTMLDivElement>(null);
   const [height, setHeight] = useState<number | undefined>(undefined);
 
-  useLayoutEffect(() => {
+  useEffect(() => {
     const el = measureRef.current;
     if (!el) return;
-    setHeight(el.getBoundingClientRect().height);
-  }, [mode, mountKey]);
+    const ro = new ResizeObserver((entries) => {
+      setHeight(entries[0]?.contentRect.height ?? el.getBoundingClientRect().height);
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
+  /** Icône de tête cliquable, posée dans la barre active — le seul chemin de retour au neutre. */
+  const returnBadge = (targetMode: Exclude<QuickMode, "neutre">) => {
+    const item = QUICK_ITEMS.find((i) => i.mode === targetMode);
+    if (!item) return null;
+    const Icon = item.icon;
+    return (
+      <button
+        type="button"
+        onClick={returnToNeutral}
+        title="Revenir — les pastilles ressortent"
+        aria-label="Revenir au choix"
+        className="grid size-9 shrink-0 place-items-center self-start rounded-xl transition hover:brightness-95 dark:hover:brightness-110"
+        style={{ backgroundColor: `${item.color}1f`, color: item.color }}
+      >
+        <Icon className="size-[18px]" />
+      </button>
+    );
+  };
+
+  const collapsed = mode !== "neutre" || neutralText.trim().length > 0;
 
   return (
     <div className="flex h-screen w-screen items-start justify-center bg-transparent">
@@ -193,6 +243,15 @@ export default function QuickPage() {
             className="min-w-0 flex-1 overflow-hidden rounded-2xl shadow-floating"
           >
             <div ref={measureRef}>
+              {mode === "neutre" && (
+                <QuickNeutral
+                  key={`neutre-${mountKey}`}
+                  value={neutralText}
+                  onChange={handleNeutralChange}
+                  onSubmit={handleNeutralSubmit}
+                  autoFocus
+                />
+              )}
               {mode === "tache" && (
                 <BarreTache
                   key={`tache-${mountKey}`}
@@ -200,21 +259,29 @@ export default function QuickPage() {
                   onSubmit={handleSubmit}
                   placeholder="Capturer une tâche…"
                   lists={lists}
+                  leading={returnBadge("tache")}
                 />
               )}
-              {mode === "journal" && <BarreJournal key={`journal-${mountKey}`} autoFocus />}
+              {mode === "journal" && (
+                <BarreJournal
+                  key={`journal-${mountKey}`}
+                  autoFocus
+                  leading={returnBadge("journal")}
+                />
+              )}
               {mode === "question" && (
                 <BarreAssistant
                   key={`question-${mountKey}`}
                   autoFocus
-                  onSubmit={handleAskInterim}
+                  onSubmit={goToAssistant}
                   placeholder="Demander, créer, chercher…"
+                  leading={returnBadge("question")}
                 />
               )}
             </div>
           </motion.div>
 
-          <QuickPills mode={mode} onChoose={switchMode} entryKey={mountKey} />
+          <QuickPills collapsed={collapsed} onChoose={switchMode} entryKey={mountKey} />
         </div>
       </div>
     </div>

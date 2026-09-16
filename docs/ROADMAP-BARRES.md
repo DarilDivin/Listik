@@ -168,22 +168,34 @@ Chaque étape laisse l'app utilisable — aucune ne dépend de la suivante.
      toujours dans la vraie liste (bout en bout inchangé). tsc/lint/tests
      (257/257) propres.
 
-     **Deux écarts assumés, à trancher avec l'utilisateur :**
-     - **Les pastilles restent toujours visibles** (celle du mode actif
-       simplement teintée) plutôt que de s'absorber dans la barre choisie —
-       le va-et-vient de l'artifact demandait un point de retour dans
-       chacune des trois barres réelles, que `BarreJournal`/`BarreAssistant`
-       n'ont pas et ne doivent pas apprendre à avoir pour cette seule
-       fenêtre.
-     - **Le mot qui se solidifie en pastille n'est PAS fait** — malgré ce
-       que ce document disait plus haut (« les étapes 4 et 5 se sont
-       fondues, 5 n'est plus déferrable »). Vrai au niveau du DESIGN choisi
-       dans l'artifact ; faux au niveau de l'implémentation : `BarreTache`
-       ne remonte pas son texte brut au parent aujourd'hui (il vit dans
-       `useTaskMode`), donc détecter « tâche »/« journal »/« question » en
-       tête de champ demanderait de lui ajouter une prop qui n'existe pas.
-       Les pastilles suffisent déjà à rendre le choix possible ; le mot qui
-       se solidifie reste une amélioration, pas encore faite.
+     **Revu le 2026-09-16, même jour, après retour de l'utilisateur** : la
+     première passe gardait `BarreTache` comme barre par défaut (pas de
+     vrai neutre) et les pastilles toujours visibles/teintées — deux écarts
+     que l'utilisateur a demandé de corriger pour coller à l'artifact.
+     Corrigé :
+     - **Un vrai état NEUTRE existe** (`QuickNeutral`, nouveau) — rien n'est
+       choisi par défaut, comme dans l'artifact. Taper dedans (sans mot-clé)
+       et valider part vers l'Assistant (le filet par défaut de cette
+       fenêtre est la conversation, pas la tâche — différent de l'ancien
+       Omnibar, qui utilisait `task`).
+     - **Les pastilles s'absorbent à nouveau** (collapsent à largeur 0,
+       filtre gooey pendant la transition) dès qu'un mode est choisi ou
+       dès qu'on tape dans le neutre — elles ne restent plus visibles.
+     - **Le mot qui se solidifie est fait.** Le blocage cité (« `BarreTache`
+       ne remonte pas son texte ») ne s'appliquait qu'à l'ancienne
+       architecture : la détection vit maintenant dans `QuickNeutral`, un
+       champ à part, séparé des trois vraies barres — pas besoin qu'elles
+       exposent quoi que ce soit.
+     - **Le point de retour existe** : l'icône de tête de la barre active
+       (`leading`, déjà pris en charge par `BarreTache` ; ajouté à
+       `BarreAssistant` et `BarreJournal` pour l'occasion) redonne la main
+       au neutre + pastilles en un clic — sans lui, Journal/Question
+       auraient été des portes sans retour.
+
+     Un seul écart restant, assumé : le mot tapé dans le neutre ne reporte
+     PAS le reste du texte dans la barre choisie (contrairement à
+     l'artifact) — elle démarre vide. Reporter le texte demanderait une
+     prop `initialValue` sur les trois barres pour ce seul usage.
    - **À faire — bulle de réflexion + réponse (mode Question).** En
      attendant, envoyer une question depuis la fenêtre rapide cache la
      fenêtre et montre la fenêtre principale, sans poser la question à sa

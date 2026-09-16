@@ -19,6 +19,8 @@ interface BarreAssistantProps {
   busy?: boolean;
   placeholder?: string;
   autoFocus?: boolean;
+  /** Icône de tête. Par défaut, la pastille Question (non cliquable). */
+  leading?: React.ReactNode;
 }
 
 /**
@@ -37,6 +39,7 @@ export default function BarreAssistant({
   busy = false,
   placeholder,
   autoFocus,
+  leading,
 }: BarreAssistantProps) {
   const [value, setValue] = useState("");
   const [isFocused, setIsFocused] = useState(false);
@@ -84,13 +87,15 @@ export default function BarreAssistant({
       style={{ height: "auto", width: isFocused ? "100%" : "auto" }}
       onBlur={handleFormBlur}
     >
-      <span
-        className="grid size-9 shrink-0 self-start place-items-center rounded-xl bg-violet-500/8 text-violet-600 dark:text-violet-400"
-        aria-label="Question"
-        title="Question"
-      >
-        <Sparkles className="size-[18px]" />
-      </span>
+      {leading ?? (
+        <span
+          className="grid size-9 shrink-0 self-start place-items-center rounded-xl bg-violet-500/8 text-violet-600 dark:text-violet-400"
+          aria-label="Question"
+          title="Question"
+        >
+          <Sparkles className="size-[18px]" />
+        </span>
+      )}
 
       <div className="flex min-w-0 flex-1 items-center gap-2 max-sm:flex-wrap">
         <AutoGrowTextarea
