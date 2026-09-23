@@ -21,18 +21,42 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use axum::extract::State;
-use axum::http::StatusCode;
+use axum::http::{header::AUTHORIZATION, HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
 use axum::Router;
 use serde_json::{json, Value};
 use tokio::net::TcpListener;
 
+#[derive(Clone, serde::Serialize)]
+pub struct CliProviderStatus {
+    pub id: String,
+    pub label: String,
+    pub installed: bool,
+    pub version: Option<String>,
+    pub connection: String,
+    pub detail: String,
+}
+
 /// Version du protocole MCP que ce serveur parle (celle reconnue par Claude Code).
 pub const MCP_PROTOCOL_VERSION: &str = "2025-03-26";
 
 /// Port de départ pour chercher un port libre (l'app essaiera port..port+20).
 pub const MCP_PORT_RANGE_START: u16 = 18420;
+
+/// Point d'accès MCP éphémère de l'instance en cours. Le jeton ne quitte
+/// jamais le processus Listik, sauf dans la configuration temporaire remise
+/// au CLI que l'utilisateur vient de sélectionner.
+pub struct McpServer {
+    pub port: u16,
+    token: String,
+}
+
+impl McpServer {
+    pub fn token(&self) -> &str {
+        &self.token
+    }
+}
 
 // ---------------------------------------------------------------------------
 // Registre d'outils (découplé du process : testable sans serveur)
@@ -209,11 +233,6 @@ impl DbExecutor {
                 input_schema: json!({ "type": "object", "properties": { "id": { "type": "string" } }, "required": ["id"] }),
             },
             ToolSpec {
-                name: "delete_todo".into(),
-                description: "Supprime définitivement une tâche. `id` obligatoire.".into(),
-                input_schema: json!({ "type": "object", "properties": { "id": { "type": "string" } }, "required": ["id"] }),
-            },
-            ToolSpec {
                 name: "list_notes".into(),
                 description: "Liste toutes les notes.".into(),
                 input_schema: json!({ "type": "object", "properties": {} }),
@@ -242,11 +261,6 @@ impl DbExecutor {
                 name: "update_journal_entry".into(),
                 description: "Met à jour une entrée de journal (`id` + champs partiels).".into(),
                 input_schema: json!({ "type": "object", "properties": { "id": { "type": "string" }, "target_day": { "type": "string" }, "content": { "type": "string" } }, "required": ["id"] }),
-            },
-            ToolSpec {
-                name: "delete_journal_entry".into(),
-                description: "Supprime une entrée de journal. `id` obligatoire.".into(),
-                input_schema: json!({ "type": "object", "properties": { "id": { "type": "string" } }, "required": ["id"] }),
             },
         ]
     }
@@ -478,6 +492,20 @@ pub async fn handle_message(
         "tools/call" => {
             let name = params.pointer("/name").and_then(Value::as_str).unwrap_or("");
             let arguments = params.pointer("/arguments").cloned().unwrap_or(Value::Null);
+            // Les outils qui ne sont pas annoncés sont inaccessibles même si
+            // un client forge un appel direct. En particulier, les suppressions
+            // attendent un vrai flux de confirmation utilisateur ; elles ne
+            // peuvent donc pas être déclenchées par un tour d'agent aujourd'hui.
+            if !executor.tools().iter().any(|tool| tool.name == name) {
+                return Some(
+                    json!({
+                        "jsonrpc": "2.0",
+                        "id": id,
+                        "error": { "code": -32601, "message": "outil indisponible" }
+                    })
+                    .to_string(),
+                );
+            }
             match executor.call(name, arguments).await {
                 Ok(result) => success(
                     id,
@@ -507,10 +535,28 @@ fn success<'a>(id: Value, result: Value) -> Value {
 // Transport HTTP (streamable MCP) — in-process, loopback
 // ---------------------------------------------------------------------------
 
+#[derive(Clone)]
+struct McpHttpState {
+    executor: Arc<dyn ToolExecutor>,
+    token: Arc<str>,
+}
+
+fn is_authorized(headers: &HeaderMap, token: &str) -> bool {
+    let expected = format!("Bearer {token}");
+    headers
+        .get(AUTHORIZATION)
+        .and_then(|header| header.to_str().ok())
+        .is_some_and(|value| value == expected)
+}
+
 async fn handle_http(
-    State(executor): State<Arc<dyn ToolExecutor>>,
+    State(state): State<McpHttpState>,
+    headers: HeaderMap,
     body: axum::body::Bytes,
 ) -> Response {
+    if !is_authorized(&headers, &state.token) {
+        return StatusCode::UNAUTHORIZED.into_response();
+    }
     let raw = String::from_utf8_lossy(&body).to_string();
     // Spec MCP Streamable HTTP : une entrée qui ne contient que des
     // notifications (pas d'id, donc pas de réponse) doit recevoir 202
@@ -518,7 +564,7 @@ async fn handle_http(
     // négociation chez certains clients stricts, qui abandonnent alors
     // silencieusement la connexion au serveur (constaté : `notifications/
     // initialized` en 204 => le CLI ne voit ensuite plus aucun outil).
-    let mut resp = match handle_message(executor.as_ref(), &raw).await {
+    let mut resp = match handle_message(state.executor.as_ref(), &raw).await {
         Some(reply) => (StatusCode::OK, reply).into_response(),
         None => StatusCode::ACCEPTED.into_response(),
     };
@@ -540,16 +586,18 @@ async fn health() -> Response {
     resp
 }
 
-fn build_app(executor: Arc<dyn ToolExecutor>) -> Router {
+fn build_app(executor: Arc<dyn ToolExecutor>, token: String) -> Router {
     Router::new()
         .route("/health", get(health))
         .route("/mcp", post(handle_http))
-        .with_state(executor)
+        .with_state(McpHttpState { executor, token: Arc::from(token) })
 }
 
 /// Démarre le serveur MCP sur un port libre du loopback (plage MCP_PORT_RANGE_START
-/// …+20) et renvoie `(port, task). Le task fuit jusqu'à l'arrêt de l'app.
-pub fn spawn_mcp_server(executor: Arc<dyn ToolExecutor>) -> Result<u16, String> {
+/// …+20) et renvoie son port et un jeton Bearer aléatoire. Le jeton est
+/// régénéré à chaque lancement de Listik, afin qu'un autre processus local ne
+/// puisse pas invoquer les outils (dont certains modifient les données).
+pub fn spawn_mcp_server(executor: Arc<dyn ToolExecutor>) -> Result<McpServer, String> {
     let mut port = MCP_PORT_RANGE_START;
     loop {
         let addr = SocketAddr::from(([127, 0, 0, 1], port));
@@ -591,10 +639,12 @@ pub fn spawn_mcp_server(executor: Arc<dyn ToolExecutor>) -> Result<u16, String> 
             }
         };
 
+        let token = uuid::Uuid::new_v4().to_string();
+        let server_token = token.clone();
         tauri::async_runtime::spawn(async move {
-            let _ = axum::serve(listener, build_app(executor)).await;
+            let _ = axum::serve(listener, build_app(executor, server_token)).await;
         });
-        return Ok(port);
+        return Ok(McpServer { port, token });
     }
 }
 
@@ -620,6 +670,95 @@ pub fn resolve_claude_binary() -> Option<PathBuf> {
     })
 }
 
+#[cfg(windows)]
+pub fn resolve_codex_binary() -> Option<PathBuf> {
+    [PathBuf::from("codex.exe"), PathBuf::from("codex")]
+        .into_iter()
+        .find(|p| std::process::Command::new(p).arg("--version").output().map(|o| o.status.success()).unwrap_or(false))
+}
+
+#[cfg(not(windows))]
+pub fn resolve_codex_binary() -> Option<PathBuf> { Some(PathBuf::from("codex")) }
+
+#[cfg(windows)]
+pub fn resolve_antigravity_binary() -> Option<PathBuf> {
+    [PathBuf::from("agy.exe"), PathBuf::from("agy")]
+        .into_iter()
+        .find(|p| std::process::Command::new(p).arg("--version").output().map(|o| o.status.success()).unwrap_or(false))
+}
+
+#[cfg(not(windows))]
+pub fn resolve_antigravity_binary() -> Option<PathBuf> { Some(PathBuf::from("agy")) }
+
+fn binary_version(path: &Path) -> Option<String> {
+    std::process::Command::new(path).arg("--version").output().ok()
+        .filter(|o| o.status.success())
+        .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
+}
+
+/// Détection gratuite : jamais de prompt modèle et jamais de lecture de jeton.
+pub fn inspect_providers() -> Vec<CliProviderStatus> {
+    let describe = |id: &str, label: &str, binary: Option<PathBuf>| match binary {
+        None => CliProviderStatus { id: id.into(), label: label.into(), installed: false, version: None, connection: "missing".into(), detail: "Non installé".into() },
+        Some(path) => CliProviderStatus { id: id.into(), label: label.into(), installed: true, version: binary_version(&path), connection: "verify".into(), detail: "Installé — connexion à vérifier".into() },
+    };
+    let mut codex = describe("codex", "Codex CLI", resolve_codex_binary());
+    if let Some(path) = resolve_codex_binary() {
+        let output = std::process::Command::new(path).args(["login", "status"]).output();
+        if let Ok(output) = output {
+            let text = format!("{}{}", String::from_utf8_lossy(&output.stdout), String::from_utf8_lossy(&output.stderr));
+            let normalized = text.to_lowercase();
+            if normalized.contains("not logged in") || normalized.contains("not authenticated") {
+                codex.connection = "auth_required".into();
+                codex.detail = "Installé — connexion requise".into();
+            } else if output.status.success() && (normalized.contains("logged in") || normalized.contains("authenticated")) {
+                codex.connection = "ready".into();
+                codex.detail = "Prêt".into();
+            }
+        }
+    }
+    vec![
+        describe("claude", "Claude Code", resolve_claude_binary()),
+        codex,
+        describe("antigravity", "Antigravity CLI", resolve_antigravity_binary()),
+        describe("opencode", "OpenCode", resolve_opencode_binary()),
+    ]
+}
+
+/// Lance volontairement le flux officiel du CLI dans une console visible.
+#[cfg(windows)]
+pub fn launch_provider_login(provider: &str) -> Result<(), String> {
+    use std::os::windows::process::CommandExt;
+    let (binary, arguments): (Option<PathBuf>, &[&str]) = match provider {
+        "claude" => (resolve_claude_binary(), &["auth", "login"]),
+        "codex" => (resolve_codex_binary(), &["login"]),
+        // Antigravity déclenche son authentification au premier lancement
+        // interactif ; il n'expose pas une sous-commande `login` séparée.
+        "antigravity" => (resolve_antigravity_binary(), &[]),
+        "opencode" => (resolve_opencode_binary(), &["auth", "login"]),
+        _ => return Err("fournisseur inconnu".into()),
+    };
+    let binary = binary.ok_or_else(|| "CLI introuvable".to_string())?;
+    let escaped_binary = binary.display().to_string().replace('\'', "''");
+    // Arguments connus, choisis par Listik : aucun texte utilisateur ne passe
+    // dans PowerShell. Chaque CLI ouvre ainsi son flux officiel de connexion.
+    let escaped_arguments = arguments
+        .iter()
+        .map(|argument| format!("'{}'", argument.replace('\'', "''")))
+        .collect::<Vec<_>>()
+        .join(" ");
+    let script = format!("& '{escaped_binary}' {escaped_arguments}");
+    std::process::Command::new("powershell.exe")
+        .args(["-NoExit", "-Command", &script])
+        .creation_flags(0x00000010)
+        .spawn()
+        .map_err(|e| format!("impossible d’ouvrir le terminal : {e}"))?;
+    Ok(())
+}
+
+#[cfg(not(windows))]
+pub fn launch_provider_login(_: &str) -> Result<(), String> { Err("connexion interactive disponible sur Windows uniquement pour le moment".into()) }
+
 #[cfg(not(windows))]
 pub fn resolve_claude_binary() -> Option<PathBuf> {
     Some(PathBuf::from("claude"))
@@ -631,13 +770,17 @@ pub struct McpConfig {
 }
 
 impl McpConfig {
-    pub fn write(port: u16) -> Result<Self, String> {
+    pub fn write(port: u16, token: &str) -> Result<Self, String> {
         let dir = std::env::temp_dir().join(format!("listik-mcp-{}", std::process::id()));
         std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
         let path = dir.join("mcp.json");
         let cfg = json!({
             "mcpServers": {
-                "listik": { "type": "http", "url": format!("http://127.0.0.1:{port}/mcp") }
+                "listik": {
+                    "type": "http",
+                    "url": format!("http://127.0.0.1:{port}/mcp"),
+                    "headers": { "Authorization": format!("Bearer {token}") }
+                }
             }
         });
         std::fs::write(&path, serde_json::to_string_pretty(&cfg).unwrap()).map_err(|e| e.to_string())?;
@@ -734,6 +877,7 @@ pub trait AgentProvider: Send + Sync {
         &'a self,
         prompt: &'a str,
         mcp_port: u16,
+        mcp_token: &'a str,
         timeout: std::time::Duration,
     ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<String, String>> + Send + 'a>>;
 }
@@ -741,6 +885,91 @@ pub trait AgentProvider: Send + Sync {
 /// Fournisseur Claude Code (`claude -p … --mcp-config …`).
 pub struct ClaudeProvider {
     binary: PathBuf,
+}
+
+pub async fn run_codex_turn(binary: &Path, prompt: &str, mcp_port: u16, mcp_token: &str, timeout: std::time::Duration) -> Result<String, String> {
+    let url = format!("mcp_servers.listik.url=\"http://127.0.0.1:{mcp_port}/mcp\"");
+    let mut cmd = tokio::process::Command::new(binary);
+    cmd.arg("exec").arg("--ephemeral").arg("--sandbox").arg("read-only")
+        .arg("--skip-git-repo-check").arg("--config").arg(url)
+        // Codex garde ses permissions de fichiers/terminal en lecture seule.
+        // Seuls les outils HTTP du serveur MCP local Listik sont approuvés
+        // pour ce tour, sinon le mode non-interactif les bloque sans dialogue.
+        .arg("--config").arg("mcp_servers.listik.default_tools_approval_mode=\"approve\"")
+        .arg("--config").arg("mcp_servers.listik.bearer_token_env_var=\"LISTIK_MCP_TOKEN\"")
+        .arg("--json").arg(prompt)
+        .env("LISTIK_MCP_TOKEN", mcp_token)
+        .stdin(std::process::Stdio::null()).stdout(std::process::Stdio::piped()).stderr(std::process::Stdio::piped()).kill_on_drop(true);
+    let child = cmd.spawn().map_err(|_| "impossible de lancer Codex CLI".to_string())?;
+    let output = tokio::time::timeout(timeout, child.wait_with_output()).await
+        .map_err(|_| "tour Codex interrompu (délai dépassé)".to_string())?
+        .map_err(|e| e.to_string())?;
+    if !output.status.success() {
+        let diagnostic = String::from_utf8_lossy(&output.stderr);
+        if diagnostic.to_lowercase().contains("not logged") || diagnostic.to_lowercase().contains("login") {
+            return Err("Codex CLI n’est pas connecté. Ouvrez Réglages > IA, puis Se connecter.".into());
+        }
+        return Err(format!("Codex CLI a échoué : {}", diagnostic.chars().take(240).collect::<String>()));
+    }
+    for line in String::from_utf8_lossy(&output.stdout).lines().rev() {
+        let Ok(event) = serde_json::from_str::<Value>(line) else { continue };
+        if event["type"] == "item.completed" && event["item"]["type"] == "agent_message" {
+            if let Some(text) = event["item"]["text"].as_str().filter(|text| !text.trim().is_empty()) { return Ok(text.into()); }
+        }
+    }
+    Err("Codex CLI n’a retourné aucune réponse.".into())
+}
+
+pub struct CodexProvider { binary: PathBuf }
+impl CodexProvider { pub fn resolve() -> Result<Self, String> { resolve_codex_binary().map(|binary| Self { binary }).ok_or_else(|| "binaire `codex` introuvable".into()) } }
+impl AgentProvider for CodexProvider {
+    fn name(&self) -> &str { "codex" }
+    fn run<'a>(&'a self, prompt: &'a str, mcp_port: u16, mcp_token: &'a str, timeout: std::time::Duration) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<String, String>> + Send + 'a>> {
+        Box::pin(async move { run_codex_turn(&self.binary, prompt, mcp_port, mcp_token, timeout).await })
+    }
+}
+
+/// Antigravity charge les MCP définis dans `.agents/mcp_config.json`. Le
+/// dossier est jetable : aucun réglage global Google/Gemini n’est modifié.
+pub async fn run_antigravity_turn(binary: &Path, prompt: &str, mcp_port: u16, mcp_token: &str, timeout: std::time::Duration) -> Result<String, String> {
+    let root = std::env::temp_dir().join(format!("listik-antigravity-{}", uuid::Uuid::new_v4()));
+    let agents = root.join(".agents");
+    std::fs::create_dir_all(&agents).map_err(|e| e.to_string())?;
+    let cfg = json!({ "mcpServers": { "listik": {
+        "serverUrl": format!("http://127.0.0.1:{mcp_port}/mcp"),
+        "headers": { "Authorization": format!("Bearer {mcp_token}") }
+    } } });
+    std::fs::write(agents.join("mcp_config.json"), serde_json::to_vec(&cfg).unwrap()).map_err(|e| e.to_string())?;
+    // Politique de projet temporaire : seule la famille d'outils MCP de
+    // Listik est approuvée. Ni les commandes système, ni les fichiers hors
+    // de ce dossier jetable, ni d'autres serveurs MCP ne sont autorisés.
+    let permissions = json!({ "permissions": { "allow": ["mcp(listik/*)"] } });
+    std::fs::write(agents.join("settings.json"), serde_json::to_vec(&permissions).unwrap()).map_err(|e| e.to_string())?;
+    let mut cmd = tokio::process::Command::new(binary);
+    cmd.arg("-p").arg(prompt).arg("--output-format").arg("json").arg("--sandbox")
+        .current_dir(&root).stdin(std::process::Stdio::null()).stdout(std::process::Stdio::piped()).stderr(std::process::Stdio::piped()).kill_on_drop(true);
+    let child = cmd.spawn().map_err(|_| "impossible de lancer Antigravity CLI".to_string())?;
+    let output = tokio::time::timeout(timeout, child.wait_with_output()).await
+        .map_err(|_| "tour Antigravity interrompu (délai dépassé)".to_string())?
+        .map_err(|e| e.to_string())?;
+    let _ = std::fs::remove_dir_all(&root);
+    let diagnostic = String::from_utf8_lossy(&output.stderr);
+    let diagnostic_lower = diagnostic.to_lowercase();
+    if diagnostic_lower.contains("not logged into antigravity") || diagnostic_lower.contains("authentication required") {
+        return Err("Antigravity CLI n’est pas connecté. Ouvrez Réglages > IA, cliquez Se connecter, puis terminez la connexion Google dans le terminal.".into());
+    }
+    if !output.status.success() {
+        return Err(format!("Antigravity CLI a échoué : {}", diagnostic.chars().take(240).collect::<String>()));
+    }
+    let value: Value = serde_json::from_slice(&output.stdout).map_err(|_| "Antigravity CLI n’a retourné aucune réponse. Vérifiez sa connexion dans Réglages > IA.".to_string())?;
+    if value["status"] != "SUCCESS" { return Err(value["error"].as_str().unwrap_or("Antigravity CLI a échoué.").into()); }
+    value["response"].as_str().filter(|s| !s.trim().is_empty()).map(str::to_string).ok_or_else(|| "Antigravity CLI n’a retourné aucune réponse.".into())
+}
+pub struct AntigravityProvider { binary: PathBuf }
+impl AntigravityProvider { pub fn resolve() -> Result<Self, String> { resolve_antigravity_binary().map(|binary| Self { binary }).ok_or_else(|| "binaire `agy` introuvable".into()) } }
+impl AgentProvider for AntigravityProvider {
+    fn name(&self) -> &str { "antigravity" }
+    fn run<'a>(&'a self, prompt: &'a str, mcp_port: u16, mcp_token: &'a str, timeout: std::time::Duration) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<String, String>> + Send + 'a>> { Box::pin(async move { run_antigravity_turn(&self.binary, prompt, mcp_port, mcp_token, timeout).await }) }
 }
 
 impl ClaudeProvider {
@@ -765,11 +994,12 @@ impl AgentProvider for ClaudeProvider {
         &'a self,
         prompt: &'a str,
         mcp_port: u16,
+        mcp_token: &'a str,
         timeout: std::time::Duration,
     ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<String, String>> + Send + 'a>>
     {
         Box::pin(async move {
-            let config = McpConfig::write(mcp_port)?;
+            let config = McpConfig::write(mcp_port, mcp_token)?;
             let res = run_claude_turn(&self.binary, prompt, &config, timeout).await;
             let _ = std::fs::remove_file(&config.path);
             res
@@ -793,7 +1023,7 @@ pub struct OpenCodeProjectDir {
 }
 
 impl OpenCodeProjectDir {
-    pub fn write(port: u16) -> Result<Self, String> {
+    pub fn write(port: u16, token: &str) -> Result<Self, String> {
         let dir = std::env::temp_dir().join(format!("listik-opencode-{}", std::process::id()));
         std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
         let cfg = json!({
@@ -802,6 +1032,7 @@ impl OpenCodeProjectDir {
                 "listik": {
                     "type": "remote",
                     "url": format!("http://127.0.0.1:{port}/mcp"),
+                    "headers": { "Authorization": format!("Bearer {token}") },
                     "enabled": true
                 }
             }
@@ -923,11 +1154,12 @@ impl AgentProvider for OpenCodeProvider {
         &'a self,
         prompt: &'a str,
         mcp_port: u16,
+        mcp_token: &'a str,
         timeout: std::time::Duration,
     ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<String, String>> + Send + 'a>>
     {
         Box::pin(async move {
-            let project = OpenCodeProjectDir::write(mcp_port)?;
+            let project = OpenCodeProjectDir::write(mcp_port, mcp_token)?;
             let res = run_opencode_turn(&self.binary, prompt, &project.path, timeout).await;
             let _ = std::fs::remove_dir_all(&project.path);
             res
@@ -938,6 +1170,8 @@ impl AgentProvider for OpenCodeProvider {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    const TEST_MCP_TOKEN: &str = "test-mcp-token";
 
     fn echo() -> EchoExecutor {
         EchoExecutor
@@ -976,11 +1210,11 @@ mod tests {
     }
 
     #[tokio::test(flavor = "multi_thread")]
-    async fn outils_inconnu_renvoie_iserror() {
+    async fn outils_inconnu_est_refuse_par_le_registre() {
         let request = r#"{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"nope","arguments":{}}}"#;
         let reply = handle_message(&echo(), request).await.unwrap();
         let v: Value = serde_json::from_str(&reply).unwrap();
-        assert_eq!(v["result"]["isError"], true);
+        assert_eq!(v["error"]["code"], -32601);
     }
 
     #[tokio::test(flavor = "multi_thread")]
@@ -1065,6 +1299,27 @@ mod tests {
         assert!(res.is_err());
     }
 
+    #[tokio::test(flavor = "multi_thread")]
+    async fn mcp_ne_peut_pas_supprimer_meme_si_lappel_est_forge() {
+        let executor = DbExecutor::new(mem_pool().await, None);
+        let todo = executor
+            .call("create_todo", json!({ "text": "ne pas supprimer" }))
+            .await
+            .unwrap();
+        let request = json!({
+            "jsonrpc": "2.0",
+            "id": 9,
+            "method": "tools/call",
+            "params": { "name": "delete_todo", "arguments": { "id": todo["id"] } }
+        })
+        .to_string();
+
+        let reply = handle_message(&executor, &request).await.unwrap();
+        let value: Value = serde_json::from_str(&reply).unwrap();
+        assert_eq!(value["error"]["code"], -32601);
+        assert_eq!(executor.call("list_todos", json!({})).await.unwrap().as_array().unwrap().len(), 1);
+    }
+
     /// Fournisseur factice pour valider le contrat du trait (object safety,
     /// désucrage async) sans dépendre d'un binaire `claude`.
     struct FakeProvider;
@@ -1078,6 +1333,7 @@ mod tests {
             &'a self,
             prompt: &'a str,
             _mcp_port: u16,
+            _mcp_token: &'a str,
             _timeout: std::time::Duration,
         ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<String, String>> + Send + 'a>>
         {
@@ -1090,7 +1346,7 @@ mod tests {
         let provider: std::sync::Arc<dyn AgentProvider> = std::sync::Arc::new(FakeProvider);
         assert_eq!(provider.name(), "fake");
         let answer = provider
-            .run("audite ma base", 0, std::time::Duration::from_secs(1))
+            .run("audite ma base", 0, "test-token", std::time::Duration::from_secs(1))
             .await
             .unwrap();
         assert_eq!(answer, "[fake] audite ma base");
@@ -1160,14 +1416,15 @@ mod tests {
             executor
         });
 
-        let port = spawn_mcp_server(executor).expect("le serveur MCP doit démarrer");
+        let mcp_server = spawn_mcp_server(executor).expect("le serveur MCP doit démarrer");
         let provider = ClaudeProvider::resolve().expect("binaire claude introuvable");
 
         let answer = rt
             .block_on(provider.run(
                 "Utilise l'outil list_todos pour lister mes tâches en attente, \
                  puis cite le texte exact de chacune dans ta réponse.",
-                port,
+                mcp_server.port,
+                mcp_server.token(),
                 std::time::Duration::from_secs(60),
             ))
             .expect("le tour d'agent a échoué");
@@ -1193,13 +1450,14 @@ mod tests {
         let pool = rt.block_on(mem_pool());
         let executor = std::sync::Arc::new(DbExecutor::new(pool.clone(), None)) as Arc<dyn ToolExecutor>;
 
-        let port = spawn_mcp_server(executor).expect("le serveur MCP doit démarrer");
+        let mcp_server = spawn_mcp_server(executor).expect("le serveur MCP doit démarrer");
         let provider = ClaudeProvider::resolve().expect("binaire claude introuvable");
 
         rt.block_on(provider.run(
             "Utilise l'outil create_todo pour créer une tâche avec le texte \
              exact : tester la permission mutation mcp",
-            port,
+            mcp_server.port,
+            mcp_server.token(),
             std::time::Duration::from_secs(60),
         ))
         .expect("le tour d'agent a échoué");
@@ -1232,14 +1490,15 @@ mod tests {
             executor
         });
 
-        let port = spawn_mcp_server(executor).expect("le serveur MCP doit démarrer");
+        let mcp_server = spawn_mcp_server(executor).expect("le serveur MCP doit démarrer");
         let provider = OpenCodeProvider::resolve().expect("binaire opencode introuvable");
 
         let answer = rt
             .block_on(provider.run(
                 "Appelle maintenant l'outil listik_list_todos (tool call réel, pas une \
                  description), puis cite le texte exact des tâches retournées.",
-                port,
+                mcp_server.port,
+                mcp_server.token(),
                 std::time::Duration::from_secs(60),
             ))
             .expect("le tour d'agent a échoué");
@@ -1283,6 +1542,19 @@ mod tests {
         assert!(body.contains(r#"{"ok":true}"#), "réponse inattendue : {body}");
     }
 
+    #[tokio::test(flavor = "multi_thread")]
+    async fn serveur_mcp_refuse_un_appel_sans_jeton() {
+        let port = start_server().await;
+        let status = http_status_without_token(
+            port,
+            "POST",
+            "/mcp",
+            r#"{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}"#,
+        )
+        .await;
+        assert_eq!(status, StatusCode::UNAUTHORIZED.as_u16());
+    }
+
     /// Régression : `bind` échouait avec `?` au lieu de faire avancer la
     /// boucle → un port déjà occupé faisait échouer tout le démarrage au
     /// lieu d'essayer le suivant.
@@ -1297,9 +1569,9 @@ mod tests {
         ))
         .unwrap();
 
-        let port = spawn_mcp_server(Arc::new(EchoExecutor) as Arc<dyn ToolExecutor>).unwrap();
+        let server = spawn_mcp_server(Arc::new(EchoExecutor) as Arc<dyn ToolExecutor>).unwrap();
 
-        assert_ne!(port, MCP_PORT_RANGE_START, "aurait dû sauter le port occupé");
+        assert_ne!(server.port, MCP_PORT_RANGE_START, "aurait dû sauter le port occupé");
         drop(occupied);
     }
 
@@ -1339,7 +1611,7 @@ mod tests {
         let listener = TcpListener::bind(("127.0.0.1", 0)).await.unwrap();
         let port = listener.local_addr().unwrap().port();
         tokio::spawn(async move {
-            let app = build_app(Arc::new(EchoExecutor) as Arc<dyn ToolExecutor>);
+            let app = build_app(Arc::new(EchoExecutor) as Arc<dyn ToolExecutor>, TEST_MCP_TOKEN.into());
             let _ = axum::serve(listener, app).await;
         });
         tokio::task::yield_now().await;
@@ -1354,7 +1626,7 @@ mod tests {
             .await
             .map_err(|e| e.to_string())?;
         let request = format!(
-            "{method} {path} HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+            "{method} {path} HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\nContent-Type: application/json\r\nAuthorization: Bearer {TEST_MCP_TOKEN}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
             body.len()
         );
         client
@@ -1375,7 +1647,7 @@ mod tests {
 
         let mut client = tokio::net::TcpStream::connect(("127.0.0.1", port)).await.unwrap();
         let request = format!(
-            "{method} {path} HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+            "{method} {path} HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\nContent-Type: application/json\r\nAuthorization: Bearer {TEST_MCP_TOKEN}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
             body.len()
         );
         client.write_all(request.as_bytes()).await.unwrap();
@@ -1383,6 +1655,25 @@ mod tests {
         client.read_to_end(&mut raw).await.unwrap();
         let text = String::from_utf8_lossy(&raw).to_string();
         text.lines()
+            .next()
+            .and_then(|line| line.split_whitespace().nth(1))
+            .and_then(|code| code.parse().ok())
+            .unwrap_or(0)
+    }
+
+    async fn http_status_without_token(port: u16, method: &str, path: &str, body: &str) -> u16 {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+        let mut client = tokio::net::TcpStream::connect(("127.0.0.1", port)).await.unwrap();
+        let request = format!(
+            "{method} {path} HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+            body.len()
+        );
+        client.write_all(request.as_bytes()).await.unwrap();
+        let mut raw = Vec::new();
+        client.read_to_end(&mut raw).await.unwrap();
+        String::from_utf8_lossy(&raw)
+            .lines()
             .next()
             .and_then(|line| line.split_whitespace().nth(1))
             .and_then(|code| code.parse().ok())

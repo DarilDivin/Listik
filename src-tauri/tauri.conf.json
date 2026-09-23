@@ -2,7 +2,7 @@
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "listik",
   "version": "0.1.0",
-  "identifier": "com.listik.app",
+  "identifier": "com.listik.desktop",
   "build": {
     "frontendDist": "../out",
     "devUrl": "http://localhost:3000",
@@ -28,10 +28,9 @@
         "label": "quick",
         "title": "Capture rapide",
         "url": "/quick",
-        "width": 680,
-        "height": 460,
+        "width": 630,
+        "height": 64,
         "resizable": false,
-        "fullscreen": false,
         "alwaysOnTop": true,
         "decorations": false,
         "transparent": true,
@@ -71,6 +70,7 @@
   },
   "bundle": {
     "active": true,
+    "createUpdaterArtifacts": true,
     "targets": "all",
     "icon": [
       "icons/32x32.png",
@@ -80,5 +80,15 @@
       "icons/icon.ico"
     ]
   },
-  "plugins": {}
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IERDNUYzMjk3RDM2MkJDQjkKUldTNXZHTFRsekpmM1BBOWRpcGVBMmoxT1FSOG5nT0FNaWFkeXQ0bHR4VkZvQU1SbFlUZld0YTEK",
+      "endpoints": [
+        "https://github.com/DarilDivin/Listik/releases/latest/download/latest.json"
+      ],
+      "windows": {
+        "installMode": "passive"
+      }
+    }
+  }
 }

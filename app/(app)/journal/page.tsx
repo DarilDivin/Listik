@@ -5,7 +5,15 @@ import { useRouter, useSearchParams } from "next/navigation";
 import useSWR from "swr";
 import { format } from "date-fns";
 import { fr } from "date-fns/locale";
-import { ChevronLeft, ChevronRight, Download, Mic, Paperclip, Search } from "lucide-react";
+import {
+  ArrowLeft01Icon,
+  ArrowRight01Icon,
+  Attachment01Icon,
+  Download01Icon,
+  Mic01Icon,
+  Search01Icon,
+} from "@hugeicons/core-free-icons";
+import { AppIcon } from "@/components/ui/app-icon";
 import { useFeuille } from "@/features/journal/useFeuille";
 import { useJournalMutations } from "@/features/journal/useJournalMutations";
 import { journalApi } from "@/features/journal/api";
@@ -335,7 +343,7 @@ function JournalPageContent() {
                 aria-label="Jour précédent"
                 onClick={() => setDay((d) => shiftDay(d, -1))}
               >
-                <ChevronLeft />
+                <AppIcon icon={ArrowLeft01Icon} />
               </Button>
               <Button
                 variant="ghost"
@@ -343,7 +351,7 @@ function JournalPageContent() {
                 aria-label="Jour suivant"
                 onClick={() => setDay((d) => shiftDay(d, 1))}
               >
-                <ChevronRight />
+                <AppIcon icon={ArrowRight01Icon} />
               </Button>
             </span>
           </div>
@@ -385,7 +393,7 @@ function JournalPageContent() {
                 aria-label="Joindre un fichier"
                 onClick={() => feuilleRef.current?.attacher()}
               >
-                <Paperclip />
+                <AppIcon icon={Attachment01Icon} />
               </Button>
             </TooltipTrigger>
             <TooltipContent side="bottom" sideOffset={8}>
@@ -408,7 +416,7 @@ function JournalPageContent() {
                 onClick={() => (enregistre ? abandonner() : void commencer())}
                 className="data-[actif]:bg-brand-soft data-[actif]:text-brand"
               >
-                <Mic />
+                <AppIcon icon={Mic01Icon} />
               </Button>
             </TooltipTrigger>
             {/* L'infobulle suit l'ÉTAT, comme l'étiquette : pendant qu'on
@@ -426,7 +434,7 @@ function JournalPageContent() {
                 disabled={exporte}
                 onClick={exporter}
               >
-                <Download />
+                <AppIcon icon={Download01Icon} />
               </Button>
             </TooltipTrigger>
             <TooltipContent side="bottom" sideOffset={8}>
@@ -443,7 +451,7 @@ function JournalPageContent() {
                 onClick={() => setCherche((c) => !c)}
                 className="data-[actif]:bg-brand-soft data-[actif]:text-brand"
               >
-                <Search />
+                <AppIcon icon={Search01Icon} />
               </Button>
             </TooltipTrigger>
             <TooltipContent side="bottom" sideOffset={8}>

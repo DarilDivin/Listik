@@ -25,10 +25,10 @@ export function ChatMessage({ turn, pending = false }: { turn: Turn; pending?: b
         animate={{ opacity: 1, y: 0, scale: 1 }}
         transition={spring.smooth}
       >
-        <Message align="end">
+        <Message align="end" role="group" aria-label="Vous">
           <MessageContent>
             <Bubble align="end" variant="brand">
-              <BubbleContent className="rounded-br-md">{turn.question}</BubbleContent>
+              <BubbleContent className="rounded-br-md whitespace-pre-wrap">{turn.question}</BubbleContent>
             </Bubble>
           </MessageContent>
         </Message>
@@ -40,10 +40,12 @@ export function ChatMessage({ turn, pending = false }: { turn: Turn; pending?: b
           animate={{ opacity: 1, y: 0 }}
           transition={spring.smooth}
         >
-          <Message align="start">
+          <Message align="start" role="group" aria-label="Assistant">
             <MessageContent>
               {turn.answer !== undefined ? (
-                <TextPart text={turn.answer} tone={turn.error ? "error" : "default"} />
+                <div aria-live="polite" aria-atomic="true">
+                  <TextPart text={turn.answer} tone={turn.error ? "error" : "default"} />
+                </div>
               ) : (
                 <ThinkingIndicator />
               )}

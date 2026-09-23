@@ -13,8 +13,8 @@ use uuid::Uuid;
 /// État partagé exposé aux commandes Tauri.
 pub struct AppState {
     pub pool: SqlitePool,
-    /// Port du serveur MCP in-process (Phase R), posé au démarrage.
-    pub mcp_port: Option<u16>,
+    /// Serveur MCP in-process et son jeton Bearer, créés au démarrage.
+    pub mcp_server: Option<crate::cli_agent::McpServer>,
 }
 
 const SELECT_COLUMNS: &str =
@@ -1233,7 +1233,7 @@ pub async fn list_headings(pool: &SqlitePool) -> Result<Vec<Entete>, sqlx::Error
 }
 
 /// Une rubrique dans un projet.
-#[derive(Debug, Clone, serde::Serialize, sqlx::FromRow)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, sqlx::FromRow)]
 pub struct Entete {
     pub id: String,
     pub project_id: String,
@@ -2125,7 +2125,7 @@ pub async fn reconcile_lists_into_projects(pool: &SqlitePool) -> Result<usize, s
 
 /// Une position d'ordre manuel : `context` ∈ { 'today', 'inbox', 'anytime',
 /// 'someday', 'project:<id>' }.
-#[derive(Debug, Clone, serde::Serialize, sqlx::FromRow, ts_rs::TS)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, sqlx::FromRow, ts_rs::TS)]
 #[ts(export, export_to = "../../features/todos/generated/")]
 pub struct Ordering {
     pub context: String,

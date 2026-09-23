@@ -3,8 +3,9 @@
 import { useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
-import { ArrowUp, Sparkles } from "lucide-react";
+import { AiBrain01Icon, ArrowUp01Icon } from "@hugeicons/core-free-icons";
 import { motion } from "motion/react";
+import { AppIcon } from "@/components/ui/app-icon";
 import { cn } from "@/lib/utils";
 import { AutoGrowTextarea } from "@/components/omnibar/AutoGrowTextarea";
 
@@ -21,6 +22,14 @@ interface BarreAssistantProps {
   autoFocus?: boolean;
   /** Icône de tête. Par défaut, la pastille Question (non cliquable). */
   leading?: React.ReactNode;
+  /** Permet à la fenêtre rapide de conserver son routage par mot-clé tout en
+   * utilisant exactement la même barre que l'Assistant. */
+  value?: string;
+  onValueChange?: (value: string) => void;
+  /** Signal ponctuel utilisé quand une suggestion vient de préremplir la barre. */
+  focusSignal?: number;
+  /** Dans la fenêtre rapide, le shell parent porte déjà la surface et le mouvement. */
+  variant?: "floating" | "inline";
 }
 
 /**
@@ -40,10 +49,17 @@ export default function BarreAssistant({
   placeholder,
   autoFocus,
   leading,
+  value: controlledValue,
+  onValueChange,
+  focusSignal,
+  variant = "floating",
 }: BarreAssistantProps) {
-  const [value, setValue] = useState("");
+  const [internalValue, setInternalValue] = useState("");
   const [isFocused, setIsFocused] = useState(false);
   const formRef = useRef<HTMLFormElement>(null);
+  const value = controlledValue ?? internalValue;
+  const setValue = onValueChange ?? setInternalValue;
+  const inline = variant === "inline";
 
   const submit = async () => {
     const text = value.trim();
@@ -72,28 +88,38 @@ export default function BarreAssistant({
     <motion.form
       ref={formRef}
       className={cn(
-        "relative flex w-full max-w-4xl items-stretch gap-2 rounded-2xl p-2 text-left",
-        "transition-[background-color,border-color,box-shadow] duration-500 ease-out",
-        isFocused
-          ? "border border-border/60 bg-popover shadow-[0_1px_2px_rgba(0,0,0,0.04),0_12px_32px_-12px_rgba(0,0,0,0.14)] dark:shadow-[0_1px_2px_rgba(0,0,0,0.3),0_12px_32px_-12px_rgba(0,0,0,0.55)]"
-          : "border border-transparent bg-foreground/[0.035] shadow-none dark:bg-foreground/[0.05]",
+        "relative flex w-full items-stretch gap-2 text-left",
+        inline
+          ? "h-full px-3 py-2"
+          : cn(
+              "max-w-4xl rounded-2xl border border-transparent p-2",
+              "transition-[background-color,border-color,box-shadow] duration-500 ease-out",
+              isFocused
+                ? "border-border/60 bg-popover shadow-[0_1px_2px_rgba(0,0,0,0.04),0_12px_32px_-12px_rgba(0,0,0,0.14)] dark:shadow-[0_1px_2px_rgba(0,0,0,0.3),0_12px_32px_-12px_rgba(0,0,0,0.55)]"
+                : "bg-foreground/[0.035] shadow-none dark:bg-foreground/[0.05]",
+            ),
       )}
       onSubmit={(e) => {
         e.preventDefault();
         void submit();
       }}
-      layout
+      layout={!inline}
       transition={{ type: "spring", bounce: 0.25, duration: 0.55 }}
-      style={{ height: "auto", width: isFocused ? "100%" : "auto" }}
+      style={{ height: inline ? "100%" : "auto", width: inline || isFocused ? "100%" : "auto" }}
       onBlur={handleFormBlur}
     >
       {leading ?? (
         <span
-          className="grid size-9 shrink-0 self-start place-items-center rounded-xl bg-violet-500/8 text-violet-600 dark:text-violet-400"
+          className={cn(
+            "grid shrink-0 place-items-center text-brand",
+            inline
+              ? "size-6 self-center rounded-md"
+              : "size-9 self-start rounded-xl bg-brand-soft",
+          )}
           aria-label="Question"
           title="Question"
         >
-          <Sparkles className="size-[18px]" />
+          <AppIcon icon={AiBrain01Icon} size={inline ? 16 : 18} />
         </span>
       )}
 
@@ -108,6 +134,8 @@ export default function BarreAssistant({
           tagMatches={undefined}
           placeholder={placeholder ?? "Demander, créer, chercher… en langage naturel"}
           autoFocus={autoFocus}
+          variant="conversation"
+          focusSignal={focusSignal}
         />
       </div>
 
@@ -123,7 +151,7 @@ export default function BarreAssistant({
         aria-label="Envoyer"
         className="size-9 shrink-0 self-end rounded-full bg-brand text-brand-foreground hover:bg-brand/90"
       >
-        {busy ? <Spinner /> : <ArrowUp />}
+        {busy ? <Spinner /> : <AppIcon icon={ArrowUp01Icon} size={18} strokeWidth={2} />}
       </Button>
     </motion.form>
   );

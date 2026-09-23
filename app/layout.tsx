@@ -1,5 +1,4 @@
 "use client";
-import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import TitleBar from "@/components/TitleBar";
 import { useState } from "react";
@@ -10,6 +9,7 @@ import { MotionConfig } from "motion/react";
 import { ThemeProvider } from "@/components/theme-provider";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { UIPrefsProvider } from "@/components/ui-prefs";
+import { UpdateManager } from "@/components/UpdateManager";
 
 const SWR_OPTIONS = {
   revalidateOnFocus: true,
@@ -18,16 +18,6 @@ const SWR_OPTIONS = {
   errorRetryInterval: 5000,
   dedupingInterval: 2000,
 } as const;
-
-const geistSans = Geist({
-  variable: "--font-geist-sans",
-  subsets: ["latin"],
-});
-
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
-  subsets: ["latin"],
-});
 
 export default function RootLayout({
   children,
@@ -43,7 +33,9 @@ export default function RootLayout({
   return (
     <html lang="fr" className="h-full" suppressHydrationWarning>
       <body
-        className={`h-full m-0 p-0 ${geistSans.variable} ${geistMono.variable} antialiased text-foreground ${
+        className={`h-full m-0 p-0 antialiased text-foreground ${
+          isQuick ? "quick-window" : ""
+        } ${
           isQuick ? "bg-transparent" : "bg-background"
         }`}
       >
@@ -100,8 +92,9 @@ export default function RootLayout({
                       showTitleBar ? "h-[calc(100vh-32px)]" : "h-[calc(100vh-8px)]"
                     }`}
                   >
-                    <SWRConfig value={SWR_OPTIONS}>
-                      {children}
+                  <SWRConfig value={SWR_OPTIONS}>
+                    <UpdateManager />
+                    {children}
                       <Toaster
                         position="bottom-right"
                         closeButton

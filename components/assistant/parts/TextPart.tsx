@@ -16,10 +16,26 @@ export function TextPart({ text, tone = "default" }: { text: string; tone?: "def
     <div
       className={cn(
         "note-markdown text-[15px] leading-relaxed",
-        tone === "error" ? "text-destructive" : "text-foreground",
+        tone === "error" ? "assistant-response-error" : "text-foreground",
       )}
     >
-      <ReactMarkdown remarkPlugins={[remarkGfm]}>{text}</ReactMarkdown>
+      <ReactMarkdown
+        remarkPlugins={[remarkGfm]}
+        components={{
+          table: ({ children }) => (
+            <div className="note-markdown-table-scroll">
+              <table>{children}</table>
+            </div>
+          ),
+        }}
+      >
+        {text}
+      </ReactMarkdown>
+      {tone === "error" && (
+        <p className="assistant-error-recovery">
+          Vérifiez l’assistant sélectionné dans les réglages, puis modifiez ou renvoyez votre demande.
+        </p>
+      )}
     </div>
   );
 }

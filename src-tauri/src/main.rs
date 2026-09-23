@@ -23,6 +23,10 @@ fn main() {
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
+        // Le plugin compare la version installée au manifeste signé de la release.
+        // Il ne lance aucune vérification par lui-même : le frontend choisit le
+        // moment où l'utilisateur est averti puis demande l'installation.
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .setup(|app| {
             // --- Base de données (accès SQL côté Rust) ---
             let handle = app.handle().clone();
@@ -48,10 +52,10 @@ fn main() {
                 pool.clone(),
                 Some(app.handle().clone()),
             ));
-            let mcp_port = match cli_agent::spawn_mcp_server(executor) {
-                Ok(port) => {
-                    println!("🛰️  Serveur MCP Listik : http://127.0.0.1:{port}/mcp");
-                    Some(port)
+            let mcp_server = match cli_agent::spawn_mcp_server(executor) {
+                Ok(server) => {
+                    println!("🛰️  Serveur MCP Listik démarré sur le port {}", server.port);
+                    Some(server)
                 }
                 Err(e) => {
                     eprintln!("⚠️ Impossible de démarrer le serveur MCP : {e}");
@@ -59,7 +63,7 @@ fn main() {
                 }
             };
 
-            app.manage(AppState { pool: pool.clone(), mcp_port });
+            app.manage(AppState { pool: pool.clone(), mcp_server });
 
             // --- Permissions de la webview ---
             // Le micro, pour les notes vocales du journal. Sans gestionnaire,
@@ -214,7 +218,11 @@ fn main() {
             commands::update_settings,
             commands::ai_parse,
             commands::ai_agent_run,
+            commands::inspect_ai_providers,
+            commands::connect_ai_provider,
+            commands::test_ai_provider,
             commands::export_backup,
+            commands::restore_backup,
             commands::create_subtask,
             commands::update_subtask,
             commands::delete_subtask,

@@ -7,8 +7,9 @@ import { spring } from "@/lib/motion";
 
 /**
  * Amorces de conversation (`suggestions.tsx` du template). Le texte affiché
- * EST la question envoyée : sur un assistant en langage naturel, la puce
- * enseigne la formulation autant qu'elle lance l'échange.
+ * préremplit la question : sur un assistant en langage naturel, la puce
+ * enseigne la formulation sans retirer à la personne la possibilité de la
+ * relire ou de la modifier avant l'envoi.
  *
  * Elles partent directement, sans passer par le champ — comme dans le
  * template, et parce que l'Omnibar tient sa valeur en interne (aucune API

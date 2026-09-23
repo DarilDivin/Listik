@@ -5,7 +5,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import useSWR from "swr";
 import { motion } from "motion/react";
-import { Search } from "lucide-react";
+import { Search01Icon } from "@hugeicons/core-free-icons";
 import {
   Sidebar,
   SidebarContent,
@@ -24,6 +24,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { Kbd } from "@/components/ui/kbd";
+import { AppIcon } from "@/components/ui/app-icon";
 import { useShortcut } from "@/lib/keys";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { ProgressRing } from "@/components/planner/ProgressRing";
@@ -97,7 +98,7 @@ export function AppSidebar({ onOpenSearch }: AppSidebarProps) {
                   aria-label="Rechercher (Ctrl K)"
                   className="rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-accent/70 hover:text-foreground group-data-[collapsible=icon]:hidden"
                 >
-                  <Search size={16} />
+                  <AppIcon icon={Search01Icon} size={16} />
                 </button>
               </TooltipTrigger>
               <TooltipContent side="right">Rechercher · Ctrl K</TooltipContent>
@@ -121,7 +122,7 @@ export function AppSidebar({ onOpenSearch }: AppSidebarProps) {
                       tooltip="Rechercher (Ctrl K)"
                       className="rounded-xl text-muted-foreground hover:bg-accent/70 hover:text-foreground"
                     >
-                      <Search />
+                      <AppIcon icon={Search01Icon} />
                       <span>Rechercher</span>
                       <Kbd className="ml-auto bg-muted text-[10px] text-muted-foreground/70">
                         {searchShortcut}
@@ -130,7 +131,7 @@ export function AppSidebar({ onOpenSearch }: AppSidebarProps) {
                   </SidebarMenuItem>
                 )}
 
-                {APP_NAV.map(({ href, label, icon: Icon }) => {
+                {APP_NAV.map(({ href, label, icon }) => {
                   const active = isNavActive(pathname, href);
                   const isPlanner = href === "/";
                   return (
@@ -157,7 +158,8 @@ export function AppSidebar({ onOpenSearch }: AppSidebarProps) {
                               strokeWidth={2.2}
                             />
                           ) : (
-                            <Icon
+                            <AppIcon
+                              icon={icon}
                               className={
                                 active ? "text-brand" : "text-muted-foreground"
                               }
@@ -180,7 +182,7 @@ export function AppSidebar({ onOpenSearch }: AppSidebarProps) {
       <SidebarFooter className="pb-3">
         {hasContent && (
           <div className="flex items-center justify-center gap-1 pb-1 group-data-[collapsible=icon]:flex-col">
-            {APP_NAV.map(({ href, label, icon: Icon }) => {
+            {APP_NAV.map(({ href, label, icon }) => {
               const active = isNavActive(pathname, href);
               const isPlanner = href === "/";
               return (
@@ -213,7 +215,7 @@ export function AppSidebar({ onOpenSearch }: AppSidebarProps) {
                             strokeWidth={2.2}
                           />
                         ) : (
-                          <Icon size={17} />
+                          <AppIcon icon={icon} size={17} />
                         )}
                       </Link>
                     </span>

@@ -23,6 +23,13 @@ interface AutoGrowTextareaProps {
   onMultilineChange?: (multiline: boolean) => void;
   /** Intercepteur clavier (autocomplétion) : appelé avant la logique interne. */
   onKeyDown?: (e: React.KeyboardEvent<HTMLTextAreaElement>) => void;
+  /**
+   * Champ de conversation : sans surlignage métier, à largeur fluide, avec
+   * un retour à la ligne volontaire et une hauteur bornée.
+   */
+  variant?: "default" | "conversation";
+  /** Incrémentez cette valeur pour replacer le curseur dans le champ. */
+  focusSignal?: number;
 }
 
 /** Hauteur d'une ligne de texte (16px, interligne normal). */
@@ -56,9 +63,13 @@ export function AutoGrowTextarea({
   dimmed = false,
   onMultilineChange,
   onKeyDown,
+  variant = "default",
+  focusSignal,
 }: AutoGrowTextareaProps) {
   const mirrorRef = useRef<HTMLDivElement>(null);
+  const conversationRef = useRef<HTMLTextAreaElement>(null);
   const wasMultiline = useRef(false);
+  const isConversation = variant === "conversation";
 
   // En gabarit resserré, la boîte se règle sur la ligne de texte elle-même :
   // le champ fait exactement la hauteur d'une rangée de tâche, et son bord
@@ -69,6 +80,20 @@ export function AutoGrowTextarea({
 
   // Détecte le passage multi-ligne d'après la hauteur réelle du miroir.
   useLayoutEffect(() => {
+    if (isConversation) {
+      const el = conversationRef.current;
+      if (!el) return;
+      el.style.height = "0px";
+      const height = Math.min(el.scrollHeight, 144);
+      el.style.height = `${Math.max(LINE_HEIGHT, height)}px`;
+      const multiline = height > LINE_HEIGHT + 2;
+      if (multiline !== wasMultiline.current) {
+        wasMultiline.current = multiline;
+        onMultilineChange?.(multiline);
+      }
+      return;
+    }
+
     const el = mirrorRef.current;
     if (!el) return;
     const multiline = el.offsetHeight > oneLine + 12;
@@ -76,7 +101,12 @@ export function AutoGrowTextarea({
       wasMultiline.current = multiline;
       onMultilineChange?.(multiline);
     }
-  }, [value, oneLine, onMultilineChange]);
+  }, [value, oneLine, onMultilineChange, isConversation]);
+
+  useLayoutEffect(() => {
+    if (focusSignal === undefined) return;
+    conversationRef.current?.focus();
+  }, [focusSignal]);
 
   // Métriques de boîte IDENTIQUES entre le miroir et le textarea.
   const sharedBox: React.CSSProperties = {
@@ -89,6 +119,40 @@ export function AutoGrowTextarea({
   };
 
   const textClasses = "font-sans font-normal text-base leading-normal";
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    onKeyDown?.(e);
+    if (e.defaultPrevented) return;
+    if (
+      e.key === "Enter" &&
+      (!isConversation || (!e.shiftKey && !e.nativeEvent.isComposing))
+    ) {
+      e.preventDefault();
+      onEnter();
+    }
+  };
+
+  if (isConversation) {
+    return (
+      <textarea
+        ref={conversationRef}
+        name="assistant-message"
+        aria-label="Message à l’Assistant"
+        value={value}
+        rows={1}
+        spellCheck={false}
+        autoFocus={autoFocus}
+        placeholder={placeholder}
+        className={`block w-full min-w-0 resize-none overflow-y-auto border-none bg-transparent py-1 outline-none placeholder:transition-colors ${
+          dimmed ? "placeholder:text-muted-foreground/50" : "placeholder:text-muted-foreground"
+        } ${textClasses}`}
+        style={{ minHeight: `${LINE_HEIGHT}px`, maxHeight: "144px" }}
+        onChange={(e) => onChange(e.target.value)}
+        onFocus={onFocus}
+        onKeyDown={handleKeyDown}
+      />
+    );
+  }
 
   return (
     <div
@@ -124,14 +188,7 @@ export function AutoGrowTextarea({
         style={{ ...sharedBox, caretColor: "var(--color-foreground)" }}
         onChange={(e) => onChange(e.target.value)}
         onFocus={onFocus}
-        onKeyDown={(e) => {
-          onKeyDown?.(e); // autocomplétion / commandes (peut preventDefault)
-          if (e.defaultPrevented) return;
-          if (e.key === "Enter") {
-            e.preventDefault();
-            onEnter();
-          }
-        }}
+        onKeyDown={handleKeyDown}
       />
     </div>
   );

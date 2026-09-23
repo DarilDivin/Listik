@@ -1,0 +1,163 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Assistant — suggestions à vérifier</title>
+  <style>
+    :root {
+      --paper: #f7f6f3;
+      --surface: #fffefd;
+      --ink: #27312f;
+      --muted: #69716e;
+      --line: #e2e2dc;
+      --soft: #e4f2ef;
+      --brand: #2c9992;
+      --brand-deep: #147b76;
+      --shadow: 0 20px 50px -30px rgba(28, 47, 43, .35), 0 1px 2px rgba(28, 47, 43, .08);
+      --ease: cubic-bezier(.22, .9, .28, 1);
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-width: 320px;
+      color: var(--ink);
+      background: var(--paper);
+      font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      -webkit-font-smoothing: antialiased;
+    }
+    button, textarea { font: inherit; }
+    button { cursor: pointer; }
+    .wrap { width: min(1180px, calc(100% - 40px)); margin: 0 auto; padding: 44px 0 52px; }
+    .masthead { display: flex; justify-content: space-between; align-items: end; gap: 24px; margin-bottom: 26px; }
+    .eyebrow { margin: 0 0 9px; color: var(--brand-deep); font-size: 12px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
+    h1 { max-width: 16ch; margin: 0; font-size: clamp(30px, 4vw, 48px); line-height: 1.03; letter-spacing: -.04em; }
+    .masthead p { max-width: 37ch; margin: 0 0 3px; color: var(--muted); font-size: 14px; line-height: 1.55; }
+    .workbench { display: grid; grid-template-columns: minmax(0, 1fr) 268px; overflow: hidden; border: 1px solid var(--line); border-radius: 20px; background: var(--surface); box-shadow: var(--shadow); }
+    .app { min-height: 650px; padding: 0 34px 24px; position: relative; overflow: hidden; }
+    .glow { pointer-events: none; position: absolute; z-index: 0; top: -190px; left: 18%; width: 560px; height: 360px; background: radial-gradient(ellipse, rgba(44,153,146,.16), transparent 68%); }
+    .app-head { position: relative; z-index: 1; display: flex; min-height: 76px; align-items: center; justify-content: space-between; border-bottom: 1px solid rgba(226,226,220,.72); }
+    .app-title { font-size: 18px; font-weight: 650; letter-spacing: -.018em; }
+    .provider { display: inline-flex; align-items: center; gap: 8px; color: var(--muted); font-size: 13px; }
+    .provider::before { content: ""; width: 8px; height: 8px; border: 2px solid var(--brand); border-radius: 50%; }
+    .empty { position: relative; z-index: 1; display: flex; min-height: 438px; flex-direction: column; align-items: center; justify-content: center; text-align: center; }
+    .mark { display: grid; width: 48px; height: 48px; place-items: center; border-radius: 15px; background: var(--soft); color: var(--brand-deep); font-size: 24px; font-weight: 500; }
+    .empty h2 { margin: 20px 0 8px; font-size: clamp(24px, 3vw, 34px); letter-spacing: -.035em; }
+    .empty > p { max-width: 42ch; margin: 0; color: var(--muted); font-size: 14px; line-height: 1.55; }
+    .chips { display: flex; max-width: 600px; flex-wrap: wrap; justify-content: center; gap: 8px; margin: 26px 0 0; }
+    .chip { min-height: 38px; border: 1px solid var(--line); border-radius: 999px; padding: 8px 13px; color: #515a57; background: rgba(255,255,255,.65); font-size: 13px; transition: transform .16s var(--ease), border-color .16s, background .16s, color .16s; }
+    .chip:hover { border-color: color-mix(in srgb, var(--brand) 48%, var(--line)); transform: translateY(-1px); }
+    .chip.is-picked { border-color: var(--brand); color: var(--brand-deep); background: var(--soft); }
+    .composer-wrap { position: relative; z-index: 1; }
+    .status { min-height: 21px; margin: 0 0 7px 12px; color: var(--muted); font-size: 12px; opacity: 0; transform: translateY(3px); transition: opacity .18s var(--ease), transform .18s var(--ease); }
+    .status.visible { opacity: 1; transform: none; }
+    .composer { display: flex; align-items: end; gap: 10px; min-height: 62px; border: 1px solid var(--line); border-radius: 18px; padding: 10px 10px 10px 16px; background: var(--surface); transition: border-color .2s var(--ease), box-shadow .2s var(--ease); }
+    .composer:focus-within { border-color: var(--brand); box-shadow: 0 0 0 3px rgba(44,153,146,.10); }
+    textarea { display: block; width: 100%; min-height: 28px; max-height: 108px; resize: none; border: 0; outline: 0; color: var(--ink); background: transparent; font-size: 16px; line-height: 1.55; }
+    textarea::placeholder { color: #8b918e; }
+    .send { display: grid; width: 38px; height: 38px; flex: 0 0 auto; place-items: center; border: 0; border-radius: 50%; color: white; background: #c3c9c6; transition: background .18s var(--ease), transform .16s var(--ease); }
+    .send:not(:disabled) { background: var(--brand); }
+    .send:not(:disabled):hover { background: var(--brand-deep); transform: translateY(-1px); }
+    .send:disabled { cursor: default; }
+    .send svg { width: 18px; height: 18px; transform: translate(1px, -1px); }
+    .sent { display: none; align-self: end; max-width: 68%; margin: -4px 0 17px auto; border-radius: 15px 15px 4px 15px; padding: 10px 13px; background: var(--soft); color: var(--ink); font-size: 14px; line-height: 1.45; }
+    .sent.visible { display: block; animation: emerge .32s var(--ease) both; }
+    .side { border-left: 1px solid var(--line); padding: 27px 24px; background: #fbfbf8; }
+    .side h2 { margin: 0 0 11px; font-size: 14px; letter-spacing: -.01em; }
+    .side p { margin: 0; color: var(--muted); font-size: 13px; line-height: 1.55; }
+    .rule { height: 1px; margin: 22px 0; background: var(--line); }
+    .step { display: grid; grid-template-columns: 22px 1fr; gap: 9px; margin: 16px 0; }
+    .number { display: grid; width: 22px; height: 22px; place-items: center; border-radius: 50%; color: var(--brand-deep); background: var(--soft); font-size: 11px; font-weight: 700; }
+    .step strong { display: block; margin: 1px 0 3px; font-size: 12px; }
+    .step span { display: block; color: var(--muted); font-size: 12px; line-height: 1.45; }
+    .reset { width: 100%; border: 1px solid var(--line); border-radius: 10px; padding: 9px 10px; color: var(--muted); background: transparent; font-size: 12px; transition: background .16s, color .16s; }
+    .reset:hover { color: var(--ink); background: var(--surface); }
+    footer { margin-top: 17px; color: var(--muted); font-size: 12px; }
+    @keyframes emerge { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+    @media (max-width: 760px) { .wrap { width: min(100% - 28px, 580px); padding-top: 26px; } .masthead { display: block; } .masthead p { margin-top: 14px; } .workbench { grid-template-columns: 1fr; } .side { border-top: 1px solid var(--line); border-left: 0; } .app { min-height: 560px; padding: 0 18px 18px; } .empty { min-height: 365px; } .chips { gap: 7px; } .chip { font-size: 12px; } }
+    @media (prefers-reduced-motion: reduce) { *, *::before, *::after { transition-duration: .01ms !important; animation-duration: .01ms !important; } }
+  </style>
+</head>
+<body>
+  <main class="wrap">
+    <header class="masthead">
+      <div><p class="eyebrow">Maquette interactive · Assistant</p><h1>Une suggestion devient un brouillon, jamais une action immédiate.</h1></div>
+      <p>Clique une suggestion. Son texte rejoint la barre, où il peut être vérifié, corrigé ou supprimé avant l’envoi.</p>
+    </header>
+    <section class="workbench" aria-label="Aperçu interactif du pré-remplissage des suggestions">
+      <div class="app">
+        <div class="glow" aria-hidden="true"></div>
+        <header class="app-head"><span class="app-title">Assistant</span><span class="provider">Claude Code</span></header>
+        <section class="empty" aria-labelledby="empty-title">
+          <div class="mark" aria-hidden="true">✦</div>
+          <h2 id="empty-title">Que puis-je faire pour vous&nbsp;?</h2>
+          <p>Choisissez une amorce ou écrivez directement. Rien ne part sans votre validation.</p>
+          <div class="chips" aria-label="Suggestions de départ">
+            <button class="chip" type="button" data-prompt="Ajoute appeler le dentiste vendredi">Ajoute appeler le dentiste vendredi</button>
+            <button class="chip" type="button" data-prompt="Qu’est-ce que j’ai cette semaine ?">Qu’est-ce que j’ai cette semaine&nbsp;?</button>
+            <button class="chip" type="button" data-prompt="Qu’est-ce qui est en retard ?">Qu’est-ce qui est en retard&nbsp;?</button>
+            <button class="chip" type="button" data-prompt="Note : idée d’article sur le RAG">Note&nbsp;: idée d’article sur le RAG</button>
+          </div>
+        </section>
+        <div class="composer-wrap">
+          <div id="sent" class="sent" aria-live="polite"></div>
+          <p id="status" class="status" aria-live="polite">Suggestion ajoutée — vérifiez-la avant de l’envoyer.</p>
+          <form id="composer" class="composer">
+            <textarea id="draft" rows="1" aria-label="Message à l’Assistant" placeholder="Demander, créer, chercher…"></textarea>
+            <button id="send" class="send" type="submit" aria-label="Envoyer" disabled><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m22 2-7 20-4-9-9-4Z"></path><path d="M22 2 11 13"></path></svg></button>
+          </form>
+        </div>
+      </div>
+      <aside class="side">
+        <h2>Ce que l’on teste</h2>
+        <p>La suggestion reste une aide de formulation. Elle ne crée pas une tâche ou une note par surprise.</p>
+        <div class="rule"></div>
+        <div class="step"><span class="number">1</span><div><strong>Choisir</strong><span>Une amorce transfère son texte dans le champ.</span></div></div>
+        <div class="step"><span class="number">2</span><div><strong>Vérifier</strong><span>Le curseur est posé à la fin ; le texte reste entièrement éditable.</span></div></div>
+        <div class="step"><span class="number">3</span><div><strong>Envoyer</strong><span>Le bouton devient actif seulement lorsque le brouillon contient du texte.</span></div></div>
+        <div class="rule"></div>
+        <button class="reset" type="button" id="reset">Revenir à l’état vide</button>
+      </aside>
+    </section>
+    <footer>Maquette interactive · aucun appel à l’Assistant, aucune tâche n’est créée.</footer>
+  </main>
+  <script>
+    const draft = document.querySelector('#draft');
+    const send = document.querySelector('#send');
+    const status = document.querySelector('#status');
+    const sent = document.querySelector('#sent');
+    const chips = [...document.querySelectorAll('.chip')];
+    const resize = () => { draft.style.height = 'auto'; draft.style.height = Math.min(draft.scrollHeight, 108) + 'px'; };
+    const update = () => { send.disabled = !draft.value.trim(); resize(); };
+    chips.forEach((chip) => chip.addEventListener('click', () => {
+      draft.value = chip.dataset.prompt;
+      chips.forEach((item) => item.classList.toggle('is-picked', item === chip));
+      sent.classList.remove('visible');
+      status.classList.add('visible');
+      update();
+      draft.focus();
+      draft.setSelectionRange(draft.value.length, draft.value.length);
+    }));
+    draft.addEventListener('input', update);
+    document.querySelector('#composer').addEventListener('submit', (event) => {
+      event.preventDefault();
+      if (!draft.value.trim()) return;
+      sent.textContent = draft.value;
+      sent.classList.add('visible');
+      status.textContent = 'Message envoyé — simulation de la maquette.';
+      status.classList.add('visible');
+      draft.value = '';
+      chips.forEach((chip) => chip.classList.remove('is-picked'));
+      update();
+    });
+    document.querySelector('#reset').addEventListener('click', () => {
+      draft.value = '';
+      sent.classList.remove('visible');
+      status.classList.remove('visible');
+      chips.forEach((chip) => chip.classList.remove('is-picked'));
+      update();
+      draft.focus();
+    });
+  </script>
+</body>
+</html>

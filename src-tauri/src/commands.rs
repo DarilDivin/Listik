@@ -447,6 +447,9 @@ pub async fn set_journal_entry_tags(
 pub async fn toggle_quick_window(app: AppHandle) -> Result<(), String> {
     if let Some(window) = app.get_webview_window("quick") {
         if window.is_visible().map_err(|e| e.to_string())? {
+            window
+                .emit("quick:will-hide", ())
+                .map_err(|e| e.to_string())?;
             window.hide().map_err(|e| e.to_string())?;
         } else {
             window.show().map_err(|e| e.to_string())?;
@@ -454,12 +457,13 @@ pub async fn toggle_quick_window(app: AppHandle) -> Result<(), String> {
         }
     } else {
         // Filet de sécurité : la fenêtre est normalement déclarée en config.
-        // Taille A TENIR IDENTIQUE à "quick" dans tauri.conf.json — rien ne
-        // les synchronise automatiquement, et ce filet a justement pour but
-        // de recréer EXACTEMENT ce que la config aurait posé.
+        // Taille A TENIR IDENTIQUE à "quick" dans tauri.conf.json. Le
+        // frontend l'ajuste ensuite aux grandes étapes (barre, bulle,
+        // réponse), mais le filet doit créer une barre compacte et jamais un
+        // calque plein écran qui intercepterait les clics du bureau.
         WebviewWindowBuilder::new(&app, "quick", WebviewUrl::App("/quick".into()))
             .title("Capture rapide")
-            .inner_size(680.0, 460.0)
+            .inner_size(630.0, 64.0)
             .center()
             .resizable(false)
             .decorations(false)
@@ -477,6 +481,9 @@ pub async fn toggle_quick_window(app: AppHandle) -> Result<(), String> {
 #[tauri::command]
 pub async fn hide_quick_window(app: AppHandle) -> Result<(), String> {
     if let Some(window) = app.get_webview_window("quick") {
+        window
+            .emit("quick:will-hide", ())
+            .map_err(|e| e.to_string())?;
         window.hide().map_err(|e| e.to_string())?;
     }
     Ok(())
@@ -655,13 +662,17 @@ pub async fn ai_agent_run(
 ) -> Result<String, String> {
     use crate::cli_agent::AgentProvider;
 
-    let port = state
-        .mcp_port
+    let mcp_server = state
+        .mcp_server
+        .as_ref()
         .ok_or_else(|| "Le serveur MCP n'a pas démarré".to_string())?;
     let settings = db::get_settings(&state.pool).await.map_err(|e| e.to_string())?;
     let provider: Box<dyn AgentProvider> = match settings.ai_provider.as_str() {
         "opencode" => Box::new(crate::cli_agent::OpenCodeProvider::resolve()?),
-        _ => Box::new(crate::cli_agent::ClaudeProvider::resolve()?),
+        "claude" => Box::new(crate::cli_agent::ClaudeProvider::resolve()?),
+        "codex" => Box::new(crate::cli_agent::CodexProvider::resolve()?),
+        "antigravity" => Box::new(crate::cli_agent::AntigravityProvider::resolve()?),
+        _ => return Err("Fournisseur IA inconnu. Choisissez un CLI dans Réglages > IA.".into()),
     };
 
     let prompt = agent_prompt(&text, &history);
@@ -670,7 +681,41 @@ pub async fn ai_agent_run(
     // serveur ne répondait jamais) — un vrai blocage laisserait l'Assistant
     // pendu 4 minutes.
     let timeout = std::time::Duration::from_secs(60);
-    provider.run(&prompt, port, timeout).await
+    provider.run(&prompt, mcp_server.port, mcp_server.token(), timeout).await
+}
+
+#[tauri::command]
+pub async fn inspect_ai_providers() -> Vec<crate::cli_agent::CliProviderStatus> {
+    crate::cli_agent::inspect_providers()
+}
+
+#[tauri::command]
+pub async fn connect_ai_provider(provider: String) -> Result<(), String> {
+    crate::cli_agent::launch_provider_login(&provider)
+}
+
+/// Vérification volontaire : un tour minimal, sans outil MCP ni mutation.
+/// Son coût éventuel est annoncé par le bouton dans les Réglages.
+#[tauri::command]
+pub async fn test_ai_provider(
+    state: State<'_, AppState>,
+    provider: String,
+) -> Result<String, String> {
+    use crate::cli_agent::AgentProvider;
+    let mcp_server = state.mcp_server.as_ref().ok_or_else(|| "Le serveur MCP n’a pas démarré".to_string())?;
+    let agent: Box<dyn AgentProvider> = match provider.as_str() {
+        "claude" => Box::new(crate::cli_agent::ClaudeProvider::resolve()?),
+        "codex" => Box::new(crate::cli_agent::CodexProvider::resolve()?),
+        "antigravity" => Box::new(crate::cli_agent::AntigravityProvider::resolve()?),
+        "opencode" => Box::new(crate::cli_agent::OpenCodeProvider::resolve()?),
+        _ => return Err("Fournisseur IA inconnu".into()),
+    };
+    agent.run(
+        "Réponds exactement : Connexion Listik confirmée. N’utilise aucun outil.",
+        mcp_server.port,
+        mcp_server.token(),
+        std::time::Duration::from_secs(45),
+    ).await
 }
 
 /// Assemble le prompt : historique (question/réponse) puis la nouvelle
@@ -691,8 +736,10 @@ fn agent_prompt(text: &str, history: &[AiChatMessage]) -> String {
     lines.push(format!(
         "Nouvelle demande : {text}\n\n\
          Tu es l'assistant de Listik. Utilise les outils MCP pour lire ou \
-         modifier la base avant de répondre ; si une action est ambigüe, pose \
-         une question au lieu d'inventer."
+         modifier la base avant de répondre ; ne supprime jamais une tâche ou \
+         une entrée de journal, car cette action requiert une confirmation qui \
+         n'est pas encore disponible. Si une action est ambigüe, pose une \
+         question au lieu d'inventer."
     ));
     lines.join("\n")
 }
@@ -708,7 +755,7 @@ fn agent_prompt(text: &str, history: &[AiChatMessage]) -> String {
 /// d'où la pièce venait — mais c'est `fichier` qui compte pour retrouver les
 /// octets. `None` quand la copie a échoué : le fichier avait disparu du
 /// disque, et la fiche reste pour garder trace de ce qu'il y avait là.
-#[derive(serde::Serialize)]
+#[derive(serde::Serialize, serde::Deserialize)]
 struct PieceSauvee {
     #[serde(flatten)]
     fiche: JournalPiece,
@@ -721,7 +768,7 @@ struct PieceSauvee {
 /// remplacé par le Journal — et laissait dehors les projets, domaines et
 /// rubriques que les tâches référencent pourtant : même pour les tâches, elle
 /// produisait des renvois orphelins.
-#[derive(serde::Serialize)]
+#[derive(serde::Serialize, serde::Deserialize)]
 struct Sauvegarde {
     version: u32,
     exported_at: String,
@@ -750,6 +797,16 @@ pub struct SauvegardeBilan {
     pub pieces: u32,
     /// Pièces dont le fichier a disparu du disque — leur fiche est gardée.
     pub pieces_manquantes: u32,
+}
+
+/// Résultat d'une restauration complète. Les compteurs rendent l'action
+/// vérifiable, sans prétendre qu'un fichier joint absent a été récupéré.
+#[derive(serde::Serialize, ts_rs::TS)]
+#[ts(export, export_to = "../../features/backup/generated/")]
+pub struct RestaurationBilan {
+    pub taches: u32,
+    pub jours: u32,
+    pub pieces: u32,
 }
 
 /// Écrit la sauvegarde : un JSON à l'emplacement choisi, et les pièces
@@ -844,6 +901,174 @@ pub async fn export_backup(
     let json = serde_json::to_string_pretty(&sauvegarde).map_err(|e| e.to_string())?;
     std::fs::write(&cible, json).map_err(|e| e.to_string())?;
     Ok(bilan)
+}
+
+fn enum_sql<T: serde::Serialize>(value: &T) -> Result<String, String> {
+    serde_json::to_value(value)
+        .map_err(|e| e.to_string())?
+        .as_str()
+        .map(str::to_string)
+        .ok_or_else(|| "valeur de sauvegarde invalide".to_string())
+}
+
+fn enum_option_sql<T: serde::Serialize>(value: &Option<T>) -> Result<Option<String>, String> {
+    value.as_ref().map(enum_sql).transpose()
+}
+
+/// Remplace les données locales par une sauvegarde créée par Listik. Cette
+/// commande ne choisit jamais le fichier elle-même : le dialogue natif et la
+/// confirmation explicite appartiennent au frontend.
+#[tauri::command]
+pub async fn restore_backup(
+    state: State<'_, AppState>,
+    app: AppHandle,
+    path: String,
+) -> Result<RestaurationBilan, String> {
+    let backup_path = std::path::PathBuf::from(path);
+    let raw = std::fs::read_to_string(&backup_path).map_err(|e| format!("lecture impossible : {e}"))?;
+    let backup: Sauvegarde = serde_json::from_str(&raw)
+        .map_err(|e| format!("ce fichier n’est pas une sauvegarde Listik valide : {e}"))?;
+    if backup.version != 2 {
+        return Err(format!("version de sauvegarde {} non prise en charge", backup.version));
+    }
+    let parent = backup_path.parent().ok_or_else(|| "emplacement de sauvegarde invalide".to_string())?;
+    let pieces_name = std::path::Path::new(&backup.pieces_dossier)
+        .file_name()
+        .and_then(|name| name.to_str())
+        .filter(|name| *name == backup.pieces_dossier)
+        .ok_or_else(|| "dossier de pièces invalide dans la sauvegarde".to_string())?;
+    let source_pieces = parent.join(pieces_name);
+    for piece in &backup.pieces {
+        if let Some(file) = &piece.fichier {
+            let source = source_pieces.join(file);
+            if !source.is_file() {
+                return Err(format!("pièce jointe introuvable dans la sauvegarde : {file}"));
+            }
+        }
+    }
+
+    // Prépare les pièces à côté du dossier actif, afin de ne jamais vider les
+    // données actuelles avant que le JSON et tous ses fichiers aient été lus.
+    let active_pieces = db::dossier_pieces(&app)?;
+    let pieces_parent = active_pieces.parent().ok_or_else(|| "dossier de données invalide".to_string())?;
+    let staging = pieces_parent.join(format!(".listik-restore-{}", uuid::Uuid::new_v4()));
+    std::fs::create_dir_all(&staging).map_err(|e| e.to_string())?;
+    let mut imported_pieces = Vec::new();
+    for piece in &backup.pieces {
+        let Some(file) = &piece.fichier else { continue };
+        let ext = std::path::Path::new(file)
+            .extension()
+            .and_then(|ext| ext.to_str())
+            .or_else(|| std::path::Path::new(&piece.fiche.nom_origine).extension().and_then(|ext| ext.to_str()))
+            .unwrap_or("bin");
+        let target_file = format!("{}.{}", piece.fiche.id, ext);
+        std::fs::copy(source_pieces.join(file), staging.join(&target_file))
+            .map_err(|e| format!("copie de pièce impossible : {e}"))?;
+        imported_pieces.push((piece, target_file));
+    }
+
+    let mut tx = state.pool.begin().await.map_err(|e| e.to_string())?;
+    for table in [
+        "task_tags", "journal_entry_tags", "sub_tasks", "orderings", "journal_pieces",
+        "journal_entries", "headings", "todos", "projects", "areas", "tags", "notes",
+        "pending_deindex", "settings",
+    ] {
+        sqlx::query(&format!("DELETE FROM {table}"))
+            .execute(&mut *tx).await.map_err(|e| e.to_string())?;
+    }
+    for area in &backup.areas {
+        sqlx::query("INSERT INTO areas (id, name, position, created_at) VALUES (?, ?, ?, ?)")
+            .bind(&area.id).bind(&area.name).bind(area.position).bind(&area.created_at)
+            .execute(&mut *tx).await.map_err(|e| e.to_string())?;
+    }
+    for project in &backup.projects {
+        sqlx::query("INSERT INTO projects (id, name, note, area_id, status, deadline, position, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)")
+            .bind(&project.id).bind(&project.name).bind(&project.note).bind(&project.area_id)
+            .bind(enum_sql(&project.status)?).bind(&project.deadline).bind(project.position)
+            .bind(&project.created_at).bind(&project.updated_at)
+            .execute(&mut *tx).await.map_err(|e| e.to_string())?;
+    }
+    for heading in &backup.headings {
+        sqlx::query("INSERT INTO headings (id, project_id, name, position, created_at) VALUES (?, ?, ?, ?, ?)")
+            .bind(&heading.id).bind(&heading.project_id).bind(&heading.name).bind(heading.position).bind(&heading.created_at)
+            .execute(&mut *tx).await.map_err(|e| e.to_string())?;
+    }
+    for tag in &backup.tags {
+        sqlx::query("INSERT INTO tags (id, name, parent_id, created_at) VALUES (?, ?, ?, ?)")
+            .bind(&tag.id).bind(&tag.name).bind(&tag.parent_id).bind(&tag.created_at)
+            .execute(&mut *tx).await.map_err(|e| e.to_string())?;
+    }
+    for todo in &backup.todos {
+        sqlx::query("INSERT INTO todos (id, text, note, list, status, priority, recurrence, recur_interval, recur_weekday, recur_weekdays, recur_setpos, recur_mode, scheduled_for, due_date, remind_at, project_id, area_id, heading_id, this_evening, someday, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
+            .bind(&todo.id).bind(&todo.text).bind(&todo.note).bind(&todo.list)
+            .bind(enum_sql(&todo.status)?).bind(enum_sql(&todo.priority)?).bind(enum_sql(&todo.recurrence)?)
+            .bind(todo.recur_interval).bind(enum_option_sql(&todo.recur_weekday)?).bind(&todo.recur_weekdays)
+            .bind(todo.recur_setpos).bind(enum_sql(&todo.recur_mode)?).bind(&todo.scheduled_for).bind(&todo.due_date)
+            .bind(&todo.remind_at).bind(&todo.project_id).bind(&todo.area_id).bind(&todo.heading_id)
+            .bind(todo.this_evening).bind(todo.someday).bind(&todo.created_at).bind(&todo.updated_at)
+            .execute(&mut *tx).await.map_err(|e| e.to_string())?;
+        for sub in &todo.sub_tasks {
+            sqlx::query("INSERT INTO sub_tasks (id, todo_id, text, done, position, created_at) VALUES (?, ?, ?, ?, ?, ?)")
+                .bind(&sub.id).bind(&sub.todo_id).bind(&sub.text).bind(sub.done).bind(sub.position).bind(&sub.created_at)
+                .execute(&mut *tx).await.map_err(|e| e.to_string())?;
+        }
+        for tag in &todo.tags {
+            sqlx::query("INSERT INTO task_tags (todo_id, tag_id) VALUES (?, ?)")
+                .bind(&todo.id).bind(&tag.id).execute(&mut *tx).await.map_err(|e| e.to_string())?;
+        }
+    }
+    for ordering in &backup.orderings {
+        sqlx::query("INSERT INTO orderings (context, todo_id, position) VALUES (?, ?, ?)")
+            .bind(&ordering.context).bind(&ordering.todo_id).bind(ordering.position)
+            .execute(&mut *tx).await.map_err(|e| e.to_string())?;
+    }
+    for entry in &backup.journal {
+        sqlx::query("INSERT INTO journal_entries (id, target_day, written_at, content, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)")
+            .bind(&entry.id).bind(&entry.target_day).bind(&entry.written_at).bind(&entry.content).bind(&entry.created_at).bind(&entry.updated_at)
+            .execute(&mut *tx).await.map_err(|e| e.to_string())?;
+        for tag in &entry.tags {
+            sqlx::query("INSERT INTO journal_entry_tags (entry_id, tag_id) VALUES (?, ?)")
+                .bind(&entry.id).bind(&tag.id).execute(&mut *tx).await.map_err(|e| e.to_string())?;
+        }
+    }
+    for (piece, file) in &imported_pieces {
+        let cretes = piece.fiche.cretes.as_ref().map(serde_json::to_string).transpose().map_err(|e| e.to_string())?;
+        sqlx::query("INSERT INTO journal_pieces (id, kind, fichier, nom_origine, taille, apercu, pages, duree_ms, cretes, created_at) VALUES (?, ?, ?, ?, ?, NULL, ?, ?, ?, ?)")
+            .bind(&piece.fiche.id).bind(&piece.fiche.kind).bind(file).bind(&piece.fiche.nom_origine)
+            .bind(piece.fiche.taille).bind(piece.fiche.pages).bind(piece.fiche.duree_ms).bind(cretes).bind(&piece.fiche.created_at)
+            .execute(&mut *tx).await.map_err(|e| e.to_string())?;
+    }
+    for (key, value) in [
+        ("daily_digest_enabled", if backup.settings.daily_digest_enabled { "1".to_string() } else { "0".to_string() }),
+        ("daily_digest_time", backup.settings.daily_digest_time.clone()),
+        ("groq_api_key", backup.settings.groq_api_key.clone().unwrap_or_default()),
+        ("ai_provider", backup.settings.ai_provider.clone()),
+    ] {
+        sqlx::query("INSERT INTO settings (key, value) VALUES (?, ?)")
+            .bind(key).bind(value).execute(&mut *tx).await.map_err(|e| e.to_string())?;
+    }
+
+    // Les fichiers et SQLite ne partagent pas de transaction. Le swap est fait
+    // juste avant le commit et l'ancien dossier est gardé jusqu'à celui-ci :
+    // un échec SQL laisse donc l'état précédent intact.
+    let previous = pieces_parent.join(format!(".listik-previous-{}", uuid::Uuid::new_v4()));
+    std::fs::rename(&active_pieces, &previous).map_err(|e| e.to_string())?;
+    if let Err(error) = std::fs::rename(&staging, &active_pieces) {
+        let _ = std::fs::rename(&previous, &active_pieces);
+        return Err(error.to_string());
+    }
+    if let Err(error) = tx.commit().await {
+        let _ = std::fs::remove_dir_all(&active_pieces);
+        let _ = std::fs::rename(&previous, &active_pieces);
+        return Err(error.to_string());
+    }
+    let _ = std::fs::remove_dir_all(previous);
+    notify_changed(&app);
+    notify_projects_changed(&app);
+    let _ = app.emit(JOURNAL_CHANGED, ());
+
+    let jours = backup.journal.iter().map(|entry| &entry.target_day).collect::<std::collections::HashSet<_>>().len() as u32;
+    Ok(RestaurationBilan { taches: backup.todos.len() as u32, jours, pieces: imported_pieces.len() as u32 })
 }
 
 // ---------------------------------------------------------------------------
@@ -1181,10 +1406,12 @@ mod tests {
 
         let app = tauri::test::mock_builder()
             .invoke_handler(tauri::generate_handler![ai_parse])
-            .manage(AppState { pool, mcp_port: None })
+            .manage(AppState { pool, mcp_server: None })
             .build(tauri::test::mock_context(tauri::test::noop_assets()))
             .expect("échec construction app de test");
-        let webview = tauri::WebviewWindowBuilder::new(&app, "main", Default::default())
+        // Un label propre au test évite de heurter la vraie fenêtre `main`
+        // quand la suite est lancée pendant que Listik est ouvert sous Windows.
+        let webview = tauri::WebviewWindowBuilder::new(&app, "test-ai-parse-ipc", Default::default())
             .build()
             .expect("échec construction webview de test");
 
@@ -1211,7 +1438,7 @@ mod tests {
     }
 
     /// Même vérification de frontière, pour `ai_agent_run` (state + text +
-    /// history, trois paramètres au lieu de deux) : `mcp_port: None` fait
+    /// history, trois paramètres au lieu de deux) : l'absence de serveur MCP fait
     /// échouer la commande tôt, avant tout appel réseau/CLI payant, tout en
     /// prouvant que les trois arguments sont bien désérialisés/injectés.
     #[tokio::test(flavor = "multi_thread")]
@@ -1228,10 +1455,10 @@ mod tests {
 
         let app = tauri::test::mock_builder()
             .invoke_handler(tauri::generate_handler![ai_agent_run])
-            .manage(AppState { pool, mcp_port: None })
+            .manage(AppState { pool, mcp_server: None })
             .build(tauri::test::mock_context(tauri::test::noop_assets()))
             .expect("échec construction app de test");
-        let webview = tauri::WebviewWindowBuilder::new(&app, "main", Default::default())
+        let webview = tauri::WebviewWindowBuilder::new(&app, "test-ai-agent-ipc", Default::default())
             .build()
             .expect("échec construction webview de test");
 
@@ -1311,11 +1538,11 @@ mod tests {
             std::sync::Arc::new(DbExecutor::new(pool.clone(), None)) as std::sync::Arc<dyn ToolExecutor>;
         rt.block_on(executor.call("create_todo", serde_json::json!({ "text": "acheter des kiwis violets" })))
             .unwrap();
-        let port = crate::cli_agent::spawn_mcp_server(executor).expect("le serveur MCP doit démarrer");
+        let mcp_server = crate::cli_agent::spawn_mcp_server(executor).expect("le serveur MCP doit démarrer");
 
         let app = tauri::test::mock_builder()
             .invoke_handler(tauri::generate_handler![ai_agent_run])
-            .manage(AppState { pool, mcp_port: Some(port) })
+            .manage(AppState { pool, mcp_server: Some(mcp_server) })
             .build(tauri::test::mock_context(tauri::test::noop_assets()))
             .expect("échec construction app de test");
         let webview = tauri::WebviewWindowBuilder::new(&app, "main", Default::default())

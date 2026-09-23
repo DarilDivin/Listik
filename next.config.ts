@@ -8,6 +8,10 @@ const nextConfig: NextConfig = {
   // Ensure Next.js uses SSG instead of SSR
   // https://nextjs.org/docs/pages/building-your-application/deploying/static-exports
   output: "export",
+  // Un build de livraison peut utiliser son propre dossier `.next` pendant
+  // que l'application de développement reste ouverte. Cela évite qu'un
+  // `next build` efface le cache servi par `next dev` sous Windows.
+  distDir: process.env.NEXT_DIST_DIR || ".next",
   trailingSlash: true,
   // Note: This feature is required to use the Next.js Image component in SSG mode.
   // See https://nextjs.org/docs/messages/export-image-api for different workarounds.

@@ -3,7 +3,8 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { motion } from "motion/react";
-import { Search } from "lucide-react";
+import { Search01Icon } from "@hugeicons/core-free-icons";
+import { AppIcon } from "@/components/ui/app-icon";
 import {
   Tooltip,
   TooltipContent,
@@ -67,7 +68,7 @@ export function FloatingDock({ onOpenSearch, docked = false }: FloatingDockProps
                   itemSize,
                 )}
               >
-                <Search size={iconSize} strokeWidth={2.1} />
+                <AppIcon icon={Search01Icon} size={iconSize} strokeWidth={1.9} />
               </motion.button>
             </TooltipTrigger>
             <TooltipContent side={tooltipSide} sideOffset={10}>
@@ -86,7 +87,7 @@ export function FloatingDock({ onOpenSearch, docked = false }: FloatingDockProps
         </>
       )}
 
-      {APP_NAV.map(({ href, label, icon: Icon }) => {
+      {APP_NAV.map(({ href, label, icon }) => {
         const active = isNavActive(pathname, href);
         return (
           <Tooltip key={href}>
@@ -121,7 +122,7 @@ export function FloatingDock({ onOpenSearch, docked = false }: FloatingDockProps
                       : "text-muted-foreground hover:text-foreground",
                   )}
                 >
-                  <Icon size={iconSize} strokeWidth={2.1} />
+                  <AppIcon icon={icon} size={iconSize} strokeWidth={1.9} />
                 </Link>
               </motion.span>
             </TooltipTrigger>

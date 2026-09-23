@@ -1,36 +1,51 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Listik
 
-## Getting Started
+Listik est une application de bureau personnelle pour organiser ses tâches,
+tenir un journal et capturer une idée sans quitter son travail. Les données
+restent dans une base SQLite locale.
 
-First, run the development server:
+## Utiliser l’application
+
+- **Planificateur** : tâches, projets, domaines, tags, rappels et récurrences.
+- **Journal** : pages quotidiennes, pièces jointes, recherche et export Markdown.
+- **Fenêtre rapide** : `Alt+Q` ouvre une barre pour capturer une tâche, écrire
+  dans le journal ou interroger l’assistant.
+- **Assistant** : Claude Code, Codex CLI, Antigravity CLI et OpenCode peuvent
+  être détectés puis connectés dans **Réglages → Assistant**. L’accès MCP est
+  local et protégé par un jeton éphémère ; les suppressions ne sont pas
+  accessibles à l’assistant.
+- **Sauvegarde** : **Réglages → Données** exporte un JSON et un dossier de
+  pièces jointes. La restauration remplace les données locales après une
+  confirmation explicite.
+
+## Développement
+
+Prérequis : Node.js 20+, pnpm et Rust stable avec les dépendances de Tauri
+pour votre système.
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+pnpm install --frozen-lockfile
+pnpm tauri dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+L’application de développement reste ouverte pendant les modifications du
+frontend. Les changements Rust demandent une relance du binaire Tauri.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Vérifier une version
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+```bash
+pnpm check
+cd src-tauri
+cargo test
+cd ..
+pnpm tauri build
+```
 
-## Learn More
+Sous Windows, les installateurs générés se trouvent dans
+`src-tauri/target/release/bundle/`. Validez-les sur une machine ou un compte
+Windows propre avant publication.
 
-To learn more about Next.js, take a look at the following resources:
+## Publication et mises à jour
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+La chaîne de publication GitHub, le site de téléchargement et la signature des
+mises à jour sont expliqués dans [la documentation de déploiement](docs/DEPLOYMENT.md).

@@ -61,6 +61,11 @@ interface BarreTacheProps {
   leading?: React.ReactNode;
   /** Indice discret à droite, au repos seulement (raccourci clavier). */
   hint?: React.ReactNode;
+  /** Les contrôles visuels sont utiles dans le Planificateur ; la fenêtre
+   * rapide peut choisir une capture entièrement en langage naturel. */
+  showControls?: boolean;
+  /** Informe un hôte compact qu'un sélecteur porté dans un portail est ouvert. */
+  onOverlayChange?: (open: boolean) => void;
 }
 
 /**
@@ -79,6 +84,8 @@ export default function BarreTache({
   variant = "floating",
   leading,
   hint,
+  showControls: controlsEnabled = true,
+  onOverlayChange,
 }: BarreTacheProps) {
   const [value, setValue] = useState("");
   const [isFocused, setIsFocused] = useState(false);
@@ -106,6 +113,13 @@ export default function BarreTache({
     window.addEventListener("scroll", close, true);
     return () => window.removeEventListener("scroll", close, true);
   }, [tokenEdit]);
+
+  // Les listes et calendriers de Radix sont rendus hors de la barre. La
+  // fenêtre rapide les utilise pour étendre temporairement son webview ; le
+  // planificateur, lui, n'a rien de particulier à faire.
+  useEffect(() => {
+    onOverlayChange?.(tokenEdit !== null || autocomplete.open);
+  }, [autocomplete.open, onOverlayChange, tokenEdit]);
 
   /** Remplace dans le texte le fragment reconnu par une nouvelle ecriture. */
   const rewriteToken = (match: { index: number; text: string }, next: string) => {
@@ -143,11 +157,11 @@ export default function BarreTache({
 
   const effectivePlaceholder = placeholder ?? "Capturer une tâche…";
 
-  const stackControls = inline
+  const stackControls = controlsEnabled && (inline
     ? isFocused && value.trim().length > 0
-    : multiline;
+    : multiline);
 
-  const showControls = isFocused && (!inline || value.trim().length > 0);
+  const showControls = controlsEnabled && isFocused && (!inline || value.trim().length > 0);
 
   // Un attribut deja ecrit dans le texte y est MODIFIABLE (on clique son
   // jeton) : afficher en plus son bouton le montrerait deux fois. Reserve a

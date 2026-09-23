@@ -1,10 +1,9 @@
 [package]
 name = "app"
 version = "0.1.0"
-description = "A Tauri App"
-authors = ["you"]
-license = ""
-repository = ""
+description = "Listik, an offline-first personal task manager and journal."
+authors = ["Daril D."]
+license = "MIT"
 edition = "2021"
 rust-version = "1.77.2"
 
@@ -45,6 +44,7 @@ reqwest = { version = "0.12", features = ["json"] }
 
 # Serveur MCP in-process (exposé en HTTP loopback) pour l'agent CLI (Phase R)
 axum = "0.8"
+tauri-plugin-updater = "2"
 
 [target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
 tauri-plugin-global-shortcut = "2"

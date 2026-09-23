@@ -28,7 +28,7 @@ pub struct JournalEntry {
 /// `chemin` est le chemin ABSOLU sur le disque : le webview en fait une URL
 /// avec `convertFileSrc`. On ne renvoie pas les octets — une photo de trois
 /// méga-octets traverserait l'IPC en base64 à chaque rendu.
-#[derive(Debug, Clone, Serialize, TS)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[ts(export, export_to = "../../features/journal/generated/")]
 pub struct JournalPiece {
     /// `image`, `pdf`, `document` ou `voix` — voir `db::nature`. Le PDF a sa

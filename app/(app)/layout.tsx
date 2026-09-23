@@ -1,12 +1,15 @@
 "use client";
 
 import { useEffect, useState, type ReactNode } from "react";
+import { useRouter } from "next/navigation";
+import { listen } from "@tauri-apps/api/event";
 import { AppSidebar } from "@/components/AppSidebar";
 import { FloatingDock } from "@/components/FloatingDock";
 import { SearchOverlay } from "@/components/SearchOverlay";
 import { SidebarSlotProvider, useSidebarSlot } from "@/components/sidebar-slot";
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
 import { useUIPrefs } from "@/components/ui-prefs";
+import { QUICK_OPEN_JOURNAL_EVENT } from "@/features/journal/quick";
 import { cn } from "@/lib/utils";
 
 interface ShellProps {
@@ -87,10 +90,18 @@ function useFilet() {
  * la colonne du mode dock, pendant que la nav d'app se replie en icônes.
  */
 export default function AppLayout({ children }: { children: ReactNode }) {
+  const router = useRouter();
   const [searchOpen, setSearchOpen] = useState(false);
   const { nav } = useUIPrefs();
   const openSearch = () => setSearchOpen(true);
   useFilet();
+
+  useEffect(() => {
+    const unlisten = listen(QUICK_OPEN_JOURNAL_EVENT, () => router.push("/journal"));
+    return () => {
+      void unlisten.then((stop) => stop());
+    };
+  }, [router]);
 
   return (
     <SidebarSlotProvider>

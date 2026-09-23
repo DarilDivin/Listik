@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { motion } from "motion/react";
-import { Sparkles } from "lucide-react";
+import { AiBrain01Icon } from "@hugeicons/core-free-icons";
 import { listen } from "@tauri-apps/api/event";
 
 import BarreAssistant from "@/components/BarreAssistant";
@@ -27,6 +27,7 @@ import {
 } from "@/features/assistant/conversation";
 import { aiAgent } from "@/features/omnibar/agent";
 import { spring } from "@/lib/motion";
+import { AppIcon } from "@/components/ui/app-icon";
 
 /**
  * Page Assistant, bâtie sur la charpente du template shadcn/chatbot : en-tête
@@ -44,7 +45,10 @@ import { spring } from "@/lib/motion";
  */
 export default function AssistantPage() {
   const [turns, setTurns] = useState<Turn[]>([]);
+  const [restored, setRestored] = useState(false);
   const [pending, setPending] = useState(false);
+  const [draft, setDraft] = useState("");
+  const [focusSignal, setFocusSignal] = useState<number>();
   // Garde de réentrance. `pending` est figé dans la closure de la soumission
   // en cours : c'est une ref qu'il faut pour refuser une deuxième question
   // pendant l'appel — deux appels en vol calculeraient leur historique sur le
@@ -52,6 +56,18 @@ export default function AssistantPage() {
   const pendingRef = useRef(false);
   const { viewportRef, anchorRef, atBottom, viewportHeight, anchorLatest, scrollToBottom } =
     useConversationScroll();
+
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem("listik-assistant-turns");
+      if (saved) setTurns(JSON.parse(saved) as Turn[]);
+    } catch { localStorage.removeItem("listik-assistant-turns"); }
+    setRestored(true);
+  }, []);
+
+  useEffect(() => {
+    if (restored) localStorage.setItem("listik-assistant-turns", JSON.stringify(turns));
+  }, [restored, turns]);
 
   // La fenêtre rapide transmet sa DERNIÈRE question/réponse en ouvrant cette
   // page (bouton « Ouvrir dans l'Assistant » du panneau réponse) — pas toute
@@ -92,7 +108,7 @@ export default function AssistantPage() {
             ? {
                 ...t,
                 error: true,
-                answer: "L'assistant est indisponible (CLI introuvable, ou délai dépassé).",
+                answer: e instanceof Error ? e.message : "L’assistant est indisponible.",
               }
             : t,
         ),
@@ -116,6 +132,21 @@ export default function AssistantPage() {
     void runAsk(text);
   };
 
+  // Une amorce est une proposition de formulation, pas une action implicite.
+  // Le compositeur persistant reçoit le texte et le focus ; l'envoi reste une
+  // décision explicite de la personne.
+  const handleSuggestion = (text: string) => {
+    setDraft(text);
+    setFocusSignal((current) => (current ?? 0) + 1);
+  };
+
+  const resetConversation = () => {
+    if (pendingRef.current) return;
+    setTurns([]);
+    localStorage.removeItem("listik-assistant-turns");
+    setDraft("");
+  };
+
   return (
     <div className="relative flex h-full flex-col overflow-hidden bg-background">
       <div
@@ -129,8 +160,9 @@ export default function AssistantPage() {
 
       <div className="relative z-10 shrink-0">
         <AssistantHeader
-          onNewConversation={() => setTurns([])}
-          canReset={turns.length > 0}
+          onNewConversation={resetConversation}
+          canReset={turns.length > 0 && !pending}
+          busy={pending}
         />
       </div>
 
@@ -138,7 +170,7 @@ export default function AssistantPage() {
         <div ref={viewportRef} className="flex-1 overflow-y-auto overscroll-contain">
           <div className="mx-auto flex min-h-full w-full max-w-[44rem] flex-col px-8 pt-6 pb-8">
             {turns.length === 0 ? (
-              <EmptyAssistant onAsk={handleAsk} />
+              <EmptyAssistant onSelectSuggestion={handleSuggestion} />
             ) : (
               <div className="flex flex-col gap-8">
                 {turns.map((turn, i) => {
@@ -181,6 +213,9 @@ export default function AssistantPage() {
           <BarreAssistant
             onSubmit={handleAsk}
             busy={pending}
+            value={draft}
+            onValueChange={setDraft}
+            focusSignal={focusSignal}
             placeholder="Demander, créer, chercher…"
           />
         </div>
@@ -189,7 +224,7 @@ export default function AssistantPage() {
   );
 }
 
-function EmptyAssistant({ onAsk }: { onAsk: (text: string) => void }) {
+function EmptyAssistant({ onSelectSuggestion }: { onSelectSuggestion: (text: string) => void }) {
   return (
     <motion.div
       initial={{ opacity: 0, y: 14 }}
@@ -197,7 +232,7 @@ function EmptyAssistant({ onAsk }: { onAsk: (text: string) => void }) {
       transition={spring.smooth}
       className="flex flex-1 flex-col"
     >
-      <Empty className="gap-5">
+      <Empty className="gap-5 border-0 p-0 md:p-0">
         <EmptyHeader>
           <EmptyMedia>
             <motion.div
@@ -206,7 +241,7 @@ function EmptyAssistant({ onAsk }: { onAsk: (text: string) => void }) {
               transition={{ ...spring.bouncy, delay: 0.08 }}
               className="grid size-14 place-items-center rounded-2xl bg-brand-soft text-brand"
             >
-              <Sparkles size={26} />
+              <AppIcon icon={AiBrain01Icon} size={26} />
             </motion.div>
           </EmptyMedia>
           <EmptyTitle className="text-large-title text-foreground">
@@ -218,7 +253,7 @@ function EmptyAssistant({ onAsk }: { onAsk: (text: string) => void }) {
           </EmptyDescription>
         </EmptyHeader>
         <EmptyContent className="max-w-lg">
-          <Suggestions onSelect={onAsk} />
+          <Suggestions onSelect={onSelectSuggestion} />
         </EmptyContent>
       </Empty>
     </motion.div>

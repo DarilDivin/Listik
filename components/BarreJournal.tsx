@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect, useRef } from "react";
+import { Cancel01Icon, ExternalLinkIcon } from "@hugeicons/core-free-icons";
+import { AppIcon } from "@/components/ui/app-icon";
 import { JournalSheet } from "@/components/journal/JournalSheet";
 import { useFeuille } from "@/features/journal/useFeuille";
 import { todayLocalISODate } from "@/lib/date";
@@ -14,22 +16,26 @@ interface BarreJournalProps {
    * (cliquable, pour redonner la main aux pastilles).
    */
   leading?: React.ReactNode;
+  /** Ouvre la page Journal dans la fenêtre principale. */
+  onOpenInJournal?: () => void;
+  /** Ferme la fenêtre rapide sans quitter l'application. */
+  onClose?: () => void;
 }
 
 /**
- * La feuille du jour, en petit — issue du découpage de l'ancien Omnibar à
- * modes (voir docs/ROADMAP-BARRES.md, étape 3). Pas une extraction : `/note`
- * n'était qu'une ligne, et le vrai geste du Journal est de reprendre le fil,
- * pas d'écrire dans le vide (voir « Décisions supplémentaires » du roadmap).
+ * La feuille du jour dans la fenêtre rapide. Le Journal est un document à
+ * poursuivre : il emploie donc la variante page complète, jamais le widget
+ * d'aperçu de l'accueil.
  *
- * Même composant que la page complète et que le widget de l'accueil — UN
- * SEUL moteur de feuille (`JournalSheet`/`useFeuille`), pas un troisième
- * rendu de la même journée. `variant="widget"` + `className="journal-widget"`
- * donnent déjà le plafond de quatre lignes et la gouttière resserrée dont
- * cette barre a besoin : rien à régler ici, `JournalWidget` l'a déjà validé
- * sur l'accueil.
+ * Même moteur que la page complète (`JournalSheet`/`useFeuille`) : écrire ici
+ * prolonge la même journée, sans une troisième représentation des données.
  */
-export default function BarreJournal({ autoFocus, leading }: BarreJournalProps) {
+export default function BarreJournal({
+  autoFocus,
+  leading,
+  onOpenInJournal,
+  onClose,
+}: BarreJournalProps) {
   const today = todayLocalISODate();
   // Pas de « À venir » ici, comme le widget : cette barre ne montre que le
   // jour courant, écrire pour plus tard se fait depuis la page complète.
@@ -63,24 +69,54 @@ export default function BarreJournal({ autoFocus, leading }: BarreJournalProps) 
   return (
     <div
       ref={rootRef}
-      className="rounded-2xl border border-border/60 bg-popover p-4"
+      className="flex h-full w-full flex-col overflow-hidden rounded-[inherit] bg-transparent"
     >
-      <div className="mb-2 flex items-center gap-2">
+      <header className="flex shrink-0 items-center gap-2 border-b border-border/50 px-4 py-3">
         {leading}
-        <p className="text-[13px] font-semibold text-muted-foreground">{jour}</p>
+        <div className="min-w-0">
+          <p className="text-sm font-medium leading-none text-foreground">Journal</p>
+          <p className="mt-1 text-[11px] leading-none text-muted-foreground">{jour}</p>
+        </div>
+        <span className="ml-auto" />
+        {onOpenInJournal && (
+          <button
+            type="button"
+            onClick={onOpenInJournal}
+            title="Ouvrir le Journal"
+            aria-label="Ouvrir le Journal"
+            className="grid size-8 place-items-center rounded-lg text-muted-foreground transition hover:bg-accent hover:text-foreground focus-visible:bg-accent focus-visible:text-foreground forced-colors:focus-visible:outline forced-colors:focus-visible:outline-2"
+          >
+            <AppIcon icon={ExternalLinkIcon} size={16} />
+          </button>
+        )}
+        {onClose && (
+          <button
+            type="button"
+            onClick={onClose}
+            title="Fermer"
+            aria-label="Fermer"
+            className="grid size-8 place-items-center rounded-lg text-muted-foreground transition hover:bg-accent hover:text-foreground focus-visible:bg-accent focus-visible:text-foreground forced-colors:focus-visible:outline forced-colors:focus-visible:outline-2"
+          >
+            <AppIcon icon={Cancel01Icon} size={16} />
+          </button>
+        )}
+      </header>
+      <div className="min-h-0 flex-1 overflow-y-auto px-6 py-5">
+        <div className="mx-auto min-h-full w-full max-w-[44rem]">
+          <JournalSheet
+            variant="page"
+            reprises={reprises}
+            aStamper={aStamper}
+            onSegments={(segments) => void enregistrer(segments)}
+            invite={
+              <p className="text-[0.9375rem] leading-[1.78] text-muted-foreground/60">
+                Écrire…
+              </p>
+            }
+            className="min-h-full pb-16"
+          />
+        </div>
       </div>
-      <JournalSheet
-        variant="widget"
-        reprises={reprises}
-        aStamper={aStamper}
-        onSegments={(segments) => void enregistrer(segments)}
-        invite={
-          <p className="text-[0.9375rem] leading-[1.78] text-muted-foreground/60">
-            Écrire…
-          </p>
-        }
-        className="journal-widget"
-      />
     </div>
   );
 }
