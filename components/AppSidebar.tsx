@@ -25,6 +25,7 @@ import {
 } from "@/components/ui/tooltip";
 import { Kbd } from "@/components/ui/kbd";
 import { AppIcon } from "@/components/ui/app-icon";
+import { ListikLogotype, ListikMark } from "@/components/brand/ListikLogo";
 import { useShortcut } from "@/lib/keys";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { ProgressRing } from "@/components/planner/ProgressRing";
@@ -83,11 +84,9 @@ export function AppSidebar({ onOpenSearch }: AppSidebarProps) {
     <Sidebar collapsible="icon" className="absolute h-full !border-r-0">
       <SidebarHeader className="pt-4">
         <div className="flex h-8 items-center justify-between px-2 group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:px-0">
-          <span className="text-lg font-bold tracking-tight text-foreground group-data-[collapsible=icon]:hidden">
-            Listik
-          </span>
-          <span className="hidden size-7 rounded-lg bg-brand-soft text-sm font-bold text-brand group-data-[collapsible=icon]:grid group-data-[collapsible=icon]:place-items-center">
-            L
+          <ListikLogotype className="h-5 w-auto shrink-0 text-foreground group-data-[collapsible=icon]:hidden" />
+          <span className="hidden size-7 rounded-lg bg-brand-soft text-foreground group-data-[collapsible=icon]:grid group-data-[collapsible=icon]:place-items-center">
+            <ListikMark className="size-[18px]" />
           </span>
           {hasContent && onOpenSearch && (
             <Tooltip>
