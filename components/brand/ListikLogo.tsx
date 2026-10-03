@@ -6,11 +6,12 @@ type BrandProps = SVGProps<SVGSVGElement> & {
 };
 
 /**
- * Logotype « L!stik » : le i est une plume, la goutte qui en tombe fait le
- * point d'exclamation. Dessin vectorisé depuis Fraunces (voir brand/README.md),
- * sans la fente ni le trou d'aération du bec : à la taille de l'interface, ils
- * feraient moins d'un pixel. Lettres et plume en `currentColor` ; seule la
- * goutte prend l'accent (`--brand`), comme le veut la charte.
+ * Logotype « L!stik » : le i est une plume de stylo, la goutte qui en tombe
+ * fait le point d'exclamation. Dessin vectorisé depuis Fraunces (voir
+ * brand/README.md), en version « petite taille » : trou d'aération et fente
+ * élargis pour rester lisibles à la taille de l'interface. Lettres et plume en
+ * `currentColor` ; seule la goutte prend l'accent (`--brand`), comme le veut
+ * la charte.
  */
 export function ListikLogotype({ dropFill = "var(--brand)", ...props }: BrandProps) {
   return (
@@ -21,7 +22,7 @@ export function ListikLogotype({ dropFill = "var(--brand)", ...props }: BrandPro
       </g>
       <g transform="translate(1142 0)">
       <g transform="translate(0 386)">
-      <path d="M105.7 1014C87.3 892.3 58.1 770.6 58.1 638.8C113 365 204.5 152.1 230.1 30.4L241.1 -16L252.1 30.4C277.7 152.1 369.2 365 424.1 638.8C424.1 770.6 394.9 892.3 376.5 1014Q241.1 1032.3 105.7 1014Z" fill="currentColor" fillRule="evenodd"/>
+      <path d="M84.7 1014C61.2 932.9 41.7 811.2 45.6 669.2C47.5 588.1 84.7 537.4 112.1 496.9C139.4 365 198.1 142 233.3 20.3L241.1 -14L248.9 20.3C284.1 142 342.8 365 370.1 496.9C397.5 537.4 434.7 588.1 436.6 669.2C440.5 811.2 421 932.9 397.5 1014Q241.1 1037.5 84.7 1014ZM182.4 608.4A58.7 58.7 0 1 0 299.8 608.4A58.7 58.7 0 1 0 182.4 608.4ZM225.5 549.7L231.3 -18L250.9 -18L256.7 549.7Z" fill="currentColor" fillRule="evenodd"/>
       </g>
       <path d="M241.1 300C283.1 225 341.1 152 341.1 90C341.1 34.8 296.3 -10 241.1 -10C185.9 -10 141.1 34.8 141.1 90C141.1 152 199.1 225 241.1 300Z" fill={dropFill}/>
       </g>
@@ -44,15 +45,16 @@ export function ListikLogotype({ dropFill = "var(--brand)", ...props }: BrandPro
 
 /**
  * Marque seule : la plume inclinée de l'icône d'app, et sa goutte. Version
- * petite taille (bec élargi, sans fente), pour les emplacements de 16 à 32 px.
+ * petite taille (bec élargi, trou et fente généreux), pour les emplacements
+ * de 16 à 32 px.
  */
 export function ListikMark({ dropFill = "var(--brand)", ...props }: BrandProps) {
   return (
-    <svg viewBox="26.3 13.5 234.6 234.6" role="img" aria-label="Listik" {...props}>
-      <g transform="translate(144 102) rotate(40) scale(0.1823 -0.1823) translate(-241.1 -444.1)">
-      <path d="M83.4 888.2C62 781.6 27.9 675 27.9 559.6C91.9 319.8 198.5 133.2 228.3 26.6L241.1 -16L253.9 26.6C283.7 133.2 390.3 319.8 454.3 559.6C454.3 675 420.2 781.6 398.8 888.2Q241.1 909.5 83.4 888.2Z" fill="currentColor" fillRule="evenodd"/>
+    <svg viewBox="18.3 4.7 251.1 251.1" role="img" aria-label="Listik" {...props}>
+      <g transform="translate(144 102) rotate(40) scale(0.1927 -0.1927) translate(-241.1 -444.1)">
+      <path d="M50.3 888.2C21.6 817.1 -2.2 710.6 2.6 586.2C5 515.2 50.3 470.7 83.7 435.2C117.1 319.8 188.6 124.3 231.6 17.8L241.1 -14L250.6 17.8C293.6 124.3 365.1 319.8 398.5 435.2C431.9 470.7 477.2 515.2 479.6 586.2C484.4 710.6 460.6 817.1 431.9 888.2Q241.1 916.8 50.3 888.2ZM169.5 532.9A71.6 71.6 0 1 0 312.7 532.9A71.6 71.6 0 1 0 169.5 532.9ZM222 461.4L229.2 -18L253 -18L260.2 461.4Z" fill="currentColor" fillRule="evenodd"/>
       </g>
-      <g transform="translate(90.1 225.9) scale(0.1823 -0.1823)">
+      <g transform="translate(87 232.3) scale(0.1927 -0.1927)">
       <path d="M0 256.2C51.2 164.7 122 75.6 122 0C122 -67.3 67.3 -122 0 -122C-67.3 -122 -122 -67.3 -122 0C-122 75.6 -51.2 164.7 0 256.2Z" fill={dropFill}/>
       </g>
     </svg>
