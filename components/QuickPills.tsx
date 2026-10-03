@@ -11,6 +11,9 @@ import { cn } from "@/lib/utils";
  *  pastilles ne montrent que les deux outils de capture spécialisés. */
 export type QuickMode = "neutre" | "tache" | "journal" | "question";
 
+/** Impose le mode de la prochaine ouverture de la fenêtre rapide, une seule fois (payload : un mode, ou null pour annuler). */
+export const QUICK_NEXT_MODE_EVENT = "quick:next-mode";
+
 export const QUICK_ITEMS: {
   mode: Exclude<QuickMode, "neutre">;
   mot: string;

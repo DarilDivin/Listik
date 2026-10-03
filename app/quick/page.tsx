@@ -18,12 +18,10 @@ import BarreJournal from "@/components/BarreJournal";
 import BarreAssistant from "@/components/BarreAssistant";
 import { QuickBubble } from "@/components/QuickBubble";
 import { QuickAnswer } from "@/components/QuickAnswer";
-import { QuickPills, QUICK_ITEMS, type QuickMode } from "@/components/QuickPills";
+import { QuickPills, QUICK_ITEMS, QUICK_NEXT_MODE_EVENT, type QuickMode } from "@/components/QuickPills";
 import { useTodosSync } from "@/features/todos/useTodosSync";
-import { useTodoMutations } from "@/features/todos/useTodoMutations";
+import { useCaptureTask } from "@/features/todos/useCaptureTask";
 import { useProjects } from "@/hooks/useProjects";
-import { useTags } from "@/hooks/useTags";
-import { todayLocalISODate, toLocalISODate } from "@/lib/date";
 import type { SmartTaskData } from "@/features/todos/useTaskMode";
 import { aiAgent } from "@/features/omnibar/agent";
 import { buildHistory, QUICK_OPEN_ASSISTANT_EVENT, type Turn } from "@/features/assistant/conversation";
@@ -90,9 +88,8 @@ function isOverlayOpen() {
 
 export default function QuickPage() {
   useTodosSync();
-  const { createTodo } = useTodoMutations();
-  const { projects, createProject } = useProjects();
-  const { resolveTagNames, setTodoTags } = useTags();
+  const captureTask = useCaptureTask();
+  const { projects } = useProjects();
   const lists = useMemo(
     () =>
       projects
@@ -116,6 +113,8 @@ export default function QuickPage() {
   const [height, setHeight] = useState<number | undefined>(undefined);
   const pendingRef = useRef(false); // garde de réentrance, voir assistant/page.tsx
   const wasHidden = useRef(true);
+  /** Mode imposé à la PROCHAINE ouverture, une seule fois (l'accueil ouvre ainsi la fenêtre en mode Tâche). */
+  const nextModeRef = useRef<Exclude<QuickMode, "neutre"> | null>(null);
   const surfaceRef = useRef<HTMLDivElement>(null);
   const journalSizeRef = useRef(JOURNAL_DEFAULT_SIZE);
   const taskOverlayPrimed = useRef(false);
@@ -200,6 +199,15 @@ export default function QuickPage() {
     [switchMode],
   );
 
+  useEffect(() => {
+    const unlisten = listen<Exclude<QuickMode, "neutre"> | null>(QUICK_NEXT_MODE_EVENT, ({ payload }) => {
+      nextModeRef.current = payload;
+    });
+    return () => {
+      void unlisten.then((stop) => stop());
+    };
+  }, []);
+
   // Focus + reset à l'affichage ; fermeture au blur — SUSPENDUE tant qu'une
   // question est en vol ou affichée (decision 04 du roadmap) : une réponse
   // qu'on veut lire ou dans laquelle on veut cliquer ne peut pas disparaître
@@ -220,6 +228,15 @@ export default function QuickPage() {
           // l'ajustement de scène lui rend son enveloppe de transition, même
           // si le mode React est déjà « neutre ».
           setRevealEpoch((epoch) => epoch + 1);
+        }
+        // Un mode imposé s'applique à la prise de focus, que la fenêtre sorte
+        // d'un état caché ou non : au tout premier affichage après le
+        // lancement, `wasHidden` peut déjà être tombé.
+        const forced = nextModeRef.current;
+        if (forced) {
+          nextModeRef.current = null;
+          setMode(forced);
+          setNeutralText("");
         }
         return;
       }
@@ -251,34 +268,10 @@ export default function QuickPage() {
 
   const handleSubmit = useCallback(
     async (data: SmartTaskData) => {
-      const due = data.dueDate ? toLocalISODate(data.dueDate) : null;
-
-      let projectId: string | null = null;
-      if (data.list) {
-        const name = data.list.trim();
-        const existing = projects.find(
-          (p) => p.name.toLowerCase() === name.toLowerCase(),
-        );
-        projectId = existing ? existing.id : (await createProject({ name })).id;
-      }
-
-      const todo = await createTodo({
-        text: data.text,
-        note: data.note ?? null,
-        priority: data.priority ?? "normal",
-        scheduled_for: due ?? todayLocalISODate(),
-        due_date: null,
-        project_id: projectId,
-      });
-
-      if (data.tags?.length) {
-        const ids = await resolveTagNames(data.tags);
-        if (ids.length) await setTodoTags(todo.id, ids);
-      }
-
+      await captureTask(data);
       hide();
     },
-    [createTodo, createProject, projects, resolveTagNames, setTodoTags, hide],
+    [captureTask, hide],
   );
 
   // Pose/complète un tour — partagé par la toute première question (qui

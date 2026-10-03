@@ -11,6 +11,7 @@ import { toast } from "sonner";
 import { ThemeSetting } from "@/components/ThemeSetting";
 import { AppIcon } from "@/components/ui/app-icon";
 import { Button } from "@/components/ui/button";
+import { REPLAY_ONBOARDING_EVENT } from "@/features/onboarding/onboarding";
 import { Spinner } from "@/components/ui/spinner";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Switch } from "@/components/ui/switch";
@@ -136,5 +137,6 @@ function AssistantSection() { return <SettingsSection id="assistant" eyebrow="Co
 function DataSection({ exporting, restoring, onExport, onChooseRestore }: { exporting: boolean; restoring: boolean; onExport: () => Promise<void>; onChooseRestore: () => Promise<void> }) { return <SettingsSection id="data" eyebrow="Garder la main" title="Données et application" description="Conservez une copie de vos données et retrouvez les informations de cette version de Listik.">
   <SettingBlock icon={CloudDownloadIcon} title="Sauvegarder mes données" description="Tâches, projets, journal et réglages dans un fichier JSON ; les pièces jointes restent dans un dossier voisin."><Button size="sm" variant="outline" onClick={() => void onExport()} disabled={exporting}>{exporting && <Spinner data-icon="inline-start" />}{exporting ? "Export en cours…" : "Exporter une sauvegarde"}</Button></SettingBlock>
   <SettingBlock icon={CloudDownloadIcon} title="Restaurer une sauvegarde" description="Remplace les données de cet appareil par une sauvegarde Listik et son dossier de pièces jointes."><Button size="sm" variant="outline" onClick={() => void onChooseRestore()} disabled={restoring}>{restoring && <Spinner data-icon="inline-start" />}Restaurer depuis un fichier</Button></SettingBlock>
+  <SettingBlock icon={MagicWand01Icon} title="Accueil" description="Le parcours du premier lancement : le geste Alt+Q, votre couleur et votre navigation."><Button size="sm" variant="outline" onClick={() => window.dispatchEvent(new Event(REPLAY_ONBOARDING_EVENT))}>Revoir l’accueil</Button></SettingBlock>
   <section className="flex items-center gap-3 px-1 py-2 text-muted-foreground"><AppIcon icon={InformationCircleIcon} size={17} /><p className="text-xs">Listik <span className="font-mono">v{APP_VERSION}</span> <span className="mx-1 text-foreground/20">·</span> Les listes et raccourcis personnalisés arrivent bientôt.</p></section>
 </SettingsSection>; }

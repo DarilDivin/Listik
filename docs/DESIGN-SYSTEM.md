@@ -104,7 +104,14 @@ Pour les petites pastilles d'icône (empty states, hero assistant), utiliser
 ### 2.6 Typographie
 
 - **Geist Sans** partout. Displays : poids 600–800 + tracking serré
-  (`tracking-[-0.02em]` et plus serré quand plus gros). Pas de serif.
+  (`tracking-[-0.02em]` et plus serré quand plus gros). Pas de serif, à une
+  exception près : **Fraunces**, la police du logotype L!stik
+  (`app/fonts/fraunces.woff2`, chargée par `next/font/local`), porte les
+  titres de l'accueil du premier lancement (`components/onboarding/`), le seul
+  moment de marque de l'app. Ne pas l'étendre aux pages courantes.
+- **Logotype** : `ListikLogotype` / `ListikMark` (`components/brand/ListikLogo.tsx`),
+  et `ListikLogoAnimated` pour son entrée (lettres en cascade, plume qui se
+  redresse, goutte qui tombe). La goutte suit `--brand` ; voir `brand/README.md`.
 - **Geist Mono** : compteurs, pourcentages, raccourcis (`Kbd`) — toujours
   `tabular-nums`.
 - Échelle utilitaire : `.text-large-title` (2 rem/700, titres de page pleine —
