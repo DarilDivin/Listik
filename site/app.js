@@ -1,71 +1,124 @@
 const repository = "DarilDivin/Listik";
-const downloadLinks = document.querySelectorAll("[data-download-link]");
-const releaseStatus = document.querySelector("#release-status");
+const root = document.documentElement;
+
+/* Thème : suit le système, sauf choix explicite mémorisé (clé listik-site-theme). */
 const themeToggle = document.querySelector("#theme-toggle");
 const themeColor = document.querySelector('meta[name="theme-color"]');
+const prefersDark = window.matchMedia("(prefers-color-scheme: dark)");
 
-const demoExamples = {
-  task: {
-    context: "CAPTURER UNE TÂCHE",
-    first: "Préparer la réunion de vendredi",
-    accent: "demain à 10 h",
-    note: "La tâche attend dans votre planificateur.",
-    input: "Préparer la réunion de vendredi",
-  },
-  journal: {
-    context: "ÉCRIRE DANS LE JOURNAL",
-    first: "Une idée à garder",
-    accent: "pour plus tard.",
-    note: "Une trace dans la page de votre journée.",
-    input: "Une idée à garder pour plus tard",
-  },
-  assistant: {
-    context: "POSER UNE QUESTION",
-    first: "Qu’est-ce qui mérite",
-    accent: "mon attention aujourd’hui ?",
-    note: "Après connexion d’un CLI compatible dans les réglages.",
-    input: "Qu’est-ce qui mérite mon attention ?",
-  },
-};
-
-function setDemoMode(mode) {
-  const example = demoExamples[mode];
-  if (!example) return;
-
-  document.querySelectorAll("[data-demo-mode]").forEach((button) => {
-    const active = button.dataset.demoMode === mode;
-    button.classList.toggle("is-active", active);
-    button.setAttribute("aria-pressed", String(active));
-  });
-
-  document.querySelector("#demo-context").textContent = example.context;
-  document.querySelector("#demo-note").textContent = example.note;
-  document.querySelector("#demo-input").textContent = example.input;
-
-  const accent = document.createElement("span");
-  accent.textContent = example.accent;
-  document.querySelector("#demo-text").replaceChildren(document.createTextNode(`${example.first} `), accent);
+function isDark() {
+  if (root.dataset.theme === "dark") return true;
+  if (root.dataset.theme === "light") return false;
+  return prefersDark.matches;
 }
 
-document.querySelectorAll("[data-demo-mode]").forEach((button) => {
-  button.addEventListener("click", () => setDemoMode(button.dataset.demoMode));
-});
-
-function updateThemeButton() {
-  const dark = document.documentElement.dataset.theme === "dark";
-  themeToggle.textContent = dark ? "Mode clair" : "Mode sombre";
-  themeToggle.setAttribute("aria-label", dark ? "Activer le mode clair" : "Activer le mode sombre");
-  themeColor.setAttribute("content", dark ? "#18201f" : "#f2f1ed");
+function syncTheme() {
+  const dark = isDark();
+  themeToggle.setAttribute("aria-label", dark ? "Passer en mode clair" : "Passer en mode sombre");
+  themeColor.setAttribute("content", dark ? "#141918" : "#f7f4ec");
 }
 
 themeToggle.addEventListener("click", () => {
-  const dark = document.documentElement.dataset.theme !== "dark";
-  if (dark) document.documentElement.dataset.theme = "dark";
-  else delete document.documentElement.dataset.theme;
-  try { localStorage.setItem("listik-site-theme", dark ? "dark" : "light"); } catch (_) {}
-  updateThemeButton();
+  const next = isDark() ? "light" : "dark";
+  root.dataset.theme = next;
+  try { localStorage.setItem("listik-site-theme", next); } catch (_) {}
+  syncTheme();
 });
-updateThemeButton();
+prefersDark.addEventListener("change", syncTheme);
+syncTheme();
+
+/* Couleur de la goutte : la page s'ouvre en encre ; le visiteur peut essayer les six accents de l'app.
+   Les valeurs suivent le thème, comme dans l'app (versions claires et sombres). */
+const accents = {
+  teal: ["#008687", "#39bab4"],
+  indigo: ["#5366ce", "#8696f5"],
+  violet: ["#8851d1", "#b88af7"],
+  coral: ["#d4614c", "#f2846b"],
+  amber: ["#be8628", "#e3ad4b"],
+  rose: ["#ce4684", "#ed79a4"],
+};
+let currentAccent = "";
+
+function applyAccent() {
+  const pair = accents[currentAccent];
+  if (pair) root.style.setProperty("--drop", isDark() ? pair[1] : pair[0]);
+  else root.style.removeProperty("--drop");
+}
+
+document.querySelectorAll("[data-accent]").forEach((button) => {
+  button.addEventListener("click", () => {
+    currentAccent = button.dataset.accent;
+    document.querySelectorAll("[data-accent]").forEach((b) => b.setAttribute("aria-pressed", String(b === button)));
+    applyAccent();
+  });
+});
+themeToggle.addEventListener("click", applyAccent);
+prefersDark.addEventListener("change", applyAccent);
+
+/* Démonstration de la saisie : le texte se tape, chaque élément reconnu s'allume.
+   Sans JavaScript (ou sans animation), l'état final reste affiché. */
+const demo = document.querySelector(".demo");
+const demoText = document.querySelector("#demo-text");
+const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
+
+function demoParts() {
+  return Array.from(demoText.childNodes).map((node) => ({
+    text: node.textContent,
+    tok: node.nodeType === 1 ? node.dataset.tok : null,
+    className: node.nodeType === 1 ? node.className : "",
+  }));
+}
+
+const parts = demoParts();
+let demoRunning = false;
+
+async function playDemo() {
+  if (demoRunning || reduceMotion.matches) return;
+  demoRunning = true;
+  demo.classList.add("is-typing");
+  demo.querySelectorAll("[data-tok]").forEach((el) => el.classList.remove("is-on"));
+  demoText.replaceChildren();
+  const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+  for (const part of parts) {
+    let target = demoText;
+    if (part.tok) {
+      target = document.createElement("mark");
+      target.className = part.className;
+      target.dataset.tok = part.tok;
+      demoText.append(target);
+    }
+    for (const char of part.text) {
+      target.append(char);
+      await wait(char === " " ? 70 : 48 + Math.random() * 46);
+    }
+    if (part.tok) {
+      target.classList.add("is-on");
+      demo.querySelector(`.parsed [data-tok="${part.tok}"]`)?.classList.add("is-on");
+      await wait(260);
+    }
+  }
+  await wait(1200);
+  demo.classList.remove("is-typing");
+  demoRunning = false;
+}
+
+if ("IntersectionObserver" in window) {
+  const observer = new IntersectionObserver((entries) => {
+    if (entries.some((entry) => entry.isIntersecting)) { void playDemo(); observer.disconnect(); }
+  }, { threshold: 0.5 });
+  observer.observe(demo);
+}
+demo.addEventListener("click", () => void playDemo());
+
+/* Dernière version : lien direct vers l'installateur, sinon le paquet .msi, sinon la page GitHub. */
+const downloadLinks = document.querySelectorAll("[data-download-link]");
+const msiLinks = document.querySelectorAll("[data-msi-link]");
+const releaseStatus = document.querySelector("#release-status");
+
+function formatSize(bytes) {
+  return `${(bytes / 1048576).toLocaleString("fr-FR", { maximumFractionDigits: 1 })} Mo`;
+}
 
 async function showLatestRelease() {
   try {
@@ -77,14 +130,18 @@ async function showLatestRelease() {
 
     const release = await response.json();
     const assets = Array.isArray(release.assets) ? release.assets : [];
-    const installer = assets.find((asset) => /-setup\.exe$/i.test(asset.name))
-      ?? assets.find((asset) => /\.msi$/i.test(asset.name));
+    const setup = assets.find((asset) => /-setup\.exe$/i.test(asset.name));
+    const msi = assets.find((asset) => /\.msi$/i.test(asset.name));
+    const installer = setup ?? msi;
     const releaseUrl = release.html_url || `https://github.com/${repository}/releases/latest`;
+    const version = (release.tag_name || release.name || "").replace(/^v/i, "");
 
     downloadLinks.forEach((link) => { link.href = installer?.browser_download_url || releaseUrl; });
+    msiLinks.forEach((link) => { link.href = msi?.browser_download_url || releaseUrl; });
+    document.querySelectorAll("[data-version]").forEach((el) => { if (version) el.textContent = `Version ${version}`; });
     releaseStatus.textContent = installer
-      ? `Dernière version : ${release.name || release.tag_name} · installateur Windows`
-      : `Dernière version : ${release.name || release.tag_name} · voir les fichiers sur GitHub`;
+      ? `Version ${version} · installateur Windows · ${formatSize(installer.size)}`
+      : `Version ${version} · voir les fichiers sur GitHub`;
   } catch {
     releaseStatus.textContent = "Voir la dernière version disponible sur GitHub.";
   }

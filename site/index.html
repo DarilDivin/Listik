@@ -3,149 +3,228 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <meta name="description" content="Listik capture vos tâches, pensées et questions sans quitter votre travail. Application personnelle pour Windows, avec planificateur et journal local." />
-    <meta name="theme-color" content="#f2f1ed" />
+    <title>Listik · Une touche, l’idée est posée</title>
+    <meta name="description" content="Listik note vos tâches, vos pensées et vos questions en une touche, puis les range dans un planificateur et un journal, sur votre PC. Gratuit et open source, pour Windows." />
+    <meta name="theme-color" content="#f7f4ec" />
     <meta property="og:type" content="website" />
-    <meta property="og:title" content="Listik — Saisissez l’idée. Gardez le fil." />
-    <meta property="og:description" content="Une touche pour capturer ce qui compte, un espace calme pour le retrouver." />
-    <title>Listik — Saisissez l’idée. Gardez le fil.</title>
-    <link rel="icon" type="image/png" href="./assets/listik-icon.png" />
-    <link rel="preload" href="./assets/fonts/cormorant-roman.woff2" as="font" type="font/woff2" crossorigin />
+    <meta property="og:title" content="Listik · Une touche, l’idée est posée" />
+    <meta property="og:description" content="Capture rapide, planificateur et journal pour Windows. Vos données restent sur votre PC." />
+    <meta property="og:url" content="https://darildivin.github.io/Listik/" />
+    <meta property="og:image" content="https://darildivin.github.io/Listik/assets/listik-icon-256.png" />
+    <link rel="icon" href="./favicon.ico" sizes="any" />
+    <link rel="icon" type="image/svg+xml" href="./assets/listik-icon.svg" />
+    <link rel="preload" href="./assets/fonts/fraunces.woff2" as="font" type="font/woff2" crossorigin />
     <link rel="preload" href="./assets/fonts/dm-sans.woff2" as="font" type="font/woff2" crossorigin />
     <link rel="stylesheet" href="./styles.css" />
     <script>
       try {
-        if (localStorage.getItem("listik-site-theme") === "dark") document.documentElement.dataset.theme = "dark";
+        var t = localStorage.getItem("listik-site-theme");
+        if (t === "dark" || t === "light") document.documentElement.dataset.theme = t;
       } catch (_) {}
     </script>
   </head>
   <body>
-    <a class="skip-link" href="#main">Aller au contenu</a>
-    <header class="site-header">
-      <div class="header-inner">
-        <a class="wordmark" href="#top" aria-label="Listik, retour en haut">
-          <img src="./assets/listik-icon.png" width="30" height="30" alt="" />
-          <span>Listik<span class="wordmark-period">.</span></span>
-        </a>
-        <nav class="site-nav" aria-label="Navigation principale">
-          <a href="#capture">La capture</a>
-          <a href="#quotidien">L’application</a>
-          <a href="#telecharger">Télécharger</a>
-        </nav>
-        <div class="header-actions">
-          <button class="theme-toggle" id="theme-toggle" type="button" aria-label="Activer le mode sombre">Mode sombre</button>
-          <a class="author-link" href="https://daril.fr" target="_blank" rel="noopener noreferrer">Par Daril D.</a>
-        </div>
+    <svg width="0" height="0" class="defs" aria-hidden="true" focusable="false">
+      <symbol id="logotype" viewBox="0 0 4415.2 1538"><g transform="translate(-65 1478) scale(1 -1)"><g transform="translate(0 0)"><path d="M563.5 1331.2 493 1318.2Q471 1312.2 460.7 1300.8Q450.5 1289.5 450.5 1268.7V131Q450.5 99.2 466.6 85.0Q482.7 70.7 514.5 70.7H738Q782.2 70.7 817.6 86.1Q853 101.5 884.5 140.5Q916 179.5 947.5 250.5L1013.2 399.2Q1021 418 1032.1 424.6Q1043.2 431.2 1057 428.2Q1072.5 425 1078.5 412.1Q1084.5 399.2 1079 378.5L995.7 21.2Q988.7 -7 978.7 -18.7Q968.7 -30.5 951 -30.5Q936 -30.5 919.6 -22.8Q903.2 -15.2 881.8 -7.6Q860.5 0 830 0H103.2Q84.7 0 74.8 8.7Q65 17.5 65 32.7Q65 58.7 94.2 68.7L165 81.7Q187.5 88 197.5 99.3Q207.5 110.7 207.5 131.2V1268.7Q207.5 1289.5 197.5 1300.8Q187.5 1312.2 165 1318.2L94.2 1331.2Q65 1341.2 65 1367.2Q65 1383 74.8 1391.5Q84.7 1400 103.2 1400H555Q574 1400 583.6 1391.5Q593.2 1383 593.2 1367.2Q593.2 1341.7 563.5 1331.2Z" fill="currentColor"/></g><g transform="translate(1142 0)"><g transform="translate(0 386)"><path d="M105.7 1014C87.3 892.3 58.1 770.6 58.1 638.8C113 365 204.5 152.1 230.1 30.4L241.1 -16L252.1 30.4C277.7 152.1 369.2 365 424.1 638.8C424.1 770.6 394.9 892.3 376.5 1014Q241.1 1032.3 105.7 1014Z" fill="currentColor" fill-rule="evenodd"/></g><path d="M241.1 300C283.1 225 341.1 152 341.1 90C341.1 34.8 296.3 -10 241.1 -10C185.9 -10 141.1 34.8 141.1 90C141.1 152 199.1 225 241.1 300Z" style="fill:var(--drop)"/></g><g transform="translate(1632 0)"><path d="M369.7 835.7Q302.2 835.7 263.7 801.2Q225.2 766.7 225.2 711.7Q225.2 675.2 241.8 645.8Q258.5 616.5 299.6 592.0Q340.7 567.5 413.7 544.7Q535 508 604.0 464.6Q673 421.2 701.6 365.7Q730.2 310.2 730.2 237.5Q730.2 119.7 648.7 49.1Q567.2 -21.5 416.7 -21.5Q358 -21.5 319.3 -10.1Q280.7 1.2 257.8 12.6Q235 24 223.5 24Q212.5 24 197.1 12.6Q181.7 1.2 166.0 -10.1Q150.2 -21.5 137.5 -21.5Q127.2 -21.5 118.7 -14.6Q110.2 -7.7 104 12.7L54 219Q47.7 244.2 50.7 260.5Q53.7 276.7 67 282.2Q81.2 288.7 95.6 282.3Q110 276 120.7 258.7Q164 176.2 208.0 127.3Q252 78.5 300.7 57.0Q349.5 35.5 406.2 35.5Q484.7 35.5 524.3 72.3Q564 109.2 564 165.7Q564 204.2 545.7 235.5Q527.5 266.7 481.5 293.0Q435.5 319.2 351.7 342.5Q248.5 371 183.5 411.6Q118.5 452.2 88.1 507.6Q57.7 563 57.7 634.7Q57.7 712.5 95.7 770.7Q133.7 829 201.6 861.5Q269.5 894 358 894Q417.7 894 456.5 879.5Q495.2 865 517.0 850.2Q538.7 835.5 547 835.5Q556.7 835.5 569.5 849.6Q582.2 863.7 596.2 877.6Q610.2 891.5 623.5 891.5Q634.7 891.5 642.8 884.0Q651 876.5 654 857.5L694 664Q700 634.5 697.7 619.8Q695.5 605.2 681.5 600.5Q670 597.2 657.3 604.2Q644.7 611.2 633.5 628.5Q574.5 741.5 508.7 788.6Q443 835.7 369.7 835.7Z" fill="currentColor"/></g><g transform="translate(2404 0)"><path d="M98.5 798.2 31.2 811Q16.7 815.7 12.3 824.1Q8 832.5 8 843.5Q8 856.2 17.0 864.6Q26 873 40.2 873H109.2Q120.7 873 128.8 879.2Q137 885.5 146.5 902.7L254 1051.5Q265 1067.5 277.1 1075.8Q289.2 1084.2 302.2 1084.2Q316 1084.2 324.5 1075.2Q333 1066.2 333 1047.7V238.5Q333 170.2 360.0 136.1Q387 102 435.5 102Q459.5 102 477.6 110.0Q495.7 118 509.8 131.0Q524 144 535.3 158.8Q546.7 173.7 556.5 187.5Q564 190.2 569.5 184.7Q575 179.2 574 163.7Q566 110.2 537.3 69.1Q508.7 28 462.2 4.7Q415.7 -18.5 353.5 -18.5Q243.7 -18.5 184.0 37.3Q124.2 93.2 124.2 210.2V755.2Q124.2 774 119.7 784.0Q115.2 794 98.5 798.2ZM253.5 804.5 256.5 873H543.2Q560 873 568.2 866.5Q576.5 860 576.5 847.2Q576.5 828.7 560.2 816.6Q544 804.5 509 804.5Z" fill="currentColor"/></g><g transform="translate(2996 0)"><path d="M355.2 853V119Q355.2 95 362.2 83.6Q369.2 72.2 385.7 67.2L431 58.2Q442.5 53.5 448.1 46.1Q453.7 38.7 453.7 27.7Q453.7 14.7 445.5 7.3Q437.2 0 422 0H74.7Q60 0 51.7 7.3Q43.5 14.7 43.5 27.7Q43.5 38.2 49.0 45.5Q54.5 52.7 65.7 57.7L112.5 67.2Q129.2 72.2 136.1 83.6Q143 95 143 118.5V716Q143 734.2 137.6 742.2Q132.2 750.2 119.2 753L60 754.5Q48 758.5 42.8 765.0Q37.7 771.5 37.7 781Q37.7 792 44.6 799.5Q51.5 807 68 813L268.2 875Q290.5 883 302.0 885.6Q313.5 888.2 323.5 888.2Q339 888.2 347.1 878.5Q355.2 868.7 355.2 853ZM240.5 1035.2Q179.5 1035.2 142.2 1073.0Q105 1110.7 105 1168.7Q105 1227.2 142.5 1265.0Q180 1302.7 240.5 1302.7Q301.7 1302.7 339.5 1265.0Q377.2 1227.2 377.2 1169Q377.2 1110.7 339.3 1073.0Q301.5 1035.2 240.5 1035.2Z" fill="currentColor"/></g><g transform="translate(3472 0)"><path d="M70 0Q55.5 0 47.1 7.3Q38.7 14.7 38.7 27.7Q38.7 38.5 44.7 46.0Q50.7 53.5 63 58.7L107.7 67.2Q124.5 72 131.3 83.3Q138.2 94.7 138.2 118.5V1305.7Q138.2 1324 132.8 1332.0Q127.5 1340 114.5 1342.7L55.2 1344.2Q43.2 1348.2 38.1 1354.7Q33 1361.2 33 1370.7Q33 1381.7 39.8 1389.2Q46.7 1396.7 63.2 1402.7L263.5 1464.7Q285.7 1472.7 297.2 1475.3Q308.7 1478 318.7 1478Q334.2 1478 342.3 1468.2Q350.5 1458.5 350.5 1442.7V119Q350.5 94 357.1 82.0Q363.7 70 380.5 64.7L426.2 55.2Q446.2 46.2 446.2 27.7Q446.2 0 416.7 0ZM297.2 377.2 667.2 721.2Q698.5 751 692.8 775.5Q687.2 800 650.7 808.7L611.5 817.5Q601 822.2 596.5 828.7Q592 835.2 592 844.2Q592 858 600.8 865.5Q609.7 873 626 873H940.2Q956.2 873 964.6 865.7Q973 858.5 973 845Q973 832.2 963.6 822.2Q954.2 812.2 925.2 807.7Q874.7 798.5 830.8 775.5Q787 752.5 736.7 705.5L316.2 319.2ZM591.5 616 899.7 125Q919 95.2 936.1 82.5Q953.2 69.7 977.7 61.7Q996.2 52 1002.2 44.2Q1008.2 36.5 1008.2 26Q1008.2 14 1000.1 7.0Q992 0 976.7 0H611.5Q598.2 0 590.2 7.3Q582.2 14.7 582.2 27.7Q582.2 36.5 586.8 42.8Q591.5 49.2 601.2 53.5L640 61.7Q665 68.5 667.7 84.0Q670.5 99.5 649 132.2L435.5 479.2Z" fill="currentColor"/></g></g></symbol>
+      <symbol id="logotype-detail" viewBox="0 0 4415.2 1538"><g transform="translate(-65 1478) scale(1 -1)"><g transform="translate(0 0)"><path d="M563.5 1331.2 493 1318.2Q471 1312.2 460.7 1300.8Q450.5 1289.5 450.5 1268.7V131Q450.5 99.2 466.6 85.0Q482.7 70.7 514.5 70.7H738Q782.2 70.7 817.6 86.1Q853 101.5 884.5 140.5Q916 179.5 947.5 250.5L1013.2 399.2Q1021 418 1032.1 424.6Q1043.2 431.2 1057 428.2Q1072.5 425 1078.5 412.1Q1084.5 399.2 1079 378.5L995.7 21.2Q988.7 -7 978.7 -18.7Q968.7 -30.5 951 -30.5Q936 -30.5 919.6 -22.8Q903.2 -15.2 881.8 -7.6Q860.5 0 830 0H103.2Q84.7 0 74.8 8.7Q65 17.5 65 32.7Q65 58.7 94.2 68.7L165 81.7Q187.5 88 197.5 99.3Q207.5 110.7 207.5 131.2V1268.7Q207.5 1289.5 197.5 1300.8Q187.5 1312.2 165 1318.2L94.2 1331.2Q65 1341.2 65 1367.2Q65 1383 74.8 1391.5Q84.7 1400 103.2 1400H555Q574 1400 583.6 1391.5Q593.2 1383 593.2 1367.2Q593.2 1341.7 563.5 1331.2Z" fill="currentColor"/></g><g transform="translate(1142 0)"><g transform="translate(0 386)"><path d="M105.7 1014C87.3 892.3 58.1 770.6 58.1 638.8C113 365 204.5 152.1 230.1 30.4L241.1 -16L252.1 30.4C277.7 152.1 369.2 365 424.1 638.8C424.1 770.6 394.9 892.3 376.5 1014Q241.1 1032.3 105.7 1014ZM235.7 538.6L239.2 44L243 44L246.5 538.6ZM211.8 567.8A29.3 29.3 0 1 0 270.4 567.8A29.3 29.3 0 1 0 211.8 567.8Z" fill="currentColor" fill-rule="evenodd"/></g><path d="M241.1 300C283.1 225 341.1 152 341.1 90C341.1 34.8 296.3 -10 241.1 -10C185.9 -10 141.1 34.8 141.1 90C141.1 152 199.1 225 241.1 300Z" style="fill:var(--drop)"/></g><g transform="translate(1632 0)"><path d="M369.7 835.7Q302.2 835.7 263.7 801.2Q225.2 766.7 225.2 711.7Q225.2 675.2 241.8 645.8Q258.5 616.5 299.6 592.0Q340.7 567.5 413.7 544.7Q535 508 604.0 464.6Q673 421.2 701.6 365.7Q730.2 310.2 730.2 237.5Q730.2 119.7 648.7 49.1Q567.2 -21.5 416.7 -21.5Q358 -21.5 319.3 -10.1Q280.7 1.2 257.8 12.6Q235 24 223.5 24Q212.5 24 197.1 12.6Q181.7 1.2 166.0 -10.1Q150.2 -21.5 137.5 -21.5Q127.2 -21.5 118.7 -14.6Q110.2 -7.7 104 12.7L54 219Q47.7 244.2 50.7 260.5Q53.7 276.7 67 282.2Q81.2 288.7 95.6 282.3Q110 276 120.7 258.7Q164 176.2 208.0 127.3Q252 78.5 300.7 57.0Q349.5 35.5 406.2 35.5Q484.7 35.5 524.3 72.3Q564 109.2 564 165.7Q564 204.2 545.7 235.5Q527.5 266.7 481.5 293.0Q435.5 319.2 351.7 342.5Q248.5 371 183.5 411.6Q118.5 452.2 88.1 507.6Q57.7 563 57.7 634.7Q57.7 712.5 95.7 770.7Q133.7 829 201.6 861.5Q269.5 894 358 894Q417.7 894 456.5 879.5Q495.2 865 517.0 850.2Q538.7 835.5 547 835.5Q556.7 835.5 569.5 849.6Q582.2 863.7 596.2 877.6Q610.2 891.5 623.5 891.5Q634.7 891.5 642.8 884.0Q651 876.5 654 857.5L694 664Q700 634.5 697.7 619.8Q695.5 605.2 681.5 600.5Q670 597.2 657.3 604.2Q644.7 611.2 633.5 628.5Q574.5 741.5 508.7 788.6Q443 835.7 369.7 835.7Z" fill="currentColor"/></g><g transform="translate(2404 0)"><path d="M98.5 798.2 31.2 811Q16.7 815.7 12.3 824.1Q8 832.5 8 843.5Q8 856.2 17.0 864.6Q26 873 40.2 873H109.2Q120.7 873 128.8 879.2Q137 885.5 146.5 902.7L254 1051.5Q265 1067.5 277.1 1075.8Q289.2 1084.2 302.2 1084.2Q316 1084.2 324.5 1075.2Q333 1066.2 333 1047.7V238.5Q333 170.2 360.0 136.1Q387 102 435.5 102Q459.5 102 477.6 110.0Q495.7 118 509.8 131.0Q524 144 535.3 158.8Q546.7 173.7 556.5 187.5Q564 190.2 569.5 184.7Q575 179.2 574 163.7Q566 110.2 537.3 69.1Q508.7 28 462.2 4.7Q415.7 -18.5 353.5 -18.5Q243.7 -18.5 184.0 37.3Q124.2 93.2 124.2 210.2V755.2Q124.2 774 119.7 784.0Q115.2 794 98.5 798.2ZM253.5 804.5 256.5 873H543.2Q560 873 568.2 866.5Q576.5 860 576.5 847.2Q576.5 828.7 560.2 816.6Q544 804.5 509 804.5Z" fill="currentColor"/></g><g transform="translate(2996 0)"><path d="M355.2 853V119Q355.2 95 362.2 83.6Q369.2 72.2 385.7 67.2L431 58.2Q442.5 53.5 448.1 46.1Q453.7 38.7 453.7 27.7Q453.7 14.7 445.5 7.3Q437.2 0 422 0H74.7Q60 0 51.7 7.3Q43.5 14.7 43.5 27.7Q43.5 38.2 49.0 45.5Q54.5 52.7 65.7 57.7L112.5 67.2Q129.2 72.2 136.1 83.6Q143 95 143 118.5V716Q143 734.2 137.6 742.2Q132.2 750.2 119.2 753L60 754.5Q48 758.5 42.8 765.0Q37.7 771.5 37.7 781Q37.7 792 44.6 799.5Q51.5 807 68 813L268.2 875Q290.5 883 302.0 885.6Q313.5 888.2 323.5 888.2Q339 888.2 347.1 878.5Q355.2 868.7 355.2 853ZM240.5 1035.2Q179.5 1035.2 142.2 1073.0Q105 1110.7 105 1168.7Q105 1227.2 142.5 1265.0Q180 1302.7 240.5 1302.7Q301.7 1302.7 339.5 1265.0Q377.2 1227.2 377.2 1169Q377.2 1110.7 339.3 1073.0Q301.5 1035.2 240.5 1035.2Z" fill="currentColor"/></g><g transform="translate(3472 0)"><path d="M70 0Q55.5 0 47.1 7.3Q38.7 14.7 38.7 27.7Q38.7 38.5 44.7 46.0Q50.7 53.5 63 58.7L107.7 67.2Q124.5 72 131.3 83.3Q138.2 94.7 138.2 118.5V1305.7Q138.2 1324 132.8 1332.0Q127.5 1340 114.5 1342.7L55.2 1344.2Q43.2 1348.2 38.1 1354.7Q33 1361.2 33 1370.7Q33 1381.7 39.8 1389.2Q46.7 1396.7 63.2 1402.7L263.5 1464.7Q285.7 1472.7 297.2 1475.3Q308.7 1478 318.7 1478Q334.2 1478 342.3 1468.2Q350.5 1458.5 350.5 1442.7V119Q350.5 94 357.1 82.0Q363.7 70 380.5 64.7L426.2 55.2Q446.2 46.2 446.2 27.7Q446.2 0 416.7 0ZM297.2 377.2 667.2 721.2Q698.5 751 692.8 775.5Q687.2 800 650.7 808.7L611.5 817.5Q601 822.2 596.5 828.7Q592 835.2 592 844.2Q592 858 600.8 865.5Q609.7 873 626 873H940.2Q956.2 873 964.6 865.7Q973 858.5 973 845Q973 832.2 963.6 822.2Q954.2 812.2 925.2 807.7Q874.7 798.5 830.8 775.5Q787 752.5 736.7 705.5L316.2 319.2ZM591.5 616 899.7 125Q919 95.2 936.1 82.5Q953.2 69.7 977.7 61.7Q996.2 52 1002.2 44.2Q1008.2 36.5 1008.2 26Q1008.2 14 1000.1 7.0Q992 0 976.7 0H611.5Q598.2 0 590.2 7.3Q582.2 14.7 582.2 27.7Q582.2 36.5 586.8 42.8Q591.5 49.2 601.2 53.5L640 61.7Q665 68.5 667.7 84.0Q670.5 99.5 649 132.2L435.5 479.2Z" fill="currentColor"/></g></g></symbol>
+    </svg>
+
+    <a class="skip" href="#contenu">Aller au contenu</a>
+
+    <header class="top">
+      <a class="brand" href="#haut" aria-label="Listik, retour en haut">
+        <svg class="logo" role="img" aria-label="Listik"><use href="#logotype" /></svg>
+      </a>
+      <nav class="nav" aria-label="Navigation principale">
+        <a href="#capture">La capture</a>
+        <a href="#planificateur">L’application</a>
+        <a href="#chez-vous">Vos données</a>
+      </nav>
+      <div class="top-actions">
+        <button class="theme" id="theme-toggle" type="button" aria-label="Passer en mode sombre">
+          <svg class="i-moon" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5Z" /></svg>
+          <svg class="i-sun" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4" /><path d="M12 2.5v2M12 19.5v2M2.5 12h2M19.5 12h2M5.3 5.3l1.4 1.4M17.3 17.3l1.4 1.4M5.3 18.7l1.4-1.4M17.3 6.7l1.4-1.4" /></svg>
+        </button>
+        <a class="btn btn-small" data-download-link href="https://github.com/DarilDivin/Listik/releases/latest">Télécharger</a>
       </div>
     </header>
 
-    <main id="main">
-      <section class="hero page-grid" id="top" aria-labelledby="hero-title">
-        <div class="hero-copy">
-          <h1 id="hero-title">Saisissez l’idée.<br /><em>Gardez le fil.</em></h1>
-          <p class="hero-lead">Une tâche à ne pas oublier, une pensée à garder, une question à poser. Listik les accueille sans interrompre votre journée.</p>
-          <div class="hero-actions">
-            <a class="button button-primary" data-download-link href="https://github.com/DarilDivin/Listik/releases/latest">Télécharger pour Windows</a>
-            <a class="button button-quiet" href="#capture">Découvrir la capture</a>
+    <main id="contenu">
+      <section class="hero" id="haut" aria-labelledby="titre">
+        <div class="hero-text">
+          <h1 id="titre">Une touche,<br />l’idée est posée.</h1>
+          <div class="hero-side">
+          <p class="lead">Listik note vos tâches, vos pensées et vos questions sans vous faire quitter ce que vous faites. Puis il les range dans un planificateur et un journal, sur votre PC.</p>
+          <div class="cta">
+            <a class="btn" data-download-link href="https://github.com/DarilDivin/Listik/releases/latest">
+              <svg class="i-win" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 5.6 10.4 4.6v7H3zM11.4 4.4 21 3v8.6h-9.6zM3 12.5h7.4v7L3 18.4zM11.4 12.5H21V21l-9.6-1.4z" /></svg>
+              Télécharger pour Windows
+            </a>
+            <a class="link" href="#capture">Voir comment ça marche</a>
           </div>
-          <p class="hero-meta">Windows 10 et 11 <span aria-hidden="true">·</span> Gratuit et open source</p>
-        </div>
-
-        <div class="hero-art" aria-label="Démonstration illustrée de la fenêtre de capture rapide">
-          <div class="demo-scene">
-            <div class="demo-document" aria-hidden="true">
-              <div class="document-topline"><span>NOTES DE TRAVAIL</span><span>AUJOURD’HUI</span></div>
-              <div class="document-title">Quelques idées<br />pour demain.</div>
-              <div class="document-rule"></div>
-              <div class="document-copy">Une pensée arrive souvent au milieu d’une autre. Elle mérite une place, sans prendre toute la place.</div>
-              <div class="document-lines"><span></span><span></span><span></span></div>
-            </div>
-            <div class="capture-window" role="img" aria-label="Aperçu de la barre de capture Listik affichée au-dessus d’un document">
-              <span class="capture-mark" aria-hidden="true"><img src="./assets/listik-icon.png" width="24" height="24" alt="" /></span>
-              <span class="capture-input" id="demo-input">Préparer la réunion de vendredi</span>
-              <span class="capture-key" aria-hidden="true">↵</span>
-            </div>
-            <div class="scene-caption"><span class="scene-live-dot"></span> APERÇU ILLUSTRATIF <span class="scene-caption-divider">/</span> LA CAPTURE RAPIDE</div>
+          <p class="meta"><span data-version>Windows 10 et 11</span> · gratuit et open source</p>
           </div>
         </div>
-        <div class="hero-footnote"><span>Raccourci de capture</span><span class="footnote-line" aria-hidden="true"></span><kbd>Alt</kbd><span>+</span><kbd>Q</kbd></div>
+        <figure class="hero-shot">
+          <div class="window">
+            <img class="shot-light" src="./assets/shots/aujourdhui-clair.webp" width="1600" height="1025" alt="La vue Aujourd’hui de Listik : tâches du jour, routines, soirée et journal." />
+            <img class="shot-dark" src="./assets/shots/aujourdhui-sombre.webp" width="1600" height="1025" alt="" />
+          </div>
+          <div class="quick">
+            <img class="shot-light" src="./assets/shots/capture-clair.webp" width="1040" height="108" alt="La fenêtre de capture rapide, ouverte avec Alt+Q." />
+            <img class="shot-dark" src="./assets/shots/capture-sombre.webp" width="1040" height="108" alt="" />
+          </div>
+          <figcaption>Captures de l’application. Les tâches et le journal sont des exemples.</figcaption>
+        </figure>
       </section>
 
-      <section class="capture-section section-shell" id="capture" aria-labelledby="capture-title">
-        <div class="section-heading">
-          <p class="section-side-note">DANS LE FLUX DE VOTRE JOURNÉE</p>
-          <div>
-            <h2 id="capture-title">Une seule ouverture.<br /><em>Trois façons de penser.</em></h2>
-            <p>Appelez Listik avec <kbd>Alt</kbd> + <kbd>Q</kbd>. Choisissez ce que votre idée doit devenir, puis reprenez votre travail.</p>
-          </div>
+      <section class="capture" id="capture" aria-labelledby="capture-titre">
+        <div class="capture-text">
+          <h2 id="capture-titre">Alt+Q,<br />de n’importe où.</h2>
+          <p>Une petite fenêtre s’ouvre par-dessus votre travail. Écrivez comme vous parlez : Listik repère la date, le projet et la priorité, range la tâche, puis vous rend la main.</p>
+          <ul class="modes">
+            <li><b>Une tâche</b> pour le planificateur.</li>
+            <li><b>Une pensée</b> pour la page du jour.</li>
+            <li><b>Une question</b> pour votre assistant.</li>
+          </ul>
         </div>
-        <div class="mode-showcase">
-          <div class="mode-options" role="group" aria-label="Exemples de capture">
-            <button class="mode-option is-active" type="button" data-demo-mode="task" aria-pressed="true">
-              <span class="mode-title">Une tâche</span><span class="mode-description">Une intention devient une action à retrouver.</span>
-            </button>
-            <button class="mode-option" type="button" data-demo-mode="journal" aria-pressed="false">
-              <span class="mode-title">Une pensée</span><span class="mode-description">Un mot pour le journal, sans attendre le soir.</span>
-            </button>
-            <button class="mode-option" type="button" data-demo-mode="assistant" aria-pressed="false">
-              <span class="mode-title">Une question</span><span class="mode-description">Après connexion d’un CLI compatible.</span>
-            </button>
+        <div class="demo" aria-label="Démonstration de la saisie rapide">
+          <div class="bar">
+            <span class="bar-key"><kbd>Alt</kbd><kbd>Q</kbd></span>
+            <p class="bar-text" id="demo-text">Appeler Marc <mark class="tok" data-tok="date">demain à 10h</mark> <mark class="tok" data-tok="projet">#maison</mark> <mark class="tok" data-tok="prio">!</mark></p>
           </div>
-          <div class="mode-preview" aria-live="polite">
-            <p class="preview-context" id="demo-context">CAPTURER UNE TÂCHE</p>
-            <p class="preview-text" id="demo-text">Préparer la réunion de vendredi <span>demain à 10 h</span></p>
-            <p class="preview-note" id="demo-note">La tâche attend dans votre planificateur.</p>
-            <span class="preview-decoration" aria-hidden="true">L.</span>
-          </div>
+          <dl class="parsed" id="demo-parsed">
+            <div data-tok="date"><dt>Quand</dt><dd>Demain, 10:00</dd></div>
+            <div data-tok="projet"><dt>Projet</dt><dd>maison</dd></div>
+            <div data-tok="prio"><dt>Priorité</dt><dd>Haute</dd></div>
+          </dl>
+          <p class="demo-note">Démonstration de la vraie syntaxe : dans Listik, un simple « ! » marque une tâche prioritaire. C’est aussi le point d’exclamation du logo.</p>
         </div>
       </section>
 
-      <section class="daily-section section-shell" id="quotidien" aria-labelledby="daily-title">
-        <div class="daily-intro">
-          <h2 id="daily-title">Tout ne se règle<br /><em>pas en une minute.</em></h2>
-          <p>Après la capture, Listik vous donne l’espace pour organiser la suite. Un planificateur pour avancer, un journal pour garder la trace.</p>
+      <section class="feature" id="planificateur" aria-labelledby="plan-titre">
+        <div class="feature-text">
+          <h2 id="plan-titre">Un planificateur qui ne crie pas.</h2>
+          <p>Chaque tâche trouve sa place, sans tableau de bord à surveiller. Les projets se remplissent comme un anneau, les routines reviennent seules, les rappels arrivent à l’heure.</p>
+          <ul class="facts">
+            <li>Boîte de réception, Aujourd’hui, À venir, Un jour</li>
+            <li>Domaines et projets, avec leurs échéances</li>
+            <li>Routines, rappels et priorités</li>
+          </ul>
         </div>
-        <div class="daily-details">
-          <article class="daily-detail">
-            <div class="detail-head"><span class="detail-dot" aria-hidden="true"></span><h3>Le planificateur</h3></div>
-            <p>Tâches, projets, rappels et récurrences. Votre journée prend forme sans se transformer en tableau de bord.</p>
-            <span class="detail-index">Pour faire</span>
-          </article>
-          <article class="daily-detail">
-            <div class="detail-head"><span class="detail-dot" aria-hidden="true"></span><h3>Le journal</h3></div>
-            <p>Une page par jour pour écrire, retrouver des moments et joindre les documents qui comptent.</p>
-            <span class="detail-index">Pour se souvenir</span>
-          </article>
+        <div class="window feature-shot">
+          <img class="shot-light" src="./assets/shots/projet-clair.webp" width="1600" height="1025" alt="Un projet dans Listik : ses tâches, son échéance et son anneau de progression." loading="lazy" />
+          <img class="shot-dark" src="./assets/shots/projet-sombre.webp" width="1600" height="1025" alt="" loading="lazy" />
         </div>
       </section>
 
-      <section class="trust-section" aria-labelledby="trust-title">
-        <div class="trust-inner section-shell">
-          <div class="trust-symbol" aria-hidden="true">L<span>.</span></div>
-          <div class="trust-copy">
-            <h2 id="trust-title">Un espace à vous,<br /><em>sur votre ordinateur.</em></h2>
-            <p>Vos tâches et votre journal sont enregistrés localement. Vous pouvez sauvegarder vos données à tout moment. Les mises à jour sont signées et leur installation reste votre choix.</p>
-            <a href="https://github.com/DarilDivin/Listik" target="_blank" rel="noopener noreferrer">Voir le code source sur GitHub</a>
+      <section class="feature feature-flip" id="journal" aria-labelledby="journal-titre">
+        <div class="feature-text">
+          <h2 id="journal-titre">Un journal pour garder la trace.</h2>
+          <p>Une page par jour, écrite au fil des heures. Ajoutez une photo, un PDF ou une note vocale. Une idée notée avec Alt+Q y arrive directement.</p>
+          <ul class="facts">
+            <li>Des blocs horodatés, faciles à reprendre</li>
+            <li>Photos, PDF, documents et notes vocales</li>
+            <li>Recherche dans toutes vos pages</li>
+          </ul>
+        </div>
+        <div class="window feature-shot">
+          <img class="shot-light" src="./assets/shots/journal-clair.webp" width="1600" height="1025" alt="La page du jour dans le journal de Listik, avec plusieurs blocs écrits à différentes heures." loading="lazy" />
+          <img class="shot-dark" src="./assets/shots/journal-sombre.webp" width="1600" height="1025" alt="" loading="lazy" />
+        </div>
+      </section>
+
+      <section class="assistant" id="assistant" aria-labelledby="assistant-titre">
+        <h2 id="assistant-titre">Votre assistant,<br />pas le nôtre.</h2>
+        <div class="assistant-body">
+          <p>Listik se branche sur l’assistant IA que vous utilisez déjà. Il répond à vos questions sur votre journée et peut créer ou modifier vos tâches. Sans lui, Listik fonctionne tout aussi bien.</p>
+          <ul class="providers" aria-label="Assistants compatibles">
+            <li>Claude Code</li>
+            <li>Codex CLI</li>
+            <li>Antigravity CLI</li>
+            <li>OpenCode</li>
+          </ul>
+        </div>
+      </section>
+
+      <section class="color" aria-labelledby="couleur-titre">
+        <div class="color-text">
+          <h2 id="couleur-titre">La couleur, c’est vous qui la choisissez.</h2>
+          <p>Listik n’impose pas de couleur. Six accents vous attendent dans les réglages, et même la goutte du logo les suit. Essayez :</p>
+          <div class="swatches" role="group" aria-label="Couleur d’accent">
+            <button type="button" data-accent="" aria-pressed="true"><span style="--c: var(--ink)"></span>Encre</button>
+            <button type="button" data-accent="teal" aria-pressed="false"><span style="--c: #008687"></span>Teal</button>
+            <button type="button" data-accent="indigo" aria-pressed="false"><span style="--c: #5366ce"></span>Indigo</button>
+            <button type="button" data-accent="violet" aria-pressed="false"><span style="--c: #8851d1"></span>Violet</button>
+            <button type="button" data-accent="coral" aria-pressed="false"><span style="--c: #d4614c"></span>Corail</button>
+            <button type="button" data-accent="amber" aria-pressed="false"><span style="--c: #be8628"></span>Ambre</button>
+            <button type="button" data-accent="rose" aria-pressed="false"><span style="--c: #ce4684"></span>Rose</button>
           </div>
         </div>
+        <svg class="color-logo" role="img" aria-label="Le logotype Listik"><use href="#logotype-detail" /></svg>
       </section>
 
-      <section class="download-section section-shell" id="telecharger" aria-labelledby="download-title">
-        <div>
-          <h2 id="download-title">Une place pour<br /><em>ce qui compte.</em></h2>
-          <p>Installez Listik sur Windows et laissez vos idées vous retrouver au bon moment.</p>
+      <section class="local" id="chez-vous" aria-labelledby="local-titre">
+        <h2 id="local-titre">Vos données restent sur votre PC.</h2>
+        <div class="local-grid">
+          <div><h3>Aucun compte</h3><p>Vos tâches et votre journal sont enregistrés sur votre PC. Listik n’envoie rien, sauf si vous utilisez l’assistant : vos questions passent alors par l’outil que vous avez branché, selon ses propres conditions.</p></div>
+          <div><h3>Une sauvegarde en un fichier</h3><p>Exportez tout depuis les réglages, et restaurez-le sur un autre ordinateur.</p></div>
+          <div><h3>Des mises à jour signées</h3><p>Listik vous propose les nouvelles versions et refuse toute mise à jour dont la signature ne correspond pas. Vous choisissez le moment.</p></div>
+          <div><h3>Open source</h3><p>Le code est public, sous licence MIT. <a href="https://github.com/DarilDivin/Listik" target="_blank" rel="noopener noreferrer">Le lire sur GitHub</a>.</p></div>
         </div>
-        <div class="download-action">
-          <a class="button button-primary" data-download-link href="https://github.com/DarilDivin/Listik/releases/latest">Télécharger Listik</a>
-          <p id="release-status" role="status" aria-live="polite">Recherche de la dernière version…</p>
+      </section>
+
+      <section class="download" id="telecharger" aria-labelledby="dl-titre">
+        <div class="download-main">
+          <svg class="dl-logo" role="img" aria-label="Listik"><use href="#logotype" /></svg>
+          <h2 id="dl-titre">Prêt quand vous l’êtes.</h2>
+          <a class="btn btn-large" data-download-link href="https://github.com/DarilDivin/Listik/releases/latest">
+            <svg class="i-win" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 5.6 10.4 4.6v7H3zM11.4 4.4 21 3v8.6h-9.6zM3 12.5h7.4v7L3 18.4zM11.4 12.5H21V21l-9.6-1.4z" /></svg>
+            Télécharger pour Windows
+          </a>
+          <p class="release" id="release-status" role="status" aria-live="polite">Recherche de la dernière version…</p>
+          <p class="req">Windows 10 ou 11, 64 bits. <a data-msi-link href="https://github.com/DarilDivin/Listik/releases/latest">Préférer le paquet .msi</a> · <a href="https://github.com/DarilDivin/Listik/releases" target="_blank" rel="noopener noreferrer">Toutes les versions</a></p>
         </div>
+        <div class="smartscreen">
+          <h3>Au premier lancement</h3>
+          <p>L’installateur n’est pas encore signé par un certificat Microsoft. Windows affichera donc « Windows a protégé votre ordinateur ».</p>
+          <ol>
+            <li>Cliquez sur <b>Informations complémentaires</b>.</li>
+            <li>Puis sur <b>Exécuter quand même</b>.</li>
+          </ol>
+          <p class="muted">Cela ne concerne que l’installation. Les mises à jour, elles, sont signées et vérifiées par Listik.</p>
+        </div>
+      </section>
+
+      <section class="faq" aria-labelledby="faq-titre">
+        <h2 id="faq-titre">Questions fréquentes</h2>
+        <details>
+          <summary>Listik est-il vraiment gratuit ?</summary>
+          <p>Oui. Il n’y a ni abonnement ni version payante. Le code est publié sous licence MIT.</p>
+        </details>
+        <details>
+          <summary>Où sont enregistrées mes données ?</summary>
+          <p>Dans un fichier sur votre PC, sans compte. Seules la vérification des mises à jour et l’assistant utilisent Internet ; l’assistant passe par l’outil que vous avez branché, selon ses propres conditions. Depuis les réglages, vous pouvez exporter une sauvegarde et la ranger où vous voulez.</p>
+        </details>
+        <details>
+          <summary>Faut-il un assistant IA pour s’en servir ?</summary>
+          <p>Non. La capture, le planificateur et le journal fonctionnent seuls. L’assistant est une option, si un outil compatible est déjà installé sur votre PC.</p>
+        </details>
+        <details>
+          <summary>Et sur Mac ou Linux ?</summary>
+          <p>Pas pour le moment : Listik est pensé et testé pour Windows.</p>
+        </details>
+        <details>
+          <summary>Comment se font les mises à jour ?</summary>
+          <p>Listik vérifie au démarrage si une nouvelle version existe et vous la propose. Rien ne s’installe sans votre accord.</p>
+        </details>
       </section>
     </main>
 
-    <footer class="site-footer">
-      <a class="footer-brand" href="#top">Listik<span>.</span></a>
+    <footer class="foot">
+      <svg class="foot-logo" role="img" aria-label="Listik"><use href="#logotype" /></svg>
       <p>Conçu par <a href="https://daril.fr" target="_blank" rel="noopener noreferrer">Daril D.</a></p>
-      <div class="footer-links"><a href="https://github.com/DarilDivin/Listik/releases" target="_blank" rel="noopener noreferrer">Toutes les versions</a><a href="https://github.com/DarilDivin/Listik" target="_blank" rel="noopener noreferrer">GitHub</a></div>
+      <p class="foot-links"><a href="https://github.com/DarilDivin/Listik" target="_blank" rel="noopener noreferrer">GitHub</a><a href="https://github.com/DarilDivin/Listik/releases" target="_blank" rel="noopener noreferrer">Versions</a><a href="https://github.com/DarilDivin/Listik/blob/main/LICENSE" target="_blank" rel="noopener noreferrer">Licence MIT</a></p>
     </footer>
     <script src="./app.js" defer></script>
   </body>
