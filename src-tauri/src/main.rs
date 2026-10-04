@@ -21,6 +21,14 @@ use tauri::{
 const QUICK_ACCELERATOR: &str = if cfg!(target_os = "macos") { "Alt+Space" } else { "Alt+Q" };
 
 fn main() {
+    let mut context = tauri::generate_context!();
+    // Le dev a ses propres données (base, pièces, profil du webview) : sinon
+    // l'app installée sur le même poste ouvre la base de dev, et les essais
+    // touchent les vraies tâches. Les chemins dérivent tous de l'identifiant.
+    if cfg!(debug_assertions) {
+        context.config_mut().identifier.push_str(".dev");
+    }
+
     tauri::Builder::default()
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_notification::init())
@@ -279,7 +287,7 @@ fn main() {
             commands::duplicate_todo,
             commands::duplicate_project,
         ])
-        .build(tauri::generate_context!())
+        .build(context)
         .expect("error while building tauri application")
         .run(|app_handle, event| {
             // Pas de process Python à tuer : l'IA est soit en Rust (R2-R4), soit
