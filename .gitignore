@@ -48,3 +48,7 @@ sidecar/.venv
 sidecar/__pycache__
 sidecar/*.pyc
 sidecar/listik_vec.db
+
+# animation du logo (Remotion, sous-projet npm)
+motion/node_modules
+motion/out

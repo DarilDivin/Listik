@@ -10,6 +10,8 @@ const compat = new FlatCompat({
 });
 
 const eslintConfig = [
+  // `motion/` est un sous-projet Remotion (npm) avec ses propres dépendances.
+  { ignores: ["motion/**"] },
   ...compat.extends("next/core-web-vitals", "next/typescript"),
 ];
 
