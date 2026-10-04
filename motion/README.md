@@ -57,3 +57,28 @@ logo : les changer ensemble.
 `src/logo-data.ts` est généré depuis le moteur du logo (les tracés Fraunces et la
 plume de `brand/`) : ne pas l'éditer à la main. Les polices du carton
 (`public/fonts/`) sont celles du site, sous licence OFL.
+
+## Le film de présentation
+
+`src/film/ListikFilm.tsx`, compositions `ListikFilm` (76 s, 16:9, 60 i/s) et
+`ListikFilmDebug` (mêmes images, avec la mesure, le temps et la scène en
+surimpression pour vérifier la synchro). Tout le montage se cale sur
+`src/film/timing.ts` : les temps de la musique (analyse librosa, 117,5 BPM),
+la mesure 0 posée à 5,0 s.
+
+```console
+npx remotion render ListikFilm out/listik-film-16x9.mp4 --codec=h264 --crf=17 --pixel-format=yuv420p --color-space=bt709 --jpeg-quality=95
+```
+
+**La musique n'est pas dans le dépôt** (la licence Pixabay interdit de la
+redistribuer seule). Avant de rendre, télécharger « Minimal » de PaulYudin
+(https://pixabay.com/music/corporate-minimal-164833/) dans
+`public/audio/minimal-paulyudin.mp3`. Le morceau est enregistré dans Content ID :
+garder le certificat de licence de Pixabay pour lever une réclamation YouTube.
+
+**Les images** (`public/film/`) sont de vraies captures de l'app, prises à
+l'échelle 3 avec le skill `debug-listik`, sur la base de données d'exemple
+(décalée au 4 octobre 2026). La tâche « Réserver l'hôtel vendredi #lisbonne ! »,
+la pensée du journal et la réponse de l'assistant (Claude Code) ont été créées
+pour de vrai dans l'app avant les captures ; seule la frappe dans la barre de
+capture est redessinée, avec les styles relevés sur le DOM.
