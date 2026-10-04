@@ -73,6 +73,19 @@ export function stripTagsFromText(task: string): string {
     .trim();
 }
 
+/**
+ * Retire du titre le marqueur de priorité « ! » ou « !! » quand il est écrit
+ * seul, comme `#projet` ou `@tag` : c'est un attribut, pas un mot de la tâche
+ * (« Appeler Marc ! » restait sinon avec son point d'exclamation). Les mots
+ * (« urgent », « important ») restent : ils font partie de la phrase.
+ */
+export function stripPriorityMarkerFromText(task: string): string {
+  return task
+    .replace(/(^|\s)!{1,2}(?=\s|$)/g, "$1")
+    .replace(/\s{2,}/g, " ")
+    .trim();
+}
+
 /** Détecte une date dans le texte (français, dates futures privilégiées). */
 export function parseTaskDate(task: string): { date: Date; match: DateMatch } | null {
   const results = chrono.fr.parse(task, new Date(), { forwardDate: true });

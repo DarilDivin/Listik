@@ -13,6 +13,7 @@ import {
   splitNote,
   stripListFromText,
   stripTagsFromText,
+  stripPriorityMarkerFromText,
 } from "./smartParse";
 
 describe("detectPriorityFromText", () => {
@@ -301,5 +302,18 @@ describe("détection multi-jours", () => {
   it("ne nomme aucun jour pour un rythme sans jour", () => {
     expect(days("Sport chaque semaine")).toEqual([]);
     expect(days("Sport chaque mois")).toEqual([]);
+  });
+});
+
+describe("stripPriorityMarkerFromText", () => {
+  it("retire le « ! » ou « !! » écrit seul", () => {
+    expect(stripPriorityMarkerFromText("Appeler Marc !")).toBe("Appeler Marc");
+    expect(stripPriorityMarkerFromText("Appeler Marc !! demain")).toBe("Appeler Marc demain");
+    expect(stripPriorityMarkerFromText("! Appeler Marc")).toBe("Appeler Marc");
+  });
+  it("garde les points d'exclamation collés aux mots et les mots de priorité", () => {
+    expect(stripPriorityMarkerFromText("Fêter ça !!! enfin")).toBe("Fêter ça !!! enfin");
+    expect(stripPriorityMarkerFromText("Bravo! à l'équipe")).toBe("Bravo! à l'équipe");
+    expect(stripPriorityMarkerFromText("Appel urgent au plombier")).toBe("Appel urgent au plombier");
   });
 });

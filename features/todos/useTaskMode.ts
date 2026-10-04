@@ -16,6 +16,7 @@ import {
   stripDateFromText,
   splitNote,
   stripListFromText,
+  stripPriorityMarkerFromText,
   stripTagsFromText,
 } from "./smartParse";
 
@@ -167,9 +168,9 @@ export function useTaskMode(
     setIsSubmitting(true);
     try {
       const { mainText, note } = splitNote(value);
-      // Retire du titre les marqueurs `#projet` et `@tag` : ce sont des
+      // Retire du titre les marqueurs `#projet`, `@tag` et « ! » : ce sont des
       // attributs, pas des mots de la tâche.
-      const withoutMarkers = stripTagsFromText(stripListFromText(mainText));
+      const withoutMarkers = stripPriorityMarkerFromText(stripTagsFromText(stripListFromText(mainText)));
       // La répétition part avec son fragment entier (« chaque lundi »), AVANT
       // la date : elle l'englobe, et l'attribut la porte désormais.
       const withoutRecurrence = stripRecurrenceFromText(
