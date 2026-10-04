@@ -1,12 +1,15 @@
 # Déployer Listik
 
-Ce dépôt publie une application Windows, une page de téléchargement et des
-mises à jour signées. Les trois éléments utilisent GitHub, mais ont des rôles
+Ce dépôt publie une application Windows (et une version d’essai pour macOS),
+une page de téléchargement et des mises à jour signées. Les trois éléments utilisent GitHub, mais ont des rôles
 différents :
 
 - **GitHub Actions – Verify** exécute les tests et le contrôle TypeScript sur
-  chaque pull request et sur `main`.
-- **GitHub Releases** héberge les installateurs `.exe` et `.msi`, ainsi que le
+  chaque pull request et chaque push, sous Windows et sous macOS. Le job macOS
+  est le seul endroit où le code propre au Mac compile : il ne se compile pas
+  depuis Windows.
+- **GitHub Releases** héberge les installateurs `.exe` et `.msi`, le `.dmg`
+  macOS (une seule app pour les Mac Intel et Apple Silicon), ainsi que le
   fichier `latest.json` consulté par l’application.
 - **GitHub Pages** héberge le site de téléchargement dans le dossier `site/`.
 
@@ -74,7 +77,8 @@ installations existantes.
    git push origin v0.2.0
    ```
 
-Le workflow **Publish release** construit les installateurs, les signe,
+Le workflow **Publish release** construit les installateurs Windows et macOS
+(deux jobs indépendants : l’échec de l’un n’arrête pas l’autre), les signe,
 crée la release GitHub et y dépose `latest.json`. Au démarrage, Listik trouve
 ce manifeste, vérifie la signature et propose l’installation de la nouvelle
 version.
@@ -87,3 +91,29 @@ parcours « une version plus récente est disponible ». Windows SmartScreen peu
 afficher un avertissement tant que l’application n’est pas aussi signée avec
 un certificat de signature de code : la signature Tauri protège les mises à
 jour, mais ne remplace pas ce certificat de réputation Windows.
+
+## La version macOS
+
+Elle est signée « ad hoc » seulement (`bundle.macOS.signingIdentity: "-"`) :
+pas de compte Apple Developer, donc pas de notarisation. macOS bloque la
+première ouverture ; la page de téléchargement explique le passage par
+Réglages Système › Confidentialité et sécurité › Ouvrir quand même. Pour s’en
+passer : un compte Apple Developer (99 $ par an), un certificat Developer ID et
+les secrets `APPLE_CERTIFICATE`, `APPLE_CERTIFICATE_PASSWORD`, `APPLE_ID`,
+`APPLE_PASSWORD` et `APPLE_TEAM_ID` dans le workflow de publication.
+
+Ce qui diffère du Windows, et reste à éprouver sur un vrai Mac :
+
+- la fenêtre garde ses pastilles natives (`tauri.macos.conf.json`) ; fermer la
+  fenêtre la masque, un clic sur le Dock la rouvre ;
+- le raccourci de capture est ⌥Espace (⌥Q taperait « œ ») ;
+- l’icône de la barre des menus est une silhouette (`icons/tray-template.png`) ;
+- l’écran d’ouverture animé est remplacé par le logo fixe (le moteur web du Mac
+  ne lit pas la transparence des WebM) ;
+- l’assistant lit le PATH du shell de connexion pour trouver `claude` ou
+  `opencode`, et ouvre la connexion dans le Terminal ;
+- `Info.plist` déclare l’usage du micro, sans quoi macOS ferme l’app à la
+  première note vocale.
+
+La page de téléchargement ne montre la version Mac que si la dernière release
+contient un `.dmg`.

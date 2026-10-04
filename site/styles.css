@@ -225,6 +225,7 @@ kbd {
 .release { font-size: 15px; color: var(--ink-2); }
 .req { font-size: 14px; color: var(--ink-3); }
 .req a { color: var(--ink-2); text-underline-offset: 3px; }
+[hidden] { display: none !important; }
 .smartscreen { padding: 26px 28px; border-radius: 18px; border: 1px solid var(--line); background: var(--surface); display: grid; gap: 12px; }
 .smartscreen p, .smartscreen li { color: var(--ink-2); font-size: 16px; }
 .smartscreen ol { margin: 0; padding-left: 22px; display: grid; gap: 4px; }

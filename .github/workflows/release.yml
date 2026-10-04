@@ -9,8 +9,24 @@ permissions:
 
 jobs:
   publish:
-    name: Build and publish Windows installers
-    runs-on: windows-latest
+    name: Build and publish (${{ matrix.name }})
+    strategy:
+      # Un échec sur Mac ne doit pas interrompre la publication Windows.
+      fail-fast: false
+      matrix:
+        include:
+          - name: Windows
+            platform: windows-latest
+            args: ""
+            rust-targets: ""
+          # Une seule app pour les Mac Intel et Apple Silicon. Signature
+          # ad hoc seulement (bundle.macOS.signingIdentity = "-") : pas
+          # encore de compte Apple Developer, donc pas de notarisation.
+          - name: macOS
+            platform: macos-latest
+            args: "--target universal-apple-darwin"
+            rust-targets: "aarch64-apple-darwin,x86_64-apple-darwin"
+    runs-on: ${{ matrix.platform }}
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -21,6 +37,8 @@ jobs:
           node-version: 20
           cache: pnpm
       - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.rust-targets }}
       - run: pnpm install --frozen-lockfile
       - name: Verify that the tag matches the application version
         shell: pwsh
@@ -36,9 +54,10 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
           tauriScript: pnpm tauri
+          args: ${{ matrix.args }}
           tagName: v__VERSION__
           releaseName: Listik v__VERSION__
-          releaseBody: "Consultez les notes de version et téléchargez l’installateur adapté à votre PC."
+          releaseBody: "Consultez les notes de version et téléchargez l’installateur adapté à votre ordinateur : .exe ou .msi pour Windows, .dmg pour macOS (version d’essai, non signée par Apple)."
           releaseDraft: false
           prerelease: false
           uploadUpdaterJson: true

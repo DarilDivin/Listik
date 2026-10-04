@@ -10,6 +10,7 @@ import { ThemeProvider } from "@/components/theme-provider";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { UIPrefsProvider } from "@/components/ui-prefs";
 import { UpdateManager } from "@/components/UpdateManager";
+import { useIsMac } from "@/lib/keys";
 
 const SWR_OPTIONS = {
   revalidateOnFocus: true,
@@ -29,6 +30,10 @@ export default function RootLayout({
   // doit hériter ni du fond `bg-background` ni de la TitleBar.
   // `trailingSlash: true` (next.config) → le chemin est « /quick/ » : on normalise.
   const isQuick = usePathname()?.replace(/\/$/, "") === "/quick";
+  // Sur Mac, la fenêtre garde ses trois pastilles natives (barre de titre
+  // « Overlay », voir tauri.macos.conf.json) : une bande fixe de 28 px leur
+  // fait place et sert de poignée, à la place de la TitleBar Windows 11.
+  const mac = useIsMac();
 
   return (
     <html lang="fr" className="h-full" suppressHydrationWarning>
@@ -62,6 +67,9 @@ export default function RootLayout({
               ) : (
                 <>
                   <div className="grain" aria-hidden />
+                  {mac ? (
+                    <div data-tauri-drag-region className="h-7 shrink-0 select-none" />
+                  ) : (
                   <div
                     className={`bg-transparent relative overflow-hidden transition-all duration-300 ease-in-out ${
                       showTitleBar ? "py-0" : "py-1"
@@ -86,10 +94,11 @@ export default function RootLayout({
                       />
                     </div>
                   </div>
+                  )}
 
                   <div
                     className={`bg-background p-2 pt-0 w-full overflow-hidden transition-all duration-300 ${
-                      showTitleBar ? "h-[calc(100vh-32px)]" : "h-[calc(100vh-8px)]"
+                      mac ? "h-[calc(100vh-28px)]" : showTitleBar ? "h-[calc(100vh-32px)]" : "h-[calc(100vh-8px)]"
                     }`}
                   >
                   <SWRConfig value={SWR_OPTIONS}>

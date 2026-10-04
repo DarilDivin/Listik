@@ -35,7 +35,7 @@ import { areasApi, projectsApi } from "@/features/projects/api";
 import { TODOS_CHANGED, todosApi } from "@/features/todos/api";
 import { useCaptureTask } from "@/features/todos/useCaptureTask";
 import { todayLocalISODate } from "@/lib/date";
-import { useAltKey, useCommandKey } from "@/lib/keys";
+import { useCommandKey, useQuickShortcut } from "@/lib/keys";
 import { spring } from "@/lib/motion";
 import { cn } from "@/lib/utils";
 
@@ -307,7 +307,7 @@ function WelcomeStep() {
         <Title>Une touche, l’idée est posée.</Title>
         <Lead>
           Listik note vos tâches, vos pensées et vos questions, puis les range dans un planificateur et un journal.
-          Sans compte : vos tâches et votre journal sont enregistrés sur votre PC. Une minute pour bien démarrer.
+          Sans compte : vos tâches et votre journal sont enregistrés sur votre ordinateur. Une minute pour bien démarrer.
         </Lead>
       </div>
     </div>
@@ -336,7 +336,9 @@ function GestureStep({
   fallback: boolean;
   onFallback: () => void;
 }) {
-  const alt = useAltKey();
+  const shortcut = useQuickShortcut();
+  // « Alt+Q » sous Windows ; sur Mac, l’usage colle les touches : « ⌥ Espace ».
+  const gesture = shortcut.join(shortcut[0] === "⌥" ? " " : "+");
   const capture = useCaptureTask();
 
   if (captured) {
@@ -374,12 +376,12 @@ function GestureStep({
   return (
     <div>
       <div className="flex items-center gap-3" aria-hidden>
-        <Key press>{alt}</Key>
+        <Key press>{shortcut[0]}</Key>
         <span className="text-2xl font-light text-muted-foreground">+</span>
-        <Key press>Q</Key>
+        <Key press>{shortcut[1]}</Key>
       </div>
       <div className="mt-9">
-        <Title>Appuyez sur {alt}+Q.</Title>
+        <Title>Appuyez sur {gesture}.</Title>
         <Lead>
           Depuis n’importe quelle application. Une petite fenêtre s’ouvre : écrivez une chose à faire, puis Entrée.
           Listik repère la date, le projet et la priorité.
@@ -418,7 +420,7 @@ function GestureStep({
               className="text-sm text-muted-foreground underline decoration-foreground/20 underline-offset-4 transition-colors hover:text-foreground hover:decoration-foreground/60"
               exit={{ opacity: 0 }}
             >
-              {alt}+Q ne répond pas ? Essayez ici.
+              {gesture} ne répond pas ? Essayez ici.
             </motion.button>
           )}
         </AnimatePresence>

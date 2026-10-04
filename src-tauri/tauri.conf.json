@@ -66,7 +66,8 @@
         "connect-src": "'self' ipc: http://ipc.localhost ws://localhost:* http://localhost:*"
       },
       "dangerousDisableAssetCspModification": ["style-src"]
-    }
+    },
+    "macOSPrivateApi": true
   },
   "bundle": {
     "active": true,
@@ -78,7 +79,12 @@
       "icons/128x128@2x.png",
       "icons/icon.icns",
       "icons/icon.ico"
-    ]
+    ],
+    "macOS": {
+      "signingIdentity": "-",
+      "minimumSystemVersion": "13.3",
+      "entitlements": "./Entitlements.plist"
+    }
   },
   "plugins": {
     "updater": {

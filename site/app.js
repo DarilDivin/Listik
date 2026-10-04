@@ -111,8 +111,14 @@ if ("IntersectionObserver" in window) {
 }
 demo.addEventListener("click", () => void playDemo());
 
-/* Dernière version : lien direct vers l'installateur, sinon le paquet .msi, sinon la page GitHub. */
+/* Dernière version : lien direct vers l'installateur, sinon le paquet .msi, sinon la page GitHub.
+   La version Mac n'apparaît que si la dernière version contient vraiment un .dmg. */
 const downloadLinks = document.querySelectorAll("[data-download-link]");
+const isMacVisitor = /Macintosh|Mac OS X/.test(navigator.userAgent) && !/iPhone|iPad/.test(navigator.userAgent);
+
+function show(selector, visible) {
+  document.querySelectorAll(selector).forEach((el) => { el.hidden = !visible; });
+}
 const msiLinks = document.querySelectorAll("[data-msi-link]");
 const releaseStatus = document.querySelector("#release-status");
 
@@ -133,15 +139,41 @@ async function showLatestRelease() {
     const setup = assets.find((asset) => /-setup\.exe$/i.test(asset.name));
     const msi = assets.find((asset) => /\.msi$/i.test(asset.name));
     const installer = setup ?? msi;
+    const dmg = assets.find((asset) => /\.dmg$/i.test(asset.name));
     const releaseUrl = release.html_url || `https://github.com/${repository}/releases/latest`;
     const version = (release.tag_name || release.name || "").replace(/^v/i, "");
 
-    downloadLinks.forEach((link) => { link.href = installer?.browser_download_url || releaseUrl; });
+    const forMac = Boolean(dmg) && isMacVisitor;
+    const primary = forMac ? dmg : installer;
+
+    downloadLinks.forEach((link) => { link.href = primary?.browser_download_url || releaseUrl; });
     msiLinks.forEach((link) => { link.href = msi?.browser_download_url || releaseUrl; });
     document.querySelectorAll("[data-version]").forEach((el) => { if (version) el.textContent = `Version ${version}`; });
-    releaseStatus.textContent = installer
-      ? `Version ${version} · installateur Windows · ${formatSize(installer.size)}`
+    releaseStatus.textContent = primary
+      ? `Version ${version} · ${forMac ? "version d’essai pour Mac" : "installateur Windows"} · ${formatSize(primary.size)}`
       : `Version ${version} · voir les fichiers sur GitHub`;
+
+    if (dmg) {
+      show("[data-mac-faq]", true);
+      document.querySelectorAll("[data-win-only]").forEach((el) => { if (el.closest("details")) el.hidden = true; });
+      // L'autre système, en lien discret sous le bouton.
+      const other = forMac ? installer : dmg;
+      document.querySelectorAll("[data-other-os-link]").forEach((link) => {
+        link.href = other?.browser_download_url || releaseUrl;
+        link.textContent = forMac ? "Aussi pour Windows" : "Aussi pour Mac (version d’essai)";
+      });
+      show("[data-other-os]", true);
+    }
+    if (forMac) {
+      document.querySelectorAll("[data-os-label]").forEach((el) => { el.textContent = "Mac"; });
+      // Le raccourci de capture du Mac (voir src-tauri/src/main.rs).
+      document.querySelectorAll("[data-shortcut]").forEach((el) => { el.textContent = "⌥ Espace"; });
+      document.querySelectorAll("[data-shortcut-mod]").forEach((el) => { el.textContent = "⌥"; });
+      document.querySelectorAll("[data-shortcut-key]").forEach((el) => { el.textContent = "Espace"; });
+      document.querySelectorAll(".i-win").forEach((el) => { el.style.display = "none"; });
+      show("[data-win-only]", false);
+      show("[data-mac-only]", true);
+    }
   } catch {
     releaseStatus.textContent = "Voir la dernière version disponible sur GitHub.";
   }

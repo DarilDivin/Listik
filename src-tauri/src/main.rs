@@ -17,6 +17,9 @@ use tauri::{
     Manager,
 };
 
+/// Le raccourci de capture rapide, tel que l'affiche le menu du tray.
+const QUICK_ACCELERATOR: &str = if cfg!(target_os = "macos") { "Alt+Space" } else { "Alt+Q" };
+
 fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_process::init())
@@ -27,6 +30,17 @@ fn main() {
         // Il ne lance aucune vérification par lui-même : le frontend choisit le
         // moment où l'utilisateur est averti puis demande l'installation.
         .plugin(tauri_plugin_updater::Builder::new().build())
+        // Fermer la fenêtre principale la masque : l'app continue dans le tray
+        // (ou la barre des menus) et `show_main_window` peut la rouvrir. La
+        // détruire laissait le tray et Alt+Q sans fenêtre à montrer.
+        .on_window_event(|window, event| {
+            if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                if window.label() == "main" {
+                    api.prevent_close();
+                    let _ = window.hide();
+                }
+            }
+        })
         .setup(|app| {
             // --- Base de données (accès SQL côté Rust) ---
             let handle = app.handle().clone();
@@ -74,6 +88,12 @@ fn main() {
                 }
             }
 
+            // --- PATH de l'utilisateur (macOS) : demandé tout de suite, à part,
+            // pour que le premier tour d'assistant n'attende pas le shell.
+            std::thread::spawn(|| {
+                let _ = cli_agent::user_path();
+            });
+
             // --- Planificateur de rappels (notifications en arrière-plan) ---
             reminders::spawn_scheduler(app.handle().clone());
 
@@ -82,7 +102,7 @@ fn main() {
             // par l'OS ; on soigne la structure, les libellés et le raccourci).
             let header = MenuItem::with_id(app, "header", "Listik", false, None::<&str>)?;
             let quick_task =
-                MenuItem::with_id(app, "quick_task", "Tâche rapide", true, Some("Alt+Q"))?;
+                MenuItem::with_id(app, "quick_task", "Tâche rapide", true, Some(QUICK_ACCELERATOR))?;
             let open_app =
                 MenuItem::with_id(app, "main", "Ouvrir Listik", true, None::<&str>)?;
             let quit = MenuItem::with_id(app, "quit", "Quitter Listik", true, None::<&str>)?;
@@ -99,14 +119,22 @@ fn main() {
                 ],
             )?;
 
-            let icon = app
-                .default_window_icon()
-                .cloned()
-                .ok_or_else(|| std::io::Error::other("icône de fenêtre par défaut manquante"))?;
+            // Sur Mac, la barre des menus attend une icône « modèle » : une
+            // silhouette noire que le système teinte selon le thème. Ailleurs,
+            // l'icône de l'app en couleurs.
+            let template = cfg!(target_os = "macos");
+            let icon = if template {
+                tauri::image::Image::from_bytes(include_bytes!("../icons/tray-template.png"))?
+            } else {
+                app.default_window_icon()
+                    .cloned()
+                    .ok_or_else(|| std::io::Error::other("icône de fenêtre par défaut manquante"))?
+            };
 
             let _tray = TrayIconBuilder::with_id("main-tray")
                 .tooltip("Listik - Gestionnaire de tâches")
                 .icon(icon)
+                .icon_as_template(template)
                 .menu(&menu)
                 .on_menu_event(move |app_handle, event| match event.id.as_ref() {
                     "quick_task" => {
@@ -148,15 +176,22 @@ fn main() {
 
             println!("🚀 Application Listik démarrée !");
 
-            // --- Raccourci global Alt+Space ---
+            // --- Raccourci global de capture rapide ---
             #[cfg(desktop)]
             {
                 use tauri_plugin_global_shortcut::{
                     Code, GlobalShortcutExt, Modifiers, Shortcut, ShortcutState,
                 };
 
-                // Alt+Space est réservé par Windows (menu système) → Alt+Q.
-                let toggle_shortcut = Shortcut::new(Some(Modifiers::ALT), Code::KeyQ);
+                // Alt+Espace est réservé par Windows (menu système) → Alt+Q.
+                // Sur Mac, ⌥Q taperait « œ » et dépend de la disposition du
+                // clavier (en AZERTY, c'est la touche A) : ⌥Espace, la même
+                // touche partout, comme les lanceurs du Mac.
+                let toggle_shortcut = if cfg!(target_os = "macos") {
+                    Shortcut::new(Some(Modifiers::ALT), Code::Space)
+                } else {
+                    Shortcut::new(Some(Modifiers::ALT), Code::KeyQ)
+                };
                 let shortcut_handle = app.handle().clone();
 
                 app.handle().plugin(
@@ -178,7 +213,7 @@ fn main() {
 
                 // Ne pas planter si le raccourci est déjà pris par un autre programme.
                 if let Err(e) = app.global_shortcut().register(toggle_shortcut) {
-                    eprintln!("⚠️ Impossible d'enregistrer Alt+Q (déjà utilisé ?) : {e}");
+                    eprintln!("⚠️ Impossible d'enregistrer {QUICK_ACCELERATOR} (déjà utilisé ?) : {e}");
                 }
             }
 
@@ -249,6 +284,15 @@ fn main() {
         .run(|app_handle, event| {
             // Pas de process Python à tuer : l'IA est soit en Rust (R2-R4), soit
             // lancée à la demande par cli_agent (tuée explicitement par le code).
-            let _ = app_handle;
+            //
+            // Sur Mac, un clic sur l'icône du Dock rouvre la fenêtre masquée.
+            #[cfg(target_os = "macos")]
+            if let tauri::RunEvent::Reopen { .. } = event {
+                if let Some(window) = app_handle.get_webview_window("main") {
+                    let _ = window.show();
+                    let _ = window.set_focus();
+                }
+            }
+            let _ = (app_handle, event);
         });
 }

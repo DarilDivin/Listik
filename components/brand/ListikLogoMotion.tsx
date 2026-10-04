@@ -4,6 +4,7 @@ import { useReducedMotion } from "motion/react";
 import { useTheme } from "next-themes";
 import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { ListikLogotype } from "@/components/brand/ListikLogo";
+import { isApplePlatform } from "@/lib/keys";
 import { cn } from "@/lib/utils";
 
 /*
@@ -18,6 +19,10 @@ import { cn } from "@/lib/utils";
  * proportions de `ListikLogotype` : la mise en page ne bouge pas, et le logo
  * statique prend la même place quand l'animation est indisponible (réduire les
  * animations, vidéo illisible).
+ *
+ * Sur Mac, le logo statique : le moteur web du Mac (WebKit) ne lit pas la
+ * transparence des WebM VP9, et pourrait les jouer sur fond noir sans lever
+ * d'erreur. On tranche donc par plateforme, pas sur `onError`.
  *
  * Géométrie : SPLASH_GEOMETRY et `framing` dans motion/src/LogoSting.tsx
  * (cadre 1600 × 900, logo sur 56 % de la largeur, centré). À changer ensemble.
@@ -58,9 +63,13 @@ export function ListikLogoMotion({ className, delay = 0, onPlaying, onUnavailabl
   const [failed, setFailed] = useState(false);
   // Le thème n'est connu qu'une fois monté : rien avant, pour ne pas désaccorder l'hydratation.
   const [mounted, setMounted] = useState(false);
-  useEffect(() => setMounted(true), []);
+  const [mac, setMac] = useState(false);
+  useEffect(() => {
+    setMac(isApplePlatform());
+    setMounted(true);
+  }, []);
 
-  const fallback = failed || reduceMotion === true;
+  const fallback = failed || reduceMotion === true || mac;
   const variant = resolvedTheme === "dark" ? "dark" : "light";
 
   useEffect(() => {

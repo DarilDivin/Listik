@@ -1,0 +1,39 @@
+{
+  "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "Listik",
+        "width": 1200,
+        "height": 800,
+        "minWidth": 800,
+        "minHeight": 560,
+        "visible": true,
+        "center": true,
+        "decorations": true,
+        "resizable": true,
+        "dragDropEnabled": false,
+        "titleBarStyle": "Overlay",
+        "hiddenTitle": true
+      },
+      {
+        "label": "quick",
+        "title": "Capture rapide",
+        "url": "/quick",
+        "width": 630,
+        "height": 64,
+        "resizable": false,
+        "alwaysOnTop": true,
+        "decorations": false,
+        "transparent": true,
+        "shadow": false,
+        "skipTaskbar": true,
+        "visible": false,
+        "center": true,
+        "maximizable": false,
+        "visibleOnAllWorkspaces": true
+      }
+    ]
+  }
+}

@@ -4,6 +4,7 @@ import { motion } from "motion/react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ListikLogoMotion } from "@/components/brand/ListikLogoMotion";
 import { ONBOARDING_KEY } from "@/features/onboarding/onboarding";
+import { isApplePlatform } from "@/lib/keys";
 
 /** sessionStorage : déjà joué pendant ce lancement (un rechargement ne le rejoue pas). */
 const SPLASH_KEY = "listik.splash";
@@ -23,7 +24,8 @@ type Phase = "cover" | "play" | "fade" | "gone";
  * - à la première installation (l'accueil a déjà son logo animé) : on le
  *   reconnaît à l'absence de la marque de l'accueil, quitte à le rater une fois
  *   pour quelqu'un qui avait déjà des données ;
- * - sous « réduire les animations ».
+ * - sous « réduire les animations » ;
+ * - sur Mac, tant que la vidéo n'y a pas d'équivalent (voir ListikLogoMotion).
  *
  * Le premier rendu couvre déjà l'écran (il est dans le HTML statique) : l'app
  * n'apparaît pas une fraction de seconde avant lui. Toute décision se prend
@@ -42,7 +44,8 @@ export function SplashScreen() {
       skip =
         sessionStorage.getItem(SPLASH_KEY) === "1" ||
         !localStorage.getItem(ONBOARDING_KEY) ||
-        window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+        window.matchMedia("(prefers-reduced-motion: reduce)").matches ||
+        isApplePlatform();
       sessionStorage.setItem(SPLASH_KEY, "1");
     } catch {
       /* stockage indisponible : on ne joue rien plutôt que de rejouer à chaque fois */

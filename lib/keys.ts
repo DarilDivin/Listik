@@ -44,9 +44,32 @@ const KEY_WORD: Record<keyof typeof KEY_GLYPH, string> = {
   down: "↓",
 };
 
-function isApplePlatform(): boolean {
+/** Mac (ou appareil Apple). À n'appeler qu'après le montage : l'app est exportée en statique. */
+export function isApplePlatform(): boolean {
   if (typeof navigator === "undefined") return false;
   return /Mac|iPhone|iPad|iPod/.test(navigator.userAgent);
+}
+
+/**
+ * `true` sur Mac, résolu après le montage comme les libellés de touches. Le
+ * premier rendu (et le HTML statique) est donc celui de Windows.
+ */
+export function useIsMac(): boolean {
+  const [mac, setMac] = useState(false);
+  useEffect(() => {
+    if (isApplePlatform()) setMac(true);
+  }, []);
+  return mac;
+}
+
+/**
+ * Les touches du raccourci global de capture rapide, tel que l'enregistre
+ * src-tauri/src/main.rs : Alt+Q sous Windows, ⌥Espace sur Mac (⌥Q y taperait
+ * « œ », et Q change de place selon la disposition du clavier).
+ */
+export function useQuickShortcut(): string[] {
+  const mac = useIsMac();
+  return mac ? ["⌥", "Espace"] : ["Alt", "Q"];
 }
 
 /**

@@ -36,14 +36,15 @@ Les images de `assets/shots/` sont de vraies captures de l’app, en clair et en
 
 ## Contrats de `app.js`
 
-- `[data-download-link]` reçoit l’adresse de l’installateur `-setup.exe` de la dernière version, à défaut le `.msi`, à défaut la page GitHub.
+- `[data-download-link]` reçoit l’adresse de l’installateur `-setup.exe` de la dernière version, à défaut le `.msi`, à défaut la page GitHub. Pour un visiteur sur Mac, et seulement si la dernière version contient un `.dmg`, il reçoit le `.dmg` ; `[data-os-label]` passe alors de « Windows » à « Mac ».
+- Version Mac : tant que la dernière version n’a pas de `.dmg`, la page reste celle de Windows. Avec un `.dmg`, `[data-other-os]` / `[data-other-os-link]` proposent l’autre système, `[data-mac-faq]` remplace la réponse « pas pour le moment », et pour un visiteur sur Mac, `[data-mac-only]` (configuration requise, encadré Gatekeeper) remplace `[data-win-only]`, et `[data-shortcut]`, `[data-shortcut-mod]`, `[data-shortcut-key]` passent d’Alt+Q à ⌥ Espace.
 - `[data-msi-link]` reçoit le `.msi`.
 - `#release-status` (`aria-live`) affiche la version et la taille ; `[data-version]` affiche la version.
 - La démonstration de saisie se tape quand elle entre à l’écran. Sans JavaScript ou avec « réduire les animations », l’état final reste affiché.
 
 ## Règles
 
-- Dire la vérité sur l’installation : l’installateur n’a pas de signature Authenticode, donc SmartScreen avertit. Seules les mises à jour sont signées.
+- Dire la vérité sur l’installation : l’installateur n’a pas de signature Authenticode, donc SmartScreen avertit ; l’app Mac n’est pas notarisée, donc Gatekeeper bloque la première ouverture. Seules les mises à jour sont signées.
 - Pas de faux témoignages, pas de chiffres inventés.
 - Éviter les tics décoratifs : étiquettes en petites capitales à chaque section, filets façon journal, numéros qui ne décrivent pas une séquence.
 - Garder les mêmes points de rupture : 960 px (une colonne) et 560 px (téléphone).

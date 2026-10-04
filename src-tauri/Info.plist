@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <!-- Sans cette phrase, macOS ferme l'app au premier enregistrement d'une note vocale du journal. -->
+  <key>NSMicrophoneUsageDescription</key>
+  <string>Listik utilise le micro pour enregistrer les notes vocales de votre journal.</string>
+</dict>
+</plist>

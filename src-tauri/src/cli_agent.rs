@@ -652,6 +652,120 @@ pub fn spawn_mcp_server(executor: Arc<dyn ToolExecutor>) -> Result<McpServer, St
 // Localisation + invocation du CLI
 // ---------------------------------------------------------------------------
 
+/// Le PATH de l'utilisateur tel que le voit son terminal, sur macOS.
+///
+/// Une app lancée depuis le Finder ou le Dock hérite d'un PATH minimal
+/// (`/usr/bin:/bin:/usr/sbin:/sbin`) : `claude`, `opencode` et le `node` dont
+/// OpenCode a besoin (Homebrew, `~/.local/bin`, nvm…) y sont introuvables. On
+/// le demande donc une fois au shell de connexion de l'utilisateur. `None`
+/// ailleurs : Windows transmet déjà le PATH complet aux applications.
+pub fn user_path() -> Option<&'static str> {
+    static PATH: std::sync::OnceLock<Option<String>> = std::sync::OnceLock::new();
+    PATH.get_or_init(|| {
+        if !cfg!(target_os = "macos") {
+            return None;
+        }
+        let base = login_shell_path()
+            .or_else(|| std::env::var("PATH").ok())
+            .unwrap_or_default();
+        // Les emplacements usuels, au cas où le shell n'aurait rien dit.
+        let home = std::env::var("HOME").unwrap_or_default();
+        let extras = [
+            "/opt/homebrew/bin".to_string(),
+            "/usr/local/bin".to_string(),
+            format!("{home}/.local/bin"),
+            format!("{home}/.claude/local"),
+            format!("{home}/.opencode/bin"),
+        ];
+        let mut dirs: Vec<String> = base
+            .split(':')
+            .filter(|d| !d.is_empty())
+            .map(String::from)
+            .collect();
+        for extra in extras {
+            if !dirs.contains(&extra) {
+                dirs.push(extra);
+            }
+        }
+        Some(dirs.join(":"))
+    })
+    .as_deref()
+}
+
+const PATH_MARK: &str = "__LISTIK_PATH__";
+
+/// Lance le shell de connexion (`$SHELL -ilc`) et lit son PATH, encadré par
+/// une marque pour ignorer ce que les fichiers de démarrage affichent. Huit
+/// secondes au plus (nvm et consorts sont lents) : un shell bloqué ne doit pas
+/// bloquer l'app. Préparé dès le démarrage, sur un fil à part (main.rs).
+fn login_shell_path() -> Option<String> {
+    let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/zsh".into());
+    let script = format!("printf '{PATH_MARK}%s{PATH_MARK}' \"$PATH\"");
+    let mut child = std::process::Command::new(shell)
+        .args(["-ilc", &script])
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::null())
+        .spawn()
+        .ok()?;
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(8);
+    loop {
+        match child.try_wait() {
+            Ok(Some(_)) => break,
+            Ok(None) if std::time::Instant::now() < deadline => {
+                std::thread::sleep(std::time::Duration::from_millis(50))
+            }
+            _ => {
+                let _ = child.kill();
+                return None;
+            }
+        }
+    }
+    let output = child.wait_with_output().ok()?;
+    parse_marked_path(&String::from_utf8_lossy(&output.stdout))
+}
+
+/// Extrait le PATH placé entre deux marques, quel que soit le bruit autour.
+fn parse_marked_path(text: &str) -> Option<String> {
+    let start = text.find(PATH_MARK)? + PATH_MARK.len();
+    let len = text[start..].find(PATH_MARK)?;
+    let path = text[start..start + len].trim();
+    (!path.is_empty()).then(|| path.to_string())
+}
+
+/// Cherche un exécutable dans le PATH de l'utilisateur (macOS seulement).
+#[cfg_attr(windows, allow(dead_code))]
+fn find_on_user_path(name: &str) -> Option<PathBuf> {
+    std::env::split_paths(user_path()?)
+        .map(|dir| dir.join(name))
+        .find(|candidate| candidate.is_file())
+}
+
+/// Hors Mac (Linux), le nom nu, comme avant : le PATH y est déjà complet. Sur
+/// Mac, un CLI absent du PATH de l'utilisateur est absent.
+#[cfg_attr(windows, allow(dead_code))]
+fn bare_name_off_mac(name: &str) -> Option<PathBuf> {
+    (!cfg!(target_os = "macos")).then(|| PathBuf::from(name))
+}
+
+/// Une commande synchrone qui voit le PATH de l'utilisateur.
+fn cli_command(program: impl AsRef<std::ffi::OsStr>) -> std::process::Command {
+    let mut cmd = std::process::Command::new(program);
+    if let Some(path) = user_path() {
+        cmd.env("PATH", path);
+    }
+    cmd
+}
+
+/// La même, pour les tours d'agent (tokio).
+fn cli_command_async(program: impl AsRef<std::ffi::OsStr>) -> tokio::process::Command {
+    let mut cmd = tokio::process::Command::new(program);
+    if let Some(path) = user_path() {
+        cmd.env("PATH", path);
+    }
+    cmd
+}
+
 /// Trouve le binaire `claude` (initial) sur cette machine.
 #[cfg(windows)]
 pub fn resolve_claude_binary() -> Option<PathBuf> {
@@ -663,7 +777,7 @@ pub fn resolve_claude_binary() -> Option<PathBuf> {
     ];
     candidates.into_iter().find(|p| {
         if p.file_name() == Some(std::ffi::OsStr::new("claude")) {
-            std::process::Command::new(p).arg("--version").output().map(|o| o.status.success()).unwrap_or(false)
+            cli_command(p).arg("--version").output().map(|o| o.status.success()).unwrap_or(false)
         } else {
             p.is_file()
         }
@@ -674,24 +788,24 @@ pub fn resolve_claude_binary() -> Option<PathBuf> {
 pub fn resolve_codex_binary() -> Option<PathBuf> {
     [PathBuf::from("codex.exe"), PathBuf::from("codex")]
         .into_iter()
-        .find(|p| std::process::Command::new(p).arg("--version").output().map(|o| o.status.success()).unwrap_or(false))
+        .find(|p| cli_command(p).arg("--version").output().map(|o| o.status.success()).unwrap_or(false))
 }
 
 #[cfg(not(windows))]
-pub fn resolve_codex_binary() -> Option<PathBuf> { Some(PathBuf::from("codex")) }
+pub fn resolve_codex_binary() -> Option<PathBuf> { find_on_user_path("codex").or_else(|| bare_name_off_mac("codex")) }
 
 #[cfg(windows)]
 pub fn resolve_antigravity_binary() -> Option<PathBuf> {
     [PathBuf::from("agy.exe"), PathBuf::from("agy")]
         .into_iter()
-        .find(|p| std::process::Command::new(p).arg("--version").output().map(|o| o.status.success()).unwrap_or(false))
+        .find(|p| cli_command(p).arg("--version").output().map(|o| o.status.success()).unwrap_or(false))
 }
 
 #[cfg(not(windows))]
-pub fn resolve_antigravity_binary() -> Option<PathBuf> { Some(PathBuf::from("agy")) }
+pub fn resolve_antigravity_binary() -> Option<PathBuf> { find_on_user_path("agy").or_else(|| bare_name_off_mac("agy")) }
 
 fn binary_version(path: &Path) -> Option<String> {
-    std::process::Command::new(path).arg("--version").output().ok()
+    cli_command(path).arg("--version").output().ok()
         .filter(|o| o.status.success())
         .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
 }
@@ -704,7 +818,7 @@ pub fn inspect_providers() -> Vec<CliProviderStatus> {
     };
     let mut codex = describe("codex", "Codex CLI", resolve_codex_binary());
     if let Some(path) = resolve_codex_binary() {
-        let output = std::process::Command::new(path).args(["login", "status"]).output();
+        let output = cli_command(path).args(["login", "status"]).output();
         if let Ok(output) = output {
             let text = format!("{}{}", String::from_utf8_lossy(&output.stdout), String::from_utf8_lossy(&output.stderr));
             let normalized = text.to_lowercase();
@@ -756,12 +870,57 @@ pub fn launch_provider_login(provider: &str) -> Result<(), String> {
     Ok(())
 }
 
-#[cfg(not(windows))]
-pub fn launch_provider_login(_: &str) -> Result<(), String> { Err("connexion interactive disponible sur Windows uniquement pour le moment".into()) }
+/// Sur macOS : un script `.command` temporaire, ouvert par le Terminal. Pas
+/// d'AppleScript, donc ni échappement fragile ni demande « Listik veut
+/// contrôler Terminal ».
+#[cfg(target_os = "macos")]
+pub fn launch_provider_login(provider: &str) -> Result<(), String> {
+    use std::os::unix::fs::PermissionsExt;
+    let (binary, arguments): (Option<PathBuf>, &[&str]) = match provider {
+        "claude" => (resolve_claude_binary(), &["auth", "login"]),
+        "codex" => (resolve_codex_binary(), &["login"]),
+        "antigravity" => (resolve_antigravity_binary(), &[]),
+        "opencode" => (resolve_opencode_binary(), &["auth", "login"]),
+        _ => return Err("fournisseur inconnu".into()),
+    };
+    let binary = binary.ok_or_else(|| "CLI introuvable".to_string())?;
+    let script = login_script(&binary.display().to_string(), arguments, user_path());
+    let file = std::env::temp_dir().join(format!("listik-connexion-{provider}.command"));
+    std::fs::write(&file, script).map_err(|e| format!("impossible de préparer le terminal : {e}"))?;
+    std::fs::set_permissions(&file, std::fs::Permissions::from_mode(0o700))
+        .map_err(|e| format!("impossible de préparer le terminal : {e}"))?;
+    std::process::Command::new("open")
+        .arg(&file)
+        .spawn()
+        .map_err(|e| format!("impossible d’ouvrir le terminal : {e}"))?;
+    Ok(())
+}
+
+#[cfg(not(any(windows, target_os = "macos")))]
+pub fn launch_provider_login(_: &str) -> Result<(), String> { Err("connexion interactive disponible sur Windows et macOS uniquement pour le moment".into()) }
+
+/// Le script shell qui lance le flux de connexion d'un CLI, puis laisse le
+/// terminal ouvert. Chaque valeur est entre apostrophes : aucune n'est
+/// interprétée par le shell. Arguments connus, choisis par Listik.
+#[cfg_attr(windows, allow(dead_code))]
+fn login_script(binary: &str, arguments: &[&str], path: Option<&str>) -> String {
+    let quote = |value: &str| format!("'{}'", value.replace('\'', r"'\''"));
+    let mut script = String::from("#!/bin/sh\n");
+    if let Some(path) = path {
+        script.push_str(&format!("export PATH={}\n", quote(path)));
+    }
+    let line: Vec<String> = std::iter::once(binary)
+        .chain(arguments.iter().copied())
+        .map(quote)
+        .collect();
+    script.push_str(&line.join(" "));
+    script.push_str("\nexec \"${SHELL:-/bin/zsh}\" -l\n");
+    script
+}
 
 #[cfg(not(windows))]
 pub fn resolve_claude_binary() -> Option<PathBuf> {
-    Some(PathBuf::from("claude"))
+    find_on_user_path("claude").or_else(|| bare_name_off_mac("claude"))
 }
 
 /// Écrit le fichier mcp.json temporaire qui pointe vers notre serveur HTTP.
@@ -797,7 +956,7 @@ pub async fn run_claude_turn(
     mcp_config: &McpConfig,
     timeout: std::time::Duration,
 ) -> Result<String, String> {
-    let mut cmd = tokio::process::Command::new(binary);
+    let mut cmd = cli_command_async(binary);
     cmd.arg("-p")
         .arg(prompt)
         .arg("--output-format")
@@ -889,7 +1048,7 @@ pub struct ClaudeProvider {
 
 pub async fn run_codex_turn(binary: &Path, prompt: &str, mcp_port: u16, mcp_token: &str, timeout: std::time::Duration) -> Result<String, String> {
     let url = format!("mcp_servers.listik.url=\"http://127.0.0.1:{mcp_port}/mcp\"");
-    let mut cmd = tokio::process::Command::new(binary);
+    let mut cmd = cli_command_async(binary);
     cmd.arg("exec").arg("--ephemeral").arg("--sandbox").arg("read-only")
         .arg("--skip-git-repo-check").arg("--config").arg(url)
         // Codex garde ses permissions de fichiers/terminal en lecture seule.
@@ -945,7 +1104,7 @@ pub async fn run_antigravity_turn(binary: &Path, prompt: &str, mcp_port: u16, mc
     // de ce dossier jetable, ni d'autres serveurs MCP ne sont autorisés.
     let permissions = json!({ "permissions": { "allow": ["mcp(listik/*)"] } });
     std::fs::write(agents.join("settings.json"), serde_json::to_vec(&permissions).unwrap()).map_err(|e| e.to_string())?;
-    let mut cmd = tokio::process::Command::new(binary);
+    let mut cmd = cli_command_async(binary);
     cmd.arg("-p").arg(prompt).arg("--output-format").arg("json").arg("--sandbox")
         .current_dir(&root).stdin(std::process::Stdio::null()).stdout(std::process::Stdio::piped()).stderr(std::process::Stdio::piped()).kill_on_drop(true);
     let child = cmd.spawn().map_err(|_| "impossible de lancer Antigravity CLI".to_string())?;
@@ -1057,8 +1216,11 @@ pub fn resolve_opencode_binary() -> Option<PathBuf> {
     #[cfg(not(windows))]
     let candidates = ["opencode"];
 
+    if let Some(found) = candidates.iter().find_map(|name| find_on_user_path(name)) {
+        return Some(found);
+    }
     candidates.into_iter().map(PathBuf::from).find(|p| {
-        std::process::Command::new(p)
+        cli_command(p)
             .arg("--version")
             .output()
             .map(|o| o.status.success())
@@ -1076,7 +1238,7 @@ pub async fn run_opencode_turn(
     project_dir: &Path,
     timeout: std::time::Duration,
 ) -> Result<String, String> {
-    let mut cmd = tokio::process::Command::new(binary);
+    let mut cmd = cli_command_async(binary);
     cmd.arg("run")
         .arg(prompt)
         .arg("--dir")
@@ -1169,6 +1331,30 @@ impl AgentProvider for OpenCodeProvider {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn parse_marked_path_ignore_le_bruit_du_shell() {
+        let sortie = "Bienvenue !\n__LISTIK_PATH__/opt/homebrew/bin:/usr/bin__LISTIK_PATH__\nfin";
+        assert_eq!(super::parse_marked_path(sortie).as_deref(), Some("/opt/homebrew/bin:/usr/bin"));
+        assert_eq!(super::parse_marked_path("rien"), None);
+        assert_eq!(super::parse_marked_path("__LISTIK_PATH____LISTIK_PATH__"), None);
+    }
+
+    #[test]
+    fn login_script_met_chaque_valeur_entre_apostrophes() {
+        let script = super::login_script("/Users/l'é/bin/claude", &["auth", "login"], Some("/opt/homebrew/bin:/usr/bin"));
+        assert_eq!(
+            script,
+            "#!/bin/sh\nexport PATH='/opt/homebrew/bin:/usr/bin'\n'/Users/l'\\''é/bin/claude' 'auth' 'login'\nexec \"${SHELL:-/bin/zsh}\" -l\n"
+        );
+    }
+
+    #[test]
+    fn user_path_ne_touche_pas_windows() {
+        if !cfg!(target_os = "macos") {
+            assert_eq!(super::user_path(), None);
+        }
+    }
+
     use super::*;
 
     const TEST_MCP_TOKEN: &str = "test-mcp-token";

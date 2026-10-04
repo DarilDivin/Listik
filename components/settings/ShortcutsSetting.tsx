@@ -1,7 +1,7 @@
 "use client";
 
 import { Kbd, KbdGroup } from "@/components/ui/kbd";
-import { useAltKey, useCommandKey, useKeyLabels } from "@/lib/keys";
+import { useAltKey, useCommandKey, useKeyLabels, useQuickShortcut } from "@/lib/keys";
 
 interface Shortcut {
   /** Ce que le geste FAIT, à la première personne du lecteur. */
@@ -31,6 +31,7 @@ function useGroups(): Group[] {
   const cmd = useCommandKey();
   const alt = useAltKey();
   const key = useKeyLabels();
+  const quick = useQuickShortcut();
 
   return [
     {
@@ -38,7 +39,7 @@ function useGroups(): Group[] {
       items: [
         {
           label: "Capturer une tâche sans quitter ce qu'on fait",
-          keys: [alt, "Q"],
+          keys: quick,
           note: "Enregistré au niveau du système : fonctionne même quand la fenêtre n'est pas au premier plan.",
         },
         { label: "Rechercher", keys: [cmd, "K"] },

@@ -2,8 +2,9 @@ name: Verify
 
 on:
   pull_request:
+  # Toutes les branches : c'est le seul endroit où le code macOS compile
+  # (il ne se compile pas depuis Windows).
   push:
-    branches: [main]
 
 permissions:
   contents: read
@@ -27,3 +28,46 @@ jobs:
       - run: pnpm build
       - run: cargo test
         working-directory: src-tauri
+
+  macos:
+    name: macOS build
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+      - uses: dtolnay/rust-toolchain@stable
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+      # Compile tout le code `#[cfg(target_os = "macos")]` et lance les tests.
+      - run: cargo test
+        working-directory: src-tauri
+      # Le paquet .app complet (config macOS, Info.plist, signature ad hoc),
+      # sans les artefacts de mise à jour : leur clé de signature reste
+      # réservée au workflow de publication.
+      - run: pnpm tauri build --bundles app,dmg --config '{"build":{"beforeBuildCommand":""},"bundle":{"createUpdaterArtifacts":false}}'
+      # Personne n'a de Mac pour l'ouvrir : on la lance 15 s, on vérifie
+      # qu'elle tient, et on essaie une capture d'écran (parfois noire sur
+      # les machines de GitHub).
+      - name: Launch smoke test
+        run: |
+          APP="$(ls -d "$PWD"/src-tauri/target/release/bundle/macos/*.app | head -n 1)"
+          BIN="$APP/Contents/MacOS/$(defaults read "$APP/Contents/Info" CFBundleExecutable)"
+          "$BIN" &
+          PID=$!
+          sleep 15
+          screencapture -x macos-screenshot.png || true
+          if kill -0 "$PID" 2>/dev/null; then echo "Toujours lancée après 15 s"; kill "$PID"; else echo "L'app s'est arrêtée au lancement"; exit 1; fi
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: macos-build
+          path: |
+            macos-screenshot.png
+            src-tauri/target/release/bundle/dmg/*.dmg
+          if-no-files-found: ignore
