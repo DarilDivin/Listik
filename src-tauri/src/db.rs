@@ -5,6 +5,8 @@ use crate::models::{
     UpdateArea, UpdateJournalEntry, UpdateNote, UpdateProject, UpdateSettings, UpdateSubTask,
     UpdateTag, UpdateTodo,
 };
+use sha2::{Digest, Sha384};
+use sqlx::migrate::Migrator;
 use sqlx::sqlite::{SqliteConnectOptions, SqlitePoolOptions};
 use sqlx::{QueryBuilder, Sqlite, SqlitePool};
 use tauri::{AppHandle, Manager};
@@ -45,12 +47,120 @@ pub async fn init_pool(app: &AppHandle) -> Result<SqlitePool, String> {
         .await
         .map_err(|e| e.to_string())?;
 
-    sqlx::migrate!("./migrations")
-        .run(&pool)
+    let migrator = sqlx::migrate!("./migrations");
+    repair_line_ending_checksums(&pool, &migrator)
         .await
         .map_err(|e| e.to_string())?;
+    migrator.run(&pool).await.map_err(|e| e.to_string())?;
 
     Ok(pool)
+}
+
+/// Réaccorde les empreintes des migrations déjà appliquées qui ne diffèrent
+/// que par les fins de ligne.
+///
+/// sqlx compare l'empreinte SHA-384 du fichier SQL embarqué à celle notée lors
+/// de l'application, octet pour octet. Or le même fichier était compilé en CRLF
+/// sur un poste Windows qui convertit les fins de ligne (la CI de publication)
+/// et en LF ailleurs (macOS, un clone sans conversion) : une base créée par une
+/// compilation refusait de s'ouvrir dans l'autre (« migration 1 was previously
+/// applied but has been modified »), et l'app se fermait au démarrage. Seule
+/// l'autre variante de fins de ligne est acceptée : une migration vraiment
+/// modifiée échoue toujours.
+async fn repair_line_ending_checksums(pool: &SqlitePool, migrator: &Migrator) -> Result<(), sqlx::Error> {
+    let table: Option<i64> =
+        sqlx::query_scalar("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = '_sqlx_migrations'")
+            .fetch_optional(pool)
+            .await?;
+    if table.is_none() {
+        return Ok(());
+    }
+
+    let applied: Vec<(i64, Vec<u8>)> = sqlx::query_as("SELECT version, checksum FROM _sqlx_migrations")
+        .fetch_all(pool)
+        .await?;
+    for (version, stored) in applied {
+        let Some(migration) = migrator.iter().find(|m| m.version == version) else {
+            continue;
+        };
+        if stored == *migration.checksum || stored != other_line_ending_checksum(&migration.sql) {
+            continue;
+        }
+        sqlx::query("UPDATE _sqlx_migrations SET checksum = ? WHERE version = ?")
+            .bind(migration.checksum.as_ref())
+            .bind(version)
+            .execute(pool)
+            .await?;
+    }
+    Ok(())
+}
+
+/// L'empreinte qu'aurait le même SQL avec les autres fins de ligne.
+fn other_line_ending_checksum(sql: &str) -> Vec<u8> {
+    let other = if sql.contains("\r\n") { sql.replace("\r\n", "\n") } else { sql.replace('\n', "\r\n") };
+    Sha384::digest(other.as_bytes()).to_vec()
+}
+
+#[cfg(test)]
+mod line_ending_tests {
+    use super::{other_line_ending_checksum, repair_line_ending_checksums};
+    use sha2::{Digest, Sha384};
+    use sqlx::sqlite::SqlitePoolOptions;
+    use sqlx::SqlitePool;
+
+    async fn empty_pool() -> SqlitePool {
+        SqlitePoolOptions::new().max_connections(1).connect("sqlite::memory:").await.unwrap()
+    }
+
+    async fn set_checksum(pool: &SqlitePool, version: i64, checksum: &[u8]) {
+        sqlx::query("UPDATE _sqlx_migrations SET checksum = ? WHERE version = ?")
+            .bind(checksum)
+            .bind(version)
+            .execute(pool)
+            .await
+            .unwrap();
+    }
+
+    #[test]
+    fn the_variant_works_both_ways() {
+        let lf = "CREATE TABLE a (x);\nCREATE TABLE b (y);\n";
+        let crlf = lf.replace('\n', "\r\n");
+        assert_eq!(other_line_ending_checksum(lf), Sha384::digest(crlf.as_bytes()).to_vec());
+        assert_eq!(other_line_ending_checksum(&crlf), Sha384::digest(lf.as_bytes()).to_vec());
+    }
+
+    #[tokio::test]
+    async fn opens_a_database_written_with_the_other_line_endings() {
+        let pool = empty_pool().await;
+        let migrator = sqlx::migrate!("./migrations");
+        migrator.run(&pool).await.unwrap();
+        for m in migrator.iter() {
+            set_checksum(&pool, m.version, &other_line_ending_checksum(&m.sql)).await;
+        }
+        assert!(migrator.run(&pool).await.is_err(), "sans réparation, sqlx refuse la base");
+
+        repair_line_ending_checksums(&pool, &migrator).await.unwrap();
+        migrator.run(&pool).await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn a_really_modified_migration_still_fails() {
+        let pool = empty_pool().await;
+        let migrator = sqlx::migrate!("./migrations");
+        migrator.run(&pool).await.unwrap();
+        set_checksum(&pool, 1, &[0u8; 48]).await;
+
+        repair_line_ending_checksums(&pool, &migrator).await.unwrap();
+        assert!(migrator.run(&pool).await.is_err());
+    }
+
+    #[tokio::test]
+    async fn a_fresh_database_is_left_alone() {
+        let pool = empty_pool().await;
+        let migrator = sqlx::migrate!("./migrations");
+        repair_line_ending_checksums(&pool, &migrator).await.unwrap();
+        migrator.run(&pool).await.unwrap();
+    }
 }
 
 /// Peuple les relations hors-colonnes (`sub_tasks`, `tags`) de chaque tâche —

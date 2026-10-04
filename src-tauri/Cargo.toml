@@ -29,6 +29,8 @@ tokio = { version = "1.0", features = ["full"] }
 tauri-plugin-process = "2"
 
 # Accès données côté Rust (remplace tauri-plugin-sql exposé au webview)
+# Empreintes des migrations (voir db::repair_line_ending_checksums) ; même version que sqlx.
+sha2 = "0.10"
 sqlx = { version = "0.8", default-features = false, features = [
     "runtime-tokio",
     "sqlite",

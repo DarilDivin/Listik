@@ -1,0 +1,3 @@
+# Les migrations SQL sont embarquées avec une empreinte de leurs octets :
+# mêmes fins de ligne partout, sous Windows comme sous macOS.
+*.sql text eol=lf
