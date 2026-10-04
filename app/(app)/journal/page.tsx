@@ -494,7 +494,7 @@ function JournalPageContent() {
                   </p>
                 </div>
               }
-              onSegments={(segments) => void enregistrer(segments)}
+              onSegments={(segments, affichees) => void enregistrer(segments, affichees)}
               // On ne prévient QUE si ça a échoué : poser une image se voit,
               // le dire serait redondant.
               onErreurPiece={(m) => toast.error(m)}

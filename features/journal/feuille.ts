@@ -193,6 +193,25 @@ export function decouperEnSegments(racine: SerializedLexicalNode[]): Segment[] {
  * Seuls les marqueurs qui ne portent RIEN par eux-mêmes disparaissent. Un tiret
  * cadratin, des points de suspension ou un emoji restent du contenu.
  */
+/**
+ * Les entrées à supprimer après une sauvegarde : celles que la feuille a
+ * AFFICHÉES et qui n'y sont plus (reprise vidée par ailleurs, repère recollé).
+ *
+ * Jamais une entrée que la feuille n'a pas montrée. La feuille refuse de se
+ * recharger pendant qu'on y écrit ; si la base a gagné des entrées entre-temps
+ * (écrites depuis la fenêtre rapide, la page Journal ou une autre fenêtre),
+ * elles manquent à l'éditeur sans que personne ne les ait effacées. Les
+ * supprimer parce qu'elles « manquent » vidait la journée entière à la
+ * première frappe — la perte de données du 13 septembre.
+ */
+export function entreesASupprimer(
+  connues: readonly { id: string }[],
+  vues: ReadonlySet<string>,
+  affichees: ReadonlySet<string>,
+): string[] {
+  return connues.filter((e) => affichees.has(e.id) && !vues.has(e.id)).map((e) => e.id);
+}
+
 export function estVide(markdown: string): boolean {
   return markdown.replace(/\d+\.|[-*+>#`\s]/g, "") === "";
 }

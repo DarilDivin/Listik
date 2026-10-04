@@ -5,6 +5,7 @@ import {
   estVide,
   markdownDepuisNoeuds,
   noeudsDepuisMarkdown,
+  entreesASupprimer,
 } from "./feuille";
 
 /** Un repère sérialisé, tel qu'il vit dans le document. */
@@ -173,5 +174,23 @@ describe("une pièce traverse le markdown", () => {
 
   it("compte comme du contenu — une reprise qui n'a qu'une photo n'est pas vide", () => {
     expect(estVide(`![](piece:${ID})`)).toBe(false);
+  });
+});
+
+describe("entreesASupprimer", () => {
+  const connues = [{ id: "a" }, { id: "b" }, { id: "c" }];
+
+  it("supprime une entrée affichée qui a quitté la feuille", () => {
+    expect(entreesASupprimer(connues, new Set(["a", "c"]), new Set(["a", "b", "c"]))).toEqual(["b"]);
+  });
+
+  it("ne touche jamais une entrée que la feuille n'a pas affichée", () => {
+    // La feuille ne montrait que « a » (écrite avant), « b » et « c » sont
+    // arrivées d'ailleurs pendant qu'on écrivait : elles doivent rester.
+    expect(entreesASupprimer(connues, new Set(["a"]), new Set(["a"]))).toEqual([]);
+  });
+
+  it("une feuille encore vide n'efface rien", () => {
+    expect(entreesASupprimer(connues, new Set(), new Set())).toEqual([]);
   });
 });

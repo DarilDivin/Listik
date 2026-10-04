@@ -1,6 +1,6 @@
 "use client";
 
-import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from "react";
+import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState } from "react";
 import type { ReactNode, RefObject } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
 import { $insertNodeToNearestRoot } from "@lexical/utils";
@@ -108,7 +108,13 @@ function $poserFeuille(reprises: Reprise[]): void {
  * Jamais pendant qu'on écrit dedans : ce serait remplacer le texte sous le
  * curseur. La feuille en cours de frappe fait foi, et la sauvegarde la portera.
  */
-function ChargementPlugin({ reprises }: { reprises: Reprise[] }) {
+function ChargementPlugin({
+  reprises,
+  afficheesRef,
+}: {
+  reprises: Reprise[];
+  afficheesRef: RefObject<Set<string>>;
+}) {
   const [editor] = useLexicalComposerContext();
   const pose = useRef<string | null>(null);
   const signature = empreinte(reprises);
@@ -127,6 +133,9 @@ function ChargementPlugin({ reprises }: { reprises: Reprise[] }) {
     const ecrit = dom !== null && dom.contains(document.activeElement);
     if (ecrit && pose.current !== null) return;
     pose.current = signature;
+    // Ce que la feuille montre désormais : seules ces entrées-là pourront être
+    // effacées par une sauvegarde (voir `entreesASupprimer`).
+    afficheesRef.current = new Set(reprises.map((r) => r.id).filter((id) => id !== ""));
     // Pas de `discrete: true` : on est dans un effet, et il forcerait un
     // `flushSync` pendant que React rend — l'avertissement était réel.
     editor.update(() => $poserFeuille(reprises));
@@ -277,11 +286,19 @@ function SauvegardePlugin({
  * La reprise en cours reçoit son identité une fois écrite : le repère sans id
  * n'était qu'une promesse — « ici commence maintenant ».
  */
-function IdentitePlugin({ aStamper }: { aStamper: { id: string; heure: string } | null }) {
+function IdentitePlugin({
+  aStamper,
+  afficheesRef,
+}: {
+  aStamper: { id: string; heure: string } | null;
+  afficheesRef: RefObject<Set<string>>;
+}) {
   const [editor] = useLexicalComposerContext();
 
   useEffect(() => {
     if (!aStamper) return;
+    // Écrite ici : la feuille la montre, elle peut donc aussi l'effacer.
+    afficheesRef.current.add(aStamper.id);
     let cle: string | null = null;
     editor.update(() => {
       const vierge = $getRoot()
@@ -298,7 +315,7 @@ function IdentitePlugin({ aStamper }: { aStamper: { id: string; heure: string } 
     dom?.classList.add("journal-commit");
     const t = setTimeout(() => dom?.classList.remove("journal-commit"), 1200);
     return () => clearTimeout(t);
-  }, [aStamper, editor]);
+  }, [aStamper, editor, afficheesRef]);
 
   return null;
 }
@@ -510,7 +527,8 @@ function PiecePlugin({
 
 interface JournalSheetProps {
   reprises: Reprise[];
-  onSegments: (segments: Segment[]) => void;
+  /** La feuille a changé ; `affichees` : les entrées qu'elle a posées, les seules qu'on peut effacer. */
+  onSegments: (segments: Segment[], affichees: ReadonlySet<string>) => void;
   /** Identité à poser sur le repère encore vierge, une fois la ligne créée. */
   aStamper: { id: string; heure: string } | null;
   /** Ce qu'on lit quand la journée est encore blanche. */
@@ -544,6 +562,12 @@ export const JournalSheet = forwardRef<JournalSheetHandle, JournalSheetProps>(
   // composeur, la poignée doit donc être posée depuis là.
   const poserRef = useRef<(() => void) | null>(null);
   const insererRef = useRef<((pieceId: string) => void) | null>(null);
+  const afficheesRef = useRef<Set<string>>(new Set());
+  // Même stabilité que `onSegments` : le plugin de sauvegarde se réabonne quand elle change.
+  const pousserSegments = useCallback(
+    (segments: Segment[]) => onSegments(segments, afficheesRef.current),
+    [onSegments],
+  );
   useImperativeHandle(
     ref,
     () => ({
@@ -603,17 +627,17 @@ export const JournalSheet = forwardRef<JournalSheetHandle, JournalSheetProps>(
         <ListPlugin />
         <LinkPlugin />
         <MarkdownShortcutPlugin transformers={TRANSFORMERS} />
-        <ChargementPlugin reprises={reprises} />
+        <ChargementPlugin reprises={reprises} afficheesRef={afficheesRef} />
         <FrontierePlugin />
         <QueuePlugin />
-        <IdentitePlugin aStamper={aStamper} />
+        <IdentitePlugin aStamper={aStamper} afficheesRef={afficheesRef} />
         <VidePlugin onVide={setVide} />
         <PiecePlugin
           poserRef={poserRef}
           insererRef={insererRef}
           onErreur={onErreurPiece ?? (() => {})}
         />
-        <SauvegardePlugin onSegments={onSegments} />
+        <SauvegardePlugin onSegments={pousserSegments} />
       </div>
     </LexicalComposer>
   );

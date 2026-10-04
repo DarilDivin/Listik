@@ -107,7 +107,7 @@ export default function BarreJournal({
             variant="page"
             reprises={reprises}
             aStamper={aStamper}
-            onSegments={(segments) => void enregistrer(segments)}
+            onSegments={(segments, affichees) => void enregistrer(segments, affichees)}
             invite={
               <p className="text-[0.9375rem] leading-[1.78] text-muted-foreground/60">
                 Écrire…

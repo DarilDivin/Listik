@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { format } from "date-fns";
 import { useJournal } from "@/hooks/useJournal";
 import { todayLocalISODate } from "@/lib/date";
-import { estVide, type Segment } from "./feuille";
+import { entreesASupprimer, estVide, type Segment } from "./feuille";
 import type { Reprise } from "@/components/journal/JournalSheet";
 
 /**
@@ -127,7 +127,7 @@ export function useFeuille(day: string, withUpcoming = true) {
    * déjà rejoint celle d'avant.
    */
   const enregistrer = useCallback(
-    async (segments: Segment[]) => {
+    async (segments: Segment[], affichees: ReadonlySet<string>) => {
       const connues = entriesRef.current;
       const vues = new Set<string>();
 
@@ -163,8 +163,9 @@ export function useFeuille(day: string, withUpcoming = true) {
         }
       }
 
-      for (const e of connues) {
-        if (!vues.has(e.id)) await track(deleteEntry(e.id));
+      // Seulement ce que la feuille a affiché : voir `entreesASupprimer`.
+      for (const id of entreesASupprimer(connues, vues, affichees)) {
+        await track(deleteEntry(id));
       }
     },
     [day, track, appendEntry, updateEntry, deleteEntry],
