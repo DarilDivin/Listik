@@ -16,7 +16,7 @@ import {
 } from "@hugeicons/core-free-icons";
 import { AppIcon } from "@/components/ui/app-icon";
 import { ListikLogotype } from "@/components/brand/ListikLogo";
-import { ListikLogoAnimated } from "@/components/brand/ListikLogoAnimated";
+import { ListikLogoMotion } from "@/components/brand/ListikLogoMotion";
 import BarreTache from "@/components/BarreTache";
 import { QUICK_NEXT_MODE_EVENT } from "@/components/QuickPills";
 import { AccentPicker } from "@/components/settings/AccentPicker";
@@ -302,7 +302,7 @@ function Lead({ children }: { children: ReactNode }) {
 function WelcomeStep() {
   return (
     <div>
-      <ListikLogoAnimated className="h-[76px] w-auto text-foreground" delay={0.15} />
+      <ListikLogoMotion className="h-[76px]" delay={0.25} />
       <div className="mt-10">
         <Title>Une touche, l’idée est posée.</Title>
         <Lead>

@@ -109,9 +109,14 @@ Pour les petites pastilles d'icône (empty states, hero assistant), utiliser
   (`app/fonts/fraunces.woff2`, chargée par `next/font/local`), porte les
   titres de l'accueil du premier lancement (`components/onboarding/`), le seul
   moment de marque de l'app. Ne pas l'étendre aux pages courantes.
-- **Logotype** : `ListikLogotype` / `ListikMark` (`components/brand/ListikLogo.tsx`),
-  et `ListikLogoAnimated` pour son entrée (lettres en cascade, plume qui se
-  redresse, goutte qui tombe). La goutte suit `--brand` ; voir `brand/README.md`.
+- **Logotype** : `ListikLogotype` / `ListikMark` (`components/brand/ListikLogo.tsx`) ;
+  la goutte suit `--brand`, voir `brand/README.md`. Son entrée animée est
+  `ListikLogoMotion` (`components/brand/ListikLogoMotion.tsx`) : une vidéo WebM
+  transparente par thème (`public/brand/listik-splash-*.webm`), rendue par
+  Remotion depuis `motion/` (coupe « splash »), monochrome, goutte comprise. Elle
+  sert à l'écran d'ouverture (`components/SplashScreen.tsx`, une fois par
+  lancement) et au premier écran de l'accueil. Pour la changer : modifier la
+  composition, la rendre (voir `motion/README.md`) et remplacer les deux vidéos.
 - **Geist Mono** : compteurs, pourcentages, raccourcis (`Kbd`) — toujours
   `tabular-nums`.
 - Échelle utilitaire : `.text-large-title` (2 rem/700, titres de page pleine —

@@ -6,6 +6,7 @@ import { listen } from "@tauri-apps/api/event";
 import { AppSidebar } from "@/components/AppSidebar";
 import { FloatingDock } from "@/components/FloatingDock";
 import { SearchOverlay } from "@/components/SearchOverlay";
+import { SplashScreen } from "@/components/SplashScreen";
 import { Onboarding } from "@/components/onboarding/Onboarding";
 import { SidebarSlotProvider, useSidebarSlot } from "@/components/sidebar-slot";
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
@@ -118,6 +119,7 @@ export default function AppLayout({ children }: { children: ReactNode }) {
       )}
       <SearchOverlay open={searchOpen} onOpenChange={setSearchOpen} />
       <Onboarding />
+      <SplashScreen />
     </SidebarSlotProvider>
   );
 }
