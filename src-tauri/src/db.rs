@@ -1667,7 +1667,7 @@ pub async fn search_journal(
          FROM journal_fts f \
          JOIN journal_entries e ON e.rowid = f.rowid \
          WHERE journal_fts MATCH ? \
-         ORDER BY e.written_at DESC, e.created_at DESC \
+         ORDER BY e.written_at DESC, e.target_day DESC, e.created_at DESC \
          LIMIT ?",
     )
     .bind(MARQUE_DEBUT)

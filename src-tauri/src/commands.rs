@@ -1365,6 +1365,10 @@ pub async fn delete_subtask(
 mod tests {
     use super::*;
 
+    /// L'origine de l'app, celle qu'autorise l'ACL de Tauri : `http://tauri.localhost`
+    /// sous Windows, `tauri://localhost` sur macOS et Linux.
+    const TEST_ORIGIN: &str = if cfg!(windows) { "http://tauri.localhost" } else { "tauri://localhost" };
+
     #[test]
     fn agent_prompt_contient_demande_et_cadrage() {
         let prompt = agent_prompt("ajoute une tache", &[]);
@@ -1421,7 +1425,7 @@ mod tests {
                 cmd: "ai_parse".into(),
                 callback: tauri::ipc::CallbackFn(0),
                 error: tauri::ipc::CallbackFn(1),
-                url: "http://tauri.localhost".parse().unwrap(),
+                url: TEST_ORIGIN.parse().unwrap(),
                 body: serde_json::json!({ "text": "acheter du pain demain" }).into(),
                 headers: Default::default(),
                 invoke_key: tauri::test::INVOKE_KEY.to_string(),
@@ -1468,7 +1472,7 @@ mod tests {
                 cmd: "ai_agent_run".into(),
                 callback: tauri::ipc::CallbackFn(0),
                 error: tauri::ipc::CallbackFn(1),
-                url: "http://tauri.localhost".parse().unwrap(),
+                url: TEST_ORIGIN.parse().unwrap(),
                 body: serde_json::json!({
                     "text": "et demain ?",
                     "history": [{ "role": "user", "content": "prepare la reunion" }]
@@ -1555,7 +1559,7 @@ mod tests {
                 cmd: "ai_agent_run".into(),
                 callback: tauri::ipc::CallbackFn(0),
                 error: tauri::ipc::CallbackFn(1),
-                url: "http://tauri.localhost".parse().unwrap(),
+                url: TEST_ORIGIN.parse().unwrap(),
                 body: serde_json::json!({
                     "text": "Utilise l'outil list_todos pour lister mes tâches en attente, \
                              puis cite le texte exact de chacune.",
