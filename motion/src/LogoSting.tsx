@@ -13,7 +13,7 @@
  *
  * Trois coupes de la même chorégraphie (voir CUTS) :
  *   - master : le sting seul, 5 s ;
- *   - social : le même, suivi d'un carton (la phrase du site, « Pour Windows ·
+ *   - social : le même, suivi d'un carton (la phrase du site, « Pour Windows et Mac ·
  *     gratuit »), cadré pour 16:9, carré et vertical ;
  *   - splash : l'écran d'ouverture de l'app, 2 s, sur fond transparent, sans
  *     mouvement de caméra pour que la dernière image tombe exactement là où
@@ -538,7 +538,7 @@ const Drop: React.FC = () => {
 
 /**
  * Le carton des vidéos réseaux : la phrase du site sous le logo, puis la ligne
- * « Pour Windows · gratuit ». Même mise au point que les lettres.
+ * « Pour Windows et Mac · gratuit ». Même mise au point que les lettres.
  */
 const EndCard: React.FC = () => {
   const { tl, look } = useContext(Sting);
@@ -597,7 +597,7 @@ const EndCard: React.FC = () => {
           opacity: 0.62,
         }}
       >
-        <span style={{ display: "inline-block", ...line(0.18) }}>Pour Windows · gratuit</span>
+        <span style={{ display: "inline-block", ...line(0.18) }}>Pour Windows et Mac · gratuit</span>
       </div>
     </AbsoluteFill>
   );

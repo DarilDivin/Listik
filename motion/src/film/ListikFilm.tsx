@@ -807,7 +807,7 @@ const Url: React.FC = () => {
   return (
     <AbsoluteFill style={{ alignItems: "center", justifyContent: "flex-end", paddingBottom: 92 }}>
       <Focus t={t} at={bar(33)} style={{ fontFamily: BODY, fontWeight: 500, fontSize: 26, color: MUTED, letterSpacing: "0.04em" }}>
-        darildivin.github.io/Listik
+        listik.daril.fr
       </Focus>
     </AbsoluteFill>
   );

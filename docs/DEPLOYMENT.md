@@ -46,7 +46,13 @@ installations existantes.
 
 3. Sur GitHub, ouvrez **Settings → Pages**, sélectionnez **GitHub Actions**
    comme source, puis enregistrez. Après le prochain envoi sur `main`, le site
-   sera disponible à `https://darildivin.github.io/Listik/`.
+   sera disponible à `https://listik.daril.fr/`.
+
+   Le sous-domaine : chez Gandi (DNS de daril.fr), un enregistrement `CNAME`
+   `listik` vers `darildivin.github.io.` ; dans **Settings → Pages**, le domaine
+   personnalisé `listik.daril.fr` et **Enforce HTTPS**. Pas de fichier `CNAME`
+   dans `site/` : le site est publié par GitHub Actions. L'ancienne adresse
+   `darildivin.github.io/Listik/` redirige vers le sous-domaine.
 
 ## Publier une version
 
