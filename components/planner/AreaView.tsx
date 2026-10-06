@@ -5,7 +5,7 @@ import { motion } from "motion/react";
 import { ChevronRight, FolderOpen } from "lucide-react";
 import { AnimatedNumber } from "@/components/ui/animated-number";
 import { AnimatedTodoList } from "@/components/todo/AnimatedTodoList";
-import { EmptyState } from "@/components/todo/EmptyState";
+import { EmptyHint } from "@/components/todo/EmptyHint";
 import { ProgressRing } from "@/components/planner/ProgressRing";
 import { pressable, spring } from "@/lib/motion";
 import type { Area, Project } from "@/features/projects/types";
@@ -84,10 +84,9 @@ export function AreaView({
       <div className="pb-10 pt-4">
         {capture}
         {isEmpty && (
-          <EmptyState
-            title="Domaine vide"
-            subtitle="Créez un projet ici depuis le rail, ou capturez une tâche ci-dessus."
-          />
+          <EmptyHint>
+            Rien dans ce domaine pour l’instant. Ses projets et les tâches que vous y capturez viendront ici.
+          </EmptyHint>
         )}
 
         {projects.length > 0 && (

@@ -5,7 +5,7 @@ import { motion } from "motion/react";
 import { CheckCircle2, RotateCcw } from "lucide-react";
 import { AnimatedNumber } from "@/components/ui/animated-number";
 import { AnimatedTodoList, type TodoListDnd } from "@/components/todo/AnimatedTodoList";
-import { EmptyState } from "@/components/todo/EmptyState";
+import { EmptyHint } from "@/components/todo/EmptyHint";
 import { ProgressRing } from "@/components/planner/ProgressRing";
 import { Button } from "@/components/ui/button";
 import {
@@ -122,6 +122,7 @@ export function ProjectView({
             />
           </div>
 
+          {total > 0 && (
           <motion.div
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
@@ -144,8 +145,11 @@ export function ProjectView({
               <span className="text-xs text-muted-foreground">terminées</span>
             </div>
           </motion.div>
+          )}
         </div>
 
+        {/* Un projet sans tâche n'a rien à terminer ; il se supprime depuis le rail. */}
+        {(total > 0 || completed) && (
         <div className="flex justify-end pt-3">
           {completed ? (
             <Button variant="ghost" size="sm" onClick={onReopen}>
@@ -159,6 +163,7 @@ export function ProjectView({
             </Button>
           )}
         </div>
+        )}
       </div>
 
       <div className="pb-10 pt-4">
@@ -173,14 +178,9 @@ export function ProjectView({
             dnd={dnd}
           />
         ) : (
-          <EmptyState
-            title={total === 0 ? "Projet vide" : "Tout est fait"}
-            subtitle={
-              total === 0
-                ? "Capturez la première tâche de ce projet ci-dessus."
-                : "Plus rien à faire ici — beau travail."
-            }
-          />
+          <EmptyHint done={total > 0}>
+            {total === 0 ? "Pas encore de tâche dans ce projet." : "Tout est fait dans ce projet."}
+          </EmptyHint>
         )}
 
         {done.length > 0 && (

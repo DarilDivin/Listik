@@ -3,20 +3,14 @@
 import { Suspense, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { AnimatePresence, motion } from "motion/react";
-import { NotebookPen, Pin, Plus, Search } from "lucide-react";
+import { Pin, Plus, Search } from "lucide-react";
 import { useNotes } from "@/hooks/useNotes";
 import { NoteEditor } from "@/components/notes/NoteEditor";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Skeleton } from "@/components/ui/skeleton";
-import {
-  Empty,
-  EmptyDescription,
-  EmptyHeader,
-  EmptyMedia,
-  EmptyTitle,
-} from "@/components/ui/empty";
+import { EmptyHint } from "@/components/todo/EmptyHint";
 import {
   Tooltip,
   TooltipContent,
@@ -145,25 +139,14 @@ function NotesPageContent() {
                 </li>
               ))
             ) : filtered.length === 0 ? (
-              <li className="px-3 pt-6">
-                <Empty className="border-none p-4">
-                  <EmptyHeader>
-                    <EmptyMedia
-                      variant="icon"
-                      className="rounded-xl bg-brand-soft text-brand"
-                    >
-                      <NotebookPen />
-                    </EmptyMedia>
-                    <EmptyTitle className="text-sm">
-                      {query ? "Aucune note trouvée" : "Aucune note"}
-                    </EmptyTitle>
-                    <EmptyDescription className="text-xs">
-                      {query
-                        ? "Essayez d'autres mots."
-                        : "Créez votre première note avec +."}
-                    </EmptyDescription>
-                  </EmptyHeader>
-                </Empty>
+              <li>
+                {query.trim() ? (
+                  <EmptyHint variant="list">Aucune note ne contient « {query.trim()} ».</EmptyHint>
+                ) : (
+                  <EmptyHint variant="list" action={{ label: "Nouvelle note", onClick: () => void handleNew() }}>
+                    Pas encore de note. Ce que vous voulez garder, sans date ni case à cocher.
+                  </EmptyHint>
+                )}
               </li>
             ) : (
               <AnimatePresence initial={false}>
@@ -227,22 +210,10 @@ function NotesPageContent() {
             onDelete={() => handleDelete(selected.id)}
           />
         ) : (
-          <div className="flex h-full items-center justify-center px-8">
-            <Empty className="border-none">
-              <EmptyHeader>
-                <EmptyMedia
-                  variant="icon"
-                  className="rounded-2xl bg-brand-soft text-brand"
-                >
-                  <NotebookPen />
-                </EmptyMedia>
-                <EmptyTitle>Aucune note ouverte</EmptyTitle>
-                <EmptyDescription>
-                  Sélectionnez une note à gauche, ou créez-en une avec +.
-                </EmptyDescription>
-              </EmptyHeader>
-            </Empty>
-          </div>
+          // Rien d'ouvert : le panneau se tait. La liste, à côté, dit déjà
+          // tout (ses notes, ou comment en créer une) — deux messages pour une
+          // seule absence, c'était du bruit.
+          <div aria-hidden className="h-full" />
         )}
       </div>
     </div>

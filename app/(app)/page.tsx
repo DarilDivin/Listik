@@ -13,7 +13,7 @@ import { TagFilterProvider } from "@/features/tags/tag-filter";
 import { DuplicateTodoProvider } from "@/features/todos/duplicate-context";
 import { TodoDetailProvider } from "@/features/todos/detail-context";
 import { CaptureRow, type CaptureRowHandle } from "@/components/todo/CaptureRow";
-import { EmptyState } from "@/components/todo/EmptyState";
+import { EmptyHint } from "@/components/todo/EmptyHint";
 import { SidebarSlot } from "@/components/sidebar-slot";
 import { AreaView } from "@/components/planner/AreaView";
 import { HeroDay } from "@/components/planner/HeroDay";
@@ -83,32 +83,18 @@ const SECTION_META: Record<
   completed: { label: "Terminées", tone: "default" },
 };
 
-/** État vide, propre à chaque vue — invite à agir plutôt qu'à constater. */
-const EMPTY_COPY: Record<PlannerView, { title: string; subtitle: string }> = {
-  inbox: {
-    title: "Boîte de réception vide",
-    subtitle: "Tout est trié. Capturez une idée ci-dessus.",
-  },
-  today: {
-    title: "Rien pour aujourd'hui",
-    subtitle: "Profitez-en, ou planifiez une tâche ci-dessus.",
-  },
-  upcoming: {
-    title: "Rien à venir",
-    subtitle: "Aucune tâche planifiée pour les prochains jours.",
-  },
-  anytime: {
-    title: "Rien à faire pour l'instant",
-    subtitle: "Les tâches d'un projet, sans date, apparaissent ici.",
-  },
-  someday: {
-    title: "Aucune idée en réserve",
-    subtitle: "Rangez ici ce que vous ferez un jour, sans vous engager.",
-  },
-  journal: {
-    title: "Historique vide",
-    subtitle: "Vos tâches terminées s'archiveront ici.",
-  },
+/**
+ * État vide, propre à chaque vue : ce qui viendra ici, pas « X vide ». La
+ * rangée de capture est juste au-dessus et se nomme elle-même : on ne la
+ * pointe pas du doigt (« ci-dessus »).
+ */
+const EMPTY_COPY: Record<PlannerView, string> = {
+  inbox: "Tout est trié. Ce que vous capturez sans date ni projet attend ici.",
+  today: "Rien de prévu aujourd’hui. Ce que vous capturez ici est pour aujourd’hui.",
+  upcoming: "Rien de planifié pour les jours qui viennent.",
+  anytime: "Les tâches rangées dans un projet, sans date, attendent ici.",
+  someday: "Rien en réserve. Rangez ici ce que vous ferez un jour, sans vous engager.",
+  journal: "Les tâches que vous terminez s’archivent ici.",
 };
 
 interface PlannerSection {
@@ -965,21 +951,23 @@ function PlannerPageContent() {
                               dnd={dndForSection(section.key, section.items)}
                             />
                           ) : (
-                            // La dernière tâche vient d'être cochée en portail.
-                            <EmptyState
-                              title="Section vide"
-                              subtitle="Plus rien ici pour le moment."
-                            />
+                            // La dernière tâche vient de quitter la section en portail.
+                            <EmptyHint>Plus rien dans cette section.</EmptyHint>
                           )}
                         </SectionCard>
                       ))}
 
                       {!portalSection && isEmpty && (
-                        <EmptyState
-                          key={`empty-${currentView}`}
-                          title={EMPTY_COPY[currentView].title}
-                          subtitle={EMPTY_COPY[currentView].subtitle}
-                        />
+                        // Aujourd'hui vidé par les coches n'est pas « rien de
+                        // prévu » : c'est la journée bouclée.
+                        currentView === "today" && doneToday > 0 ? (
+                          <EmptyHint key="empty-today-done" done>
+                            Tout est fait pour aujourd’hui.{" "}
+                            {doneToday === 1 ? "Une tâche terminée." : `${doneToday} tâches terminées.`}
+                          </EmptyHint>
+                        ) : (
+                          <EmptyHint key={`empty-${currentView}`}>{EMPTY_COPY[currentView]}</EmptyHint>
+                        )
                       )}
                     </AnimatePresence>
 

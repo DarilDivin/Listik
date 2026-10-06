@@ -106,8 +106,9 @@ CSS d'ombre ni de marge transparente. Dedans, la règle commune : contenu à
 plat, groupes séparés par des hairlines `border-border/60`, pastilles
 `bg-brand-soft text-brand` pour les trois modes de capture.
 
-Pour les petites pastilles d'icône (empty states, hero assistant), utiliser
-`bg-brand-soft text-brand` — un aplat teinté, pas une carte.
+Pour les petites pastilles d'icône (hero de l'Assistant, modes de capture du
+panneau du tray), utiliser `bg-brand-soft text-brand` — un aplat teinté, pas
+une carte. Jamais pour un état vide (voir §4.7).
 
 ### 2.6 Typographie
 
@@ -283,9 +284,14 @@ borner à `max-h-[var(--radix-popover-content-available-height)]` +
 ### 4.5 Écriture (UX copy)
 
 Français, sentence case, verbes actifs (« Capturer une tâche… », « Exporter »).
-Les états vides invitent à agir (« Créez votre première note avec + »). Les
-erreurs disent quoi faire, sans s'excuser. Un même geste garde le même nom de
-bout en bout (bouton « Supprimer » → toast « Supprimé »).
+Les erreurs disent quoi faire, sans s'excuser. Un même geste garde le même nom
+de bout en bout (bouton « Supprimer » → toast « Supprimé »). Jamais de
+direction dans le texte (« ci-dessus », « à gauche ») : la disposition change
+avec la navigation.
+
+**Vous partout, tu dans le Journal.** L'app vouvoie. Le Journal tutoie : c'est
+un carnet personnel qui parle à son auteur (« Cette page t'attend »), une voix
+voulue, pas un oubli. Ne pas l'étendre au reste, ni l'en retirer.
 
 ### 4.6 Ligne de tâche et formulaire de détail
 
@@ -309,6 +315,33 @@ bout en bout (bouton « Supprimer » → toast « Supprimé »).
   le rail). Priorité = segmented à pastille de couleur ; attributs = lignes
   icône + libellé + contrôle, valeurs alignées à droite.
 
+### 4.7 États vides (`components/todo/EmptyHint.tsx`)
+
+L'état vide s'écrit, comme la page blanche du Journal :
+
+- **Une phrase posée là où serait la première ligne**, alignée à gauche sur le
+  texte des lignes voisines. `EmptyHint` reprend le gabarit d'une ligne de
+  tâche (`px-3 py-2.5`, colonne de case de 18 px, `gap-3`) ; variante `list`
+  sans colonne de case (Notes). Jamais de bloc centré, de pastille d'icône ni
+  de titre gras.
+- **Elle dit ce qui viendra ici**, pas « X vide » (le nom de la vue est déjà
+  dans le rail). Ex. : « Tout est trié. Ce que vous capturez sans date ni
+  projet attend ici. »
+- **« Jamais commencé » ≠ « tout est fait ».** Seul le second porte une coche
+  (la coche d'une tâche terminée, accent, qui se trace) : `done`. Aujourd'hui
+  vidé par les coches dit « Tout est fait pour aujourd'hui. » et compte les
+  tâches terminées.
+- **Une action seulement si rien à l'écran ne la propose déjà** : un lien
+  texte qui fait la chose (« Nouvelle note »). Sous la rangée de capture, pas
+  de lien « Capturer » : la rangée se nomme elle-même.
+- **Une seule voix par absence** : un panneau secondaire vide (éditeur de
+  notes sans note ouverte) se tait quand la liste voisine parle déjà.
+- **Rien autour ne la contredit** : un projet sans tâche ne montre ni anneau
+  « 0 / 0 » ni « Terminer le projet ».
+
+Exception : l'accueil de l'Assistant n'est pas un état vide de liste mais un
+écran d'amorce (salutation + suggestions) ; il garde sa mise en scène.
+
 ## 5. Personnalisation (`components/ui-prefs.tsx`)
 
 `useUIPrefs()` → `{ accent, setAccent, nav, setNav }`. Stockage
@@ -329,4 +362,4 @@ aller-retour Rust. Appliqué dès le montage ; défauts : `teal` + `dock`.
    `Switch` fin (28 × 16), accent quand il est activé.
 6. Bouton-icône ? → Tooltip. Destructif ? → AlertDialog.
 7. Entrée à l'écran ? → `spring.smooth` (+ cascade si plusieurs).
-8. Vide / chargement ? → Empty / Skeleton.
+8. Vide ? → `EmptyHint` (§4.7). Chargement ? → Skeleton.

@@ -75,21 +75,24 @@ function unAnAvant(day: string): string {
  * une, et une seule — pas un formulaire d'humeur.
  *
  * Elle change avec le jour, sans hasard : la même date rend toujours la même
- * question, sinon elle sauterait d'un rendu à l'autre sous les yeux.
+ * question, sinon elle sauterait d'un rendu à l'autre sous les yeux. Elle
+ * parle du jour affiché (« aujourd'hui », « ce jour-là ») ; un jour à venir
+ * n'en a pas, toutes portent sur un jour déjà vécu.
  */
-const QUESTIONS = [
-  "Qu'est-ce qui a été plus facile que prévu aujourd'hui ?",
-  "Qu'est-ce que tu veux te rappeler de cette journée dans un an ?",
-  "Qu'est-ce qui t'a occupé l'esprit sans que tu l'aies décidé ?",
-  "Qu'est-ce que tu as évité, et pourquoi ?",
-  "Qu'est-ce qui t'a fait rire aujourd'hui ?",
-  "De quoi as-tu changé d'avis, même un peu ?",
-  "Qu'est-ce qui mérite d'être dit avant que tu l'oublies ?",
+const QUESTIONS: ((quand: string) => string)[] = [
+  (quand) => `Qu'est-ce qui a été plus facile que prévu ${quand} ?`,
+  () => "Qu'est-ce que tu veux te rappeler de cette journée dans un an ?",
+  () => "Qu'est-ce qui t'a occupé l'esprit sans que tu l'aies décidé ?",
+  () => "Qu'est-ce que tu as évité, et pourquoi ?",
+  (quand) => `Qu'est-ce qui t'a fait rire ${quand} ?`,
+  () => "De quoi as-tu changé d'avis, même un peu ?",
+  () => "Qu'est-ce qui mérite d'être dit avant que tu l'oublies ?",
 ];
 
-const questionDuJour = (day: string): string => {
+const questionDuJour = (day: string, today: string): string | null => {
+  if (day > today) return null;
   const somme = [...day].reduce((n, c) => n + c.charCodeAt(0), 0);
-  return QUESTIONS[somme % QUESTIONS.length];
+  return QUESTIONS[somme % QUESTIONS.length](day === today ? "aujourd'hui" : "ce jour-là");
 };
 
 /**
@@ -302,7 +305,7 @@ function JournalPageContent() {
     : day > today
       ? "Rien pour l'instant. Cette page t'attend — tu peux même écrire en avance, elle gardera l'heure réelle de l'écriture."
       : "Rien écrit ce jour-là. Tu peux l'écrire maintenant, l'heure réelle sera gardée.";
-  const question = questionDuJour(day);
+  const question = questionDuJour(day, today);
 
 
 
@@ -489,9 +492,11 @@ function JournalPageContent() {
                   <p className="text-[1.0625rem] leading-[1.78] text-foreground/[0.66]">
                     {invitation}
                   </p>
-                  <p className="text-[0.9375rem] italic text-muted-foreground">
-                    « {question} »
-                  </p>
+                  {question && (
+                    <p className="text-[0.9375rem] italic text-muted-foreground">
+                      « {question} »
+                    </p>
+                  )}
                 </div>
               }
               onSegments={(segments, affichees) => void enregistrer(segments, affichees)}
