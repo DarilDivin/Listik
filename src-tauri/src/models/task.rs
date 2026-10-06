@@ -62,7 +62,9 @@ impl Default for Recurrence {
 
 impl Recurrence {
     /// Prochaine occurrence après `from`, avec les modificateurs par défaut
-    /// (intervalle 1, sans positionnel) — conservé pour compatibilité.
+    /// (intervalle 1, sans positionnel). L'app passe par `RecurrenceRule` ;
+    /// ce raccourci ne sert plus qu'aux tests.
+    #[cfg(test)]
     pub fn advance(self, from: chrono::NaiveDate) -> Option<chrono::NaiveDate> {
         RecurrenceRule {
             recurrence: self,

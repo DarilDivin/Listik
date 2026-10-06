@@ -95,9 +95,12 @@ pub trait ToolExecutor: Send + Sync {
 }
 
 /// Exécuteur minimal pour le spike : un seul outil `echo` qui renvoie `text`.
+/// Ne sert plus qu'aux tests du serveur MCP.
+#[cfg(test)]
 #[derive(Debug, Default)]
 pub struct EchoExecutor;
 
+#[cfg(test)]
 impl ToolExecutor for EchoExecutor {
     fn tools(&self) -> Vec<ToolSpec> {
         vec![ToolSpec {
@@ -127,7 +130,15 @@ impl ToolExecutor for EchoExecutor {
 }
 
 // ---------------------------------------------------------------------------
-// R4 — DbExecutor : vrais outils (todos / journal) sur le pool sqlx. Plus
+// R4 — DbExecutor : vrais outils (todos / journal) sur le pool sqlx.
+//
+// Ce que l'agent peut faire est borné à ce qui se rattrape : créer, modifier
+// ou cocher une tâche (une tâche « annulée » reste en base), et AJOUTER au
+// Journal. Il ne peut ni supprimer, ni réécrire une entrée de journal : il
+// agit sans confirmation (`--allowedTools mcp__listik`), et un texte qu'il lit
+// (une note de tâche, une entrée collée) pourrait l'y pousser. Les
+// gestionnaires de suppression ont disparu aussi : non listés, ils restaient
+// appelables par leur nom. Plus
 // d'outils notes : le module a été retiré au profit du Journal (Phase P), et
 // une note créée par l'agent partait dans une table qu'aucun écran n'affiche.
 // Les mutations émettent les mêmes événements que les commandes Tauri
@@ -244,11 +255,6 @@ impl DbExecutor {
                 description: "Crée une entrée de journal (`target_day` YYYY-MM-DD et `content` obligatoires).".into(),
                 input_schema: json!({ "type": "object", "properties": { "target_day": { "type": "string" }, "content": { "type": "string" } }, "required": ["target_day", "content"] }),
             },
-            ToolSpec {
-                name: "update_journal_entry".into(),
-                description: "Met à jour une entrée de journal (`id` + champs partiels).".into(),
-                input_schema: json!({ "type": "object", "properties": { "id": { "type": "string" }, "target_day": { "type": "string" }, "content": { "type": "string" } }, "required": ["id"] }),
-            },
         ]
     }
 }
@@ -287,7 +293,7 @@ impl ToolExecutor for DbExecutor {
     ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<Value, String>> + Send + 'a>>
     {
         use crate::db;
-        use crate::models::{CreateJournalEntry, UpdateJournalEntry, UpdateTodo};
+        use crate::models::{CreateJournalEntry, UpdateTodo};
 
         Box::pin(async move {
             match tool {
@@ -336,12 +342,6 @@ impl ToolExecutor for DbExecutor {
                 self.emit(crate::commands::TODOS_CHANGED);
                 Ok(serde_json::to_value(todo).map_err(|e| e.to_string())?)
             }
-            "delete_todo" => {
-                let id = required_id(&arguments)?;
-                db::delete(&self.pool, &id).await.map_err(sqlx_err)?;
-                self.emit(crate::commands::TODOS_CHANGED);
-                Ok(json!({ "deleted": true }))
-            }
             "list_journal" => {
                 let date = required_str(&arguments, "date")?;
                 let entries = db::list_journal_entries_for_day(&self.pool, &date).await.map_err(sqlx_err)?;
@@ -362,27 +362,6 @@ impl ToolExecutor for DbExecutor {
                 .map_err(sqlx_err)?;
                 self.emit(crate::commands::JOURNAL_CHANGED);
                 Ok(serde_json::to_value(entry).map_err(|e| e.to_string())?)
-            }
-            "update_journal_entry" => {
-                let id = required_id(&arguments)?;
-                let entry = db::update_journal_entry(
-                    &self.pool,
-                    &id,
-                    UpdateJournalEntry {
-                        target_day: args_opt_string(&arguments, "target_day"),
-                        content: args_opt_string(&arguments, "content"),
-                    },
-                )
-                .await
-                .map_err(sqlx_err)?;
-                self.emit(crate::commands::JOURNAL_CHANGED);
-                Ok(serde_json::to_value(entry).map_err(|e| e.to_string())?)
-            }
-            "delete_journal_entry" => {
-                let id = required_id(&arguments)?;
-                db::delete_journal_entry(&self.pool, &id).await.map_err(sqlx_err)?;
-                self.emit(crate::commands::JOURNAL_CHANGED);
-                Ok(json!({ "deleted": true }))
             }
             other => Err(format!("outil inconnu : {other}")),
             }
@@ -996,6 +975,8 @@ fn extract_json_result(stdout: &[u8]) -> Result<String, String> {
 /// via le serveur MCP (port loopback). `run` est désucré en `Box::pin` pour
 /// rester dyn-compatible, comme `ToolExecutor::call`.
 pub trait AgentProvider: Send + Sync {
+    /// Nom du fournisseur, pour les tests et le diagnostic.
+    #[allow(dead_code)]
     fn name(&self) -> &str;
     fn run<'a>(
         &'a self,
@@ -1055,8 +1036,19 @@ impl AgentProvider for CodexProvider {
 
 /// Antigravity charge les MCP définis dans `.agents/mcp_config.json`. Le
 /// dossier est jetable : aucun réglage global Google/Gemini n’est modifié.
+/// Dossier temporaire supprimé quoi qu'il arrive (délai dépassé, erreur) :
+/// celui d'Antigravity contient le jeton du serveur MCP.
+struct DossierJetable(PathBuf);
+
+impl Drop for DossierJetable {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.0);
+    }
+}
+
 pub async fn run_antigravity_turn(binary: &Path, prompt: &str, mcp_port: u16, mcp_token: &str, timeout: std::time::Duration) -> Result<String, String> {
-    let root = std::env::temp_dir().join(format!("listik-antigravity-{}", uuid::Uuid::new_v4()));
+    let dossier = DossierJetable(std::env::temp_dir().join(format!("listik-antigravity-{}", uuid::Uuid::new_v4())));
+    let root = dossier.0.clone();
     let agents = root.join(".agents");
     std::fs::create_dir_all(&agents).map_err(|e| e.to_string())?;
     let cfg = json!({ "mcpServers": { "listik": {
@@ -1076,7 +1068,7 @@ pub async fn run_antigravity_turn(binary: &Path, prompt: &str, mcp_port: u16, mc
     let output = tokio::time::timeout(timeout, child.wait_with_output()).await
         .map_err(|_| "tour Antigravity interrompu (délai dépassé)".to_string())?
         .map_err(|e| e.to_string())?;
-    let _ = std::fs::remove_dir_all(&root);
+    drop(dossier);
     let diagnostic = String::from_utf8_lossy(&output.stderr);
     let diagnostic_lower = diagnostic.to_lowercase();
     if diagnostic_lower.contains("not logged into antigravity") || diagnostic_lower.contains("authentication required") {
@@ -1486,10 +1478,12 @@ mod tests {
         let toggled = executor.call("toggle_todo", json!({ "id": id })).await.unwrap();
         assert_eq!(toggled["status"], "completed");
 
-        let done = executor.call("delete_todo", json!({ "id": id })).await.unwrap();
-        assert_eq!(done["deleted"], true);
+        // L'agent ne supprime pas : l'appel est refusé et la tâche reste.
+        assert!(executor.call("delete_todo", json!({ "id": id })).await.is_err());
+        assert!(executor.call("update_journal_entry", json!({ "id": "x", "content": "" })).await.is_err());
+        assert!(executor.call("delete_journal_entry", json!({ "id": "x" })).await.is_err());
         let list = executor.call("list_todos", json!({})).await.unwrap();
-        assert_eq!(list.as_array().unwrap().len(), 0);
+        assert_eq!(list.as_array().unwrap().len(), 1);
     }
 
     #[tokio::test(flavor = "multi_thread")]

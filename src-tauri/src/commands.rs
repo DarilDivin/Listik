@@ -625,9 +625,8 @@ pub async fn ai_parse(state: State<'_, AppState>, text: String) -> Result<AiPars
 
 // L'ancienne commande `ai_agent` (sidecar Python, function-calling) a été
 // retirée avec la Phase R : plus aucun appelant frontend (rebranché sur
-// `ai_agent_run`, qui laisse l'agent exécuter lui-même via MCP). Les types
-// `SidecarAgentResponse`/`AiNoteDraft` restent dans `models/ai.rs` (coût nul,
-// pas de raison de les faire disparaître dans cette passe).
+// `ai_agent_run`, qui laisse l'agent exécuter lui-même via MCP). Ses types
+// (`SidecarAgentResponse`, `AiAgentResponse`…) sont partis avec elle.
 
 // `ai_search` (recherche sémantique Ctrl+K via le sidecar) retirée avec la
 // Phase R : le vecteur/embeddings a été mis de côté (voir ROADMAP-PIVOT.md,
@@ -725,10 +724,11 @@ fn agent_prompt(text: &str, history: &[AiChatMessage]) -> String {
     lines.push(format!(
         "Nouvelle demande : {text}\n\n\
          Tu es l'assistant de Listik. Utilise les outils MCP pour lire ou \
-         modifier la base avant de répondre ; ne supprime jamais une tâche ou \
-         une entrée de journal, car cette action requiert une confirmation qui \
-         n'est pas encore disponible. Si une action est ambigüe, pose une \
-         question au lieu d'inventer."
+         modifier la base avant de répondre. Tu ne peux ni supprimer une \
+         tâche, ni réécrire ou supprimer une entrée de journal : au Journal, \
+         tu peux seulement ajouter. Si on te le demande, dis que cela se fait \
+         dans l'app. Si une action est ambigüe, pose une question au lieu \
+         d'inventer."
     ));
     lines.join("\n")
 }

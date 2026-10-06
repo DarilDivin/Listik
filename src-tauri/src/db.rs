@@ -725,6 +725,7 @@ pub async fn delete_subtask(pool: &SqlitePool, id: &str) -> Result<(), sqlx::Err
 // ---------------------------------------------------------------------------
 
 /// Tâche ou note prête à être (ré)indexée.
+#[cfg_attr(not(test), allow(dead_code))] // R3 (embeddings) mis de côté, voir ROADMAP-PIVOT.md
 pub struct EmbeddingItem {
     pub id: String,
     pub kind: &'static str, // "task" ou "note"
@@ -749,6 +750,7 @@ async fn queue_deindex(pool: &SqlitePool, id: &str, kind: &str) -> Result<(), sq
 /// Tâches à (ré)indexer. Texte envoyé = titre + note + sous-tâches + tags
 /// (une seule chaîne, comme cherché sémantiquement d'un bloc — une liste de
 /// courses doit être trouvable par ses éléments, une tâche par son contexte).
+#[cfg_attr(not(test), allow(dead_code))] // R3 (embeddings) mis de côté
 pub async fn todos_needing_embedding(
     pool: &SqlitePool,
     limit: i64,
