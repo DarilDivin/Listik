@@ -53,7 +53,7 @@ export function GroqApiKeySetting() {
             value={draft}
             onChange={(e) => setDraft(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && handleSave()}
-            placeholder={hasKey ? "Clé déjà configurée — saisir pour remplacer" : "gsk_…"}
+            placeholder={hasKey ? `Clé enregistrée (${settings.groq_api_key}) — saisir pour remplacer` : "gsk_…"}
             autoComplete="off"
             className="pr-9"
           />

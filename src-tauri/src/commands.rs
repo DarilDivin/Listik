@@ -96,9 +96,20 @@ pub async fn delete_todo(
 // Commandes réglages
 // ---------------------------------------------------------------------------
 
+/// La clé Groq ne redescend jamais en clair vers la page : la page n'a
+/// besoin que de savoir si une clé existe, et la correction IA la lit côté
+/// Rust (`ai_parse`). Ce qui passe est un repère, « gsk_…1234 ».
+fn masquer_cle(mut settings: Settings) -> Settings {
+    settings.groq_api_key = settings.groq_api_key.filter(|k| !k.is_empty()).map(|k| {
+        let fin: String = k.chars().rev().take(4).collect::<Vec<_>>().into_iter().rev().collect();
+        format!("gsk_…{fin}")
+    });
+    settings
+}
+
 #[tauri::command]
 pub async fn get_settings(state: State<'_, AppState>) -> Result<Settings, String> {
-    db::get_settings(&state.pool).await.map_err(|e| e.to_string())
+    db::get_settings(&state.pool).await.map(masquer_cle).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -108,6 +119,7 @@ pub async fn update_settings(
 ) -> Result<Settings, String> {
     db::update_settings(&state.pool, payload)
         .await
+        .map(masquer_cle)
         .map_err(|e| e.to_string())
 }
 
@@ -739,6 +751,43 @@ struct PieceSauvee {
     fichier: Option<String>,
 }
 
+/// Un nom de fichier nu : ni dossier, ni chemin absolu, ni « .. ».
+fn nom_de_fichier_nu(nom: &str) -> bool {
+    !nom.is_empty()
+        && nom != "."
+        && nom != ".."
+        && !nom.contains(['/', '\\', ':', '\0'])
+        && std::path::Path::new(nom).file_name().and_then(|n| n.to_str()) == Some(nom)
+}
+
+/// Une sauvegarde est un fichier qu'on reçoit, pas un fichier qu'on a écrit :
+/// l'identifiant et le nom de chaque pièce viennent du JSON et finissent dans
+/// des chemins (`{id}.{ext}` à l'écriture, le nom à la lecture). Un `id` comme
+/// `..\..\Startup\x` avec une extension `bat` écrirait hors du dossier de
+/// l'app ; un `fichier` absolu ferait lire n'importe quel fichier. On n'accepte
+/// donc que des noms nus, et un identifiant fait de lettres, chiffres et tirets.
+fn verifier_piece_sauvee(id: &str, fichier: Option<&str>) -> Result<(), String> {
+    let id_sur = !id.is_empty() && id.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_');
+    if !id_sur {
+        return Err(format!("identifiant de pièce invalide dans la sauvegarde : {id}"));
+    }
+    if let Some(fichier) = fichier {
+        if !nom_de_fichier_nu(fichier) {
+            return Err(format!("nom de pièce invalide dans la sauvegarde : {fichier}"));
+        }
+    }
+    Ok(())
+}
+
+/// Extension d'un nom de fichier, réduite à des lettres et chiffres (sinon `bin`).
+fn extension_sure(nom: &str) -> Option<String> {
+    std::path::Path::new(nom)
+        .extension()
+        .and_then(|ext| ext.to_str())
+        .filter(|ext| !ext.is_empty() && ext.len() <= 10 && ext.chars().all(|c| c.is_ascii_alphanumeric()))
+        .map(str::to_ascii_lowercase)
+}
+
 /// Tout ce que l'application détient.
 ///
 /// Version 2. La 1 ne portait que les tâches et les NOTES — un module mort,
@@ -817,7 +866,12 @@ pub async fn export_backup(
     let fiches = db::list_all_journal_pieces(pool, &dossier_source)
         .await
         .map_err(|e| e.to_string())?;
-    let settings = db::get_settings(pool).await.map_err(|e| e.to_string())?;
+    // La clé Groq reste sur cet ordinateur : une sauvegarde se copie, se
+    // synchronise, se partage, et la clé partirait avec elle.
+    let settings = Settings {
+        groq_api_key: None,
+        ..db::get_settings(pool).await.map_err(|e| e.to_string())?
+    };
 
     // Le dossier porte le nom du fichier : deux sauvegardes dans le même
     // répertoire ne se mélangent pas.
@@ -915,6 +969,11 @@ pub async fn restore_backup(
         .filter(|name| *name == backup.pieces_dossier)
         .ok_or_else(|| "dossier de pièces invalide dans la sauvegarde".to_string())?;
     let source_pieces = parent.join(pieces_name);
+    // Tout est vérifié avant la première écriture : une seule pièce douteuse
+    // et rien n'est restauré.
+    for piece in &backup.pieces {
+        verifier_piece_sauvee(&piece.fiche.id, piece.fichier.as_deref())?;
+    }
     for piece in &backup.pieces {
         if let Some(file) = &piece.fichier {
             let source = source_pieces.join(file);
@@ -933,17 +992,21 @@ pub async fn restore_backup(
     let mut imported_pieces = Vec::new();
     for piece in &backup.pieces {
         let Some(file) = &piece.fichier else { continue };
-        let ext = std::path::Path::new(file)
-            .extension()
-            .and_then(|ext| ext.to_str())
-            .or_else(|| std::path::Path::new(&piece.fiche.nom_origine).extension().and_then(|ext| ext.to_str()))
-            .unwrap_or("bin");
+        let ext = extension_sure(file)
+            .or_else(|| extension_sure(&piece.fiche.nom_origine))
+            .unwrap_or_else(|| "bin".to_string());
         let target_file = format!("{}.{}", piece.fiche.id, ext);
         std::fs::copy(source_pieces.join(file), staging.join(&target_file))
             .map_err(|e| format!("copie de pièce impossible : {e}"))?;
         imported_pieces.push((piece, target_file));
     }
 
+    // Les sauvegardes n'emportent plus la clé Groq : sans clé dans le fichier,
+    // on garde celle de cet ordinateur plutôt que de l'effacer.
+    let cle_groq = match backup.settings.groq_api_key.clone().filter(|k| !k.is_empty()) {
+        Some(cle) => cle,
+        None => db::get_settings(&state.pool).await.map_err(|e| e.to_string())?.groq_api_key.unwrap_or_default(),
+    };
     let mut tx = state.pool.begin().await.map_err(|e| e.to_string())?;
     for table in [
         "task_tags", "journal_entry_tags", "sub_tasks", "orderings", "journal_pieces",
@@ -1018,7 +1081,7 @@ pub async fn restore_backup(
     for (key, value) in [
         ("daily_digest_enabled", if backup.settings.daily_digest_enabled { "1".to_string() } else { "0".to_string() }),
         ("daily_digest_time", backup.settings.daily_digest_time.clone()),
-        ("groq_api_key", backup.settings.groq_api_key.clone().unwrap_or_default()),
+        ("groq_api_key", cle_groq.clone()),
         ("ai_provider", backup.settings.ai_provider.clone()),
     ] {
         sqlx::query("INSERT INTO settings (key, value) VALUES (?, ?)")
@@ -1340,6 +1403,38 @@ pub async fn delete_subtask(
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn la_cle_groq_ne_redescend_jamais_en_clair() {
+        use super::masquer_cle;
+        use crate::models::Settings;
+        let avec = Settings { groq_api_key: Some("gsk_secret_abcd1234".into()), ..Default::default() };
+        assert_eq!(masquer_cle(avec).groq_api_key.as_deref(), Some("gsk_…1234"));
+        let vide = Settings { groq_api_key: Some(String::new()), ..Default::default() };
+        assert_eq!(masquer_cle(vide).groq_api_key, None);
+        assert_eq!(masquer_cle(Settings::default()).groq_api_key, None);
+    }
+
+    #[test]
+    fn une_sauvegarde_ne_peut_pas_sortir_du_dossier_des_pieces() {
+        use super::{extension_sure, verifier_piece_sauvee};
+        // Ce qu'écrit Listik : accepté.
+        assert!(verifier_piece_sauvee("3f2a9c1e-7b4d-4e8a-9c0f-1a2b3c4d5e6f", Some("3f2a9c1e.png")).is_ok());
+        assert!(verifier_piece_sauvee("abc", None).is_ok());
+        // Écriture hors du dossier, par l'identifiant.
+        assert!(verifier_piece_sauvee("..\\..\\Startup\\x", Some("x.bat")).is_err());
+        assert!(verifier_piece_sauvee("../x", None).is_err());
+        assert!(verifier_piece_sauvee("", None).is_err());
+        // Lecture hors du dossier, par le nom.
+        assert!(verifier_piece_sauvee("abc", Some("C:\\Windows\\win.ini")).is_err());
+        assert!(verifier_piece_sauvee("abc", Some("/etc/passwd")).is_err());
+        assert!(verifier_piece_sauvee("abc", Some("..")).is_err());
+        assert!(verifier_piece_sauvee("abc", Some("sous/dossier.png")).is_err());
+        // L'extension ne porte que des lettres et chiffres.
+        assert_eq!(extension_sure("photo.PNG").as_deref(), Some("png"));
+        assert_eq!(extension_sure("x.b/at"), None);
+        assert_eq!(extension_sure("sans-extension"), None);
+    }
+
     use super::*;
 
     /// L'origine de l'app, celle qu'autorise l'ACL de Tauri : `http://tauri.localhost`

@@ -4,6 +4,7 @@ mod cli_agent;
 mod commands;
 mod db;
 mod models;
+mod navigation;
 mod permissions;
 mod reminders;
 mod tray;
@@ -29,6 +30,8 @@ fn main() {
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
+        // Aucune fenêtre ne quitte l'app : un lien externe part dans le navigateur.
+        .plugin(navigation::garde())
         // Le plugin compare la version installée au manifeste signé de la release.
         // Il ne lance aucune vérification par lui-même : le frontend choisit le
         // moment où l'utilisateur est averti puis demande l'installation.
