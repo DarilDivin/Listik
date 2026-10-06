@@ -1,5 +1,7 @@
 "use client";
 
+import { SettingsGroup } from "@/components/settings/SettingsGroup";
+import { SettingsRow } from "@/components/settings/SettingsRow";
 import { Kbd, KbdGroup } from "@/components/ui/kbd";
 import { useAltKey, useCommandKey, useKeyLabels, useQuickShortcut } from "@/lib/keys";
 
@@ -86,37 +88,19 @@ export function ShortcutsSetting() {
   const groups = useGroups();
 
   return (
-    <div className="flex w-full flex-col gap-5">
+    <div className="flex flex-col gap-7">
       {groups.map((group) => (
-        <section key={group.title} className="flex flex-col gap-1">
-          <h3 className="text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-            {group.title}
-          </h3>
-          <div className="flex flex-col gap-1">
-            {group.items.map((item) => (
-              <div
-                key={item.label}
-                className="flex items-start justify-between gap-4 rounded-xl px-2 py-2 transition-colors hover:bg-foreground/[0.035]"
-              >
-                <div className="min-w-0">
-                  <p className="text-[0.9375rem] leading-snug text-foreground">
-                    {item.label}
-                  </p>
-                  {item.note && (
-                    <p className="mt-0.5 text-xs leading-snug text-muted-foreground">
-                      {item.note}
-                    </p>
-                  )}
-                </div>
-                <KbdGroup className="mt-px shrink-0">
-                  {item.keys.map((key) => (
-                    <Kbd key={key}>{key}</Kbd>
-                  ))}
-                </KbdGroup>
-              </div>
-            ))}
-          </div>
-        </section>
+        <SettingsGroup key={group.title} title={group.title}>
+          {group.items.map((item) => (
+            <SettingsRow key={item.label} label={item.label} description={item.note}>
+              <KbdGroup>
+                {item.keys.map((key) => (
+                  <Kbd key={key}>{key}</Kbd>
+                ))}
+              </KbdGroup>
+            </SettingsRow>
+          ))}
+        </SettingsGroup>
       ))}
     </div>
   );

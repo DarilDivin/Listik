@@ -5,6 +5,7 @@ import { Check } from "lucide-react";
 import { ACCENTS, useUIPrefs, type AccentId } from "@/components/ui-prefs";
 import { spring } from "@/lib/motion";
 import { useRovingRadioGroup } from "@/lib/use-roving-radio";
+import { cn } from "@/lib/utils";
 
 const VALUES: readonly AccentId[] = ACCENTS.map((a) => a.id);
 
@@ -19,11 +20,13 @@ const SWATCH: Record<AccentId, string> = {
 };
 
 /**
- * Sélecteur d'accent : grille de pastilles rondes. La sélection pose un
+ * Sélecteur d'accent : rangée de pastilles rondes. `size="sm"` pour une ligne
+ * de réglage, où le contrôle se range à droite du libellé. La sélection pose un
  * anneau qui GLISSE d'une pastille à l'autre (layoutId) et une coche qui
  * « pop ». Persisté via UIPrefs (localStorage), appliqué instantanément.
  */
-export function AccentPicker() {
+export function AccentPicker({ size = "default" }: { size?: "sm" | "default" }) {
+  const small = size === "sm";
   const { accent, setAccent } = useUIPrefs();
   const { onKeyDown, getItemProps } = useRovingRadioGroup(VALUES, accent, setAccent);
 
@@ -32,7 +35,7 @@ export function AccentPicker() {
       role="radiogroup"
       aria-label="Couleur d'accent"
       onKeyDown={onKeyDown}
-      className="flex flex-wrap items-center gap-3"
+      className={cn("flex flex-wrap items-center", small ? "gap-2.5" : "gap-3")}
     >
       {ACCENTS.map(({ id, label }, i) => {
         const active = id === accent;
@@ -47,14 +50,14 @@ export function AccentPicker() {
             aria-label={`Accent ${label}`}
             {...getItemProps(id, i)}
             title={label}
-            className="relative grid size-8 place-items-center rounded-full"
+            className={cn("relative grid place-items-center rounded-full", small ? "size-5" : "size-8")}
             style={{ background: SWATCH[id] }}
           >
             {active && (
               <motion.span
                 layoutId="accent-ring"
                 aria-hidden
-                className="absolute -inset-[5px] rounded-full border-2"
+                className={cn("absolute rounded-full", small ? "-inset-[4px] border-[1.5px]" : "-inset-[5px] border-2")}
                 style={{ borderColor: SWATCH[id] }}
                 transition={spring.snappy}
               />
@@ -68,7 +71,7 @@ export function AccentPicker() {
                   transition={spring.bouncy}
                   className="grid place-items-center"
                 >
-                  <Check size={14} strokeWidth={3.2} className="text-white" />
+                  <Check size={small ? 11 : 14} strokeWidth={3.2} className="text-white" />
                 </motion.span>
               )}
             </AnimatePresence>

@@ -7,6 +7,7 @@ import { toast } from "sonner";
 import { AppIcon } from "@/components/ui/app-icon";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { SettingsGroup } from "@/components/settings/SettingsGroup";
 import { useSettings } from "@/hooks/useSettings";
 import { cn } from "@/lib/utils";
 import { PROVIDER_IDS, PROVIDER_META } from "@/features/assistant/provider-meta";
@@ -73,49 +74,37 @@ export function AiProviderSetting() {
     } finally { setTesting(null); }
   };
 
-  const activeMeta = PROVIDER_META[active] ?? PROVIDER_META.claude;
-  const activeItem = providers?.find((provider) => provider.id === active);
-  const activeState = providerStatus(activeItem, results[active]);
-
   return (
-    <div className="space-y-5">
-      <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl bg-brand-soft px-4 py-3.5">
-        <div className="flex min-w-0 items-center gap-3">
-          <span className="grid size-10 shrink-0 place-items-center rounded-xl bg-background/75 text-brand shadow-sm"><AppIcon icon={activeMeta.icon} size={20} /></span>
-          <div className="min-w-0"><p className="text-xs font-medium text-muted-foreground">Assistant utilisé</p><p className="truncate text-sm font-semibold text-foreground">{activeMeta.label}</p></div>
-        </div>
-        <StatusBadge state={activeState.tone} label={activeState.label} />
-      </div>
-
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <p className="text-sm text-muted-foreground">Détection locale : aucun compte ni jeton n’est lu par Listik.</p>
-        <Button type="button" variant="ghost" size="sm" onClick={() => void mutate()} disabled={isLoading} className="text-muted-foreground"><RefreshCw className={cn("size-3.5", isLoading && "animate-spin")} />Actualiser</Button>
-      </div>
-
-      <div className="space-y-2" aria-live="polite">
-        {PROVIDER_IDS.map((id) => {
-          const item = providers?.find((provider) => provider.id === id);
-          const meta = PROVIDER_META[id];
-          const isActive = active === id;
-          const result = results[id];
-          const state = providerStatus(item, result);
-          const usable = item?.connection === "ready" || result?.state === "success";
-          return (
-            <article key={id} className={cn("rounded-2xl px-3.5 py-3 transition-colors", isActive ? "bg-foreground/[0.055]" : "hover:bg-foreground/[0.035]")}>
-              <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-                <span className="grid size-9 shrink-0 place-items-center rounded-xl bg-background text-muted-foreground shadow-sm"><AppIcon icon={meta.icon} size={18} /></span>
-                <div className="min-w-0 flex-1">
-                  <div className="flex flex-wrap items-center gap-2"><p className="text-sm font-medium text-foreground">{meta.label}</p>{isActive && <span className="text-xs text-brand">Utilisé</span>}<StatusBadge state={state.tone} label={state.label} /></div>
-                  <p className="mt-0.5 text-xs leading-relaxed text-muted-foreground">{result?.state === "error" ? result.message : item?.detail ?? "Recherche du CLI…"}{item?.version ? ` · ${item.version}` : ""}</p>
+    <div aria-live="polite">
+      <SettingsGroup
+        title="Sur cet ordinateur"
+        action={<Button type="button" variant="ghost" size="xs" onClick={() => void mutate()} disabled={isLoading} className="text-muted-foreground"><RefreshCw className={cn("size-3", isLoading && "animate-spin")} />Actualiser</Button>}
+      >
+          {PROVIDER_IDS.map((id) => {
+            const item = providers?.find((provider) => provider.id === id);
+            const meta = PROVIDER_META[id];
+            const isActive = active === id;
+            const result = results[id];
+            const state = providerStatus(item, result);
+            const usable = item?.connection === "ready" || result?.state === "success";
+            return (
+              <div key={id} className="py-3.5">
+                <div className="flex items-center gap-3">
+                  <AppIcon icon={meta.icon} size={18} className={isActive ? "text-brand" : "text-muted-foreground"} />
+                  <div className="min-w-0 flex-1">
+                    <div className="flex flex-wrap items-center gap-2"><p className="text-sm text-foreground">{meta.label}</p>{isActive && <span className="text-xs text-brand">Utilisé</span>}<StatusBadge state={state.tone} label={state.label} /></div>
+                    <p className="mt-0.5 text-xs leading-relaxed text-muted-foreground">{result?.state === "error" ? result.message : item?.detail ?? "Recherche du CLI…"}{item?.version ? ` · ${item.version}` : ""}</p>
+                  </div>
+                  <div className="shrink-0">
+                    {!item || !item.installed ? <span className="text-xs text-muted-foreground">À installer</span> : usable ? (isActive ? <span className="inline-flex h-7 items-center gap-1.5 px-1 text-xs font-medium text-brand"><Check className="size-3.5" />Actif</span> : <Button type="button" size="sm" variant="outline" onClick={() => void update({ ai_provider: id })}>Utiliser</Button>) : <div className="flex gap-1.5"><Button type="button" variant="ghost" size="sm" onClick={() => void connect(id)}>Se connecter</Button><Button type="button" variant="outline" size="sm" disabled={testing === id} onClick={() => void test(id)}>{testing === id ? "Test…" : "Tester"}</Button></div>}
+                  </div>
                 </div>
-                {!item || !item.installed ? <span className="text-xs text-muted-foreground">À installer</span> : usable ? (isActive ? <span className="inline-flex h-8 items-center gap-1.5 px-2 text-xs font-medium text-brand"><Check className="size-3.5" />Actif</span> : <Button type="button" size="sm" variant="outline" onClick={() => void update({ ai_provider: id })}>Utiliser</Button>) : <div className="flex flex-wrap gap-1.5"><Button type="button" variant="ghost" size="sm" onClick={() => void connect(id)}>Se connecter</Button><Button type="button" variant="outline" size="sm" disabled={testing === id} onClick={() => void test(id)}>{testing === id ? "Test…" : "Tester"}</Button></div>}
+                {result?.state === "success" && <p className="mt-1.5 pl-[30px] text-xs text-brand">{result.message}</p>}
               </div>
-              {result?.state === "success" && <p className="ml-12 mt-2 text-xs text-brand">{result.message}</p>}
-            </article>
-          );
-        })}
-      </div>
-      <p className="text-xs leading-relaxed text-muted-foreground">« Tester la connexion » envoie une réponse minimale et peut consommer un crédit. Les CLI restent responsables de leur authentification.</p>
+            );
+          })}
+      </SettingsGroup>
+      <p className="mt-3 max-w-[60ch] text-xs leading-relaxed text-muted-foreground">Détection locale : aucun compte ni jeton n’est lu par Listik. « Tester » envoie une réponse minimale et peut consommer un crédit ; chaque CLI reste responsable de sa connexion.</p>
     </div>
   );
 }

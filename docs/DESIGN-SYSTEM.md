@@ -39,7 +39,7 @@ un composant — uniquement les tokens sémantiques (`bg-background`, `bg-card`,
 `text-muted-foreground`…).
 
 Exception codifiée — **ombre de contact des pouces de segmented control**
-(`FilterTabs`, `NoteEditor` bascule Écrire/Aperçu) : un noir/blanc en alpha
+(`FilterTabs`, `NoteEditor` bascule Écrire/Aperçu, `Segmented`) : un noir/blanc en alpha
 très faible (`shadow-[0_1px_3px_rgba(0,0,0,0.08)] ring-1 ring-black/[0.04]
 dark:ring-white/[0.07]`) plutôt qu'un token — un token neutre teinté serait
 trop visible à ce niveau de subtilité. Réservé à ce micro-relief précis, pas
@@ -158,8 +158,11 @@ Patterns codifiés :
 - **Pastille glissante** : l'état actif d'un groupe est un `motion.span`
   `layoutId` partagé (dock `dock-active`, sidebar `sidebar-active-pill`,
   filtres `filter-thumb`, listes `list-filter-pill`, accent `accent-ring`,
-  notes `note-selected-pill`, éditeur `note-mode-thumb`, navigation (Réglages)
+  notes `note-selected-pill`, éditeur `note-mode-thumb`, rubriques des
+  Réglages `settings-nav-pill`, tuiles de navigation de l'accueil
   `nav-setting-thumb`) — jamais deux groupes avec le même `layoutId`.
+  `Segmented` (`components/ui/segmented.tsx`) tire le sien de `useId()` :
+  plusieurs instances sur une page ne se volent pas leur pouce.
 - **Cascade** : sections/cartes entrent avec `delay: i * 0.05` + `spring.smooth`.
 - **Ticker** : tout chiffre qui change passe par `AnimatedNumber`
   (`components/ui/animated-number.tsx`).
@@ -318,7 +321,12 @@ aller-retour Rust. Appliqué dès le montage ; défauts : `teal` + `dock`.
    `border-t`/`divide-y border-border/60`, jamais avec une carte élevée.
 2. Couleur vive ? → `--brand` / `--brand-soft` uniquement.
 3. Chiffre qui change ? → `AnimatedNumber` + `font-mono tabular-nums`.
-4. Groupe d'options ? → segmented à pouce `layoutId`.
-5. Bouton-icône ? → Tooltip. Destructif ? → AlertDialog.
-6. Entrée à l'écran ? → `spring.smooth` (+ cascade si plusieurs).
-7. Vide / chargement ? → Empty / Skeleton.
+4. Groupe d'options ? → `Segmented` : compact, à la taille de son contenu,
+   pouce à plat (`bg-card` + ombre de contact), ressort `snappy`. Jamais de
+   rail pleine largeur, de reflet « verre » ni de rebond.
+5. Réglage ? → une ligne `SettingsRow` dans un `SettingsGroup` (libellé et
+   phrase à gauche, contrôle compact à droite, hairlines). Interrupteur : le
+   `Switch` fin (28 × 16), accent quand il est activé.
+6. Bouton-icône ? → Tooltip. Destructif ? → AlertDialog.
+7. Entrée à l'écran ? → `spring.smooth` (+ cascade si plusieurs).
+8. Vide / chargement ? → Empty / Skeleton.

@@ -3,6 +3,7 @@
 import { motion } from "motion/react";
 import { Dock, PanelLeft } from "lucide-react";
 import { useUIPrefs, type NavStyle } from "@/components/ui-prefs";
+import { spring } from "@/lib/motion";
 import { cn } from "@/lib/utils";
 import { useRovingRadioGroup } from "@/lib/use-roving-radio";
 
@@ -13,8 +14,9 @@ const OPTIONS: { value: NavStyle; label: string; Icon: typeof Dock }[] = [
 const VALUES: readonly NavStyle[] = OPTIONS.map((o) => o.value);
 
 /**
- * Choix du style de navigation (même pattern que ThemeSetting) : la pastille
- * active glisse entre les deux options. Appliqué immédiatement via UIPrefs.
+ * Choix du style de navigation en grandes tuiles, pour l'accueil : la pastille
+ * active glisse entre les deux options, à plat. Appliqué immédiatement via
+ * UIPrefs. Les Réglages en font une ligne avec `Segmented`.
  */
 export function NavSetting() {
   const { nav, setNav } = useUIPrefs();
@@ -36,7 +38,7 @@ export function NavSetting() {
             onClick={() => setNav(value)}
             {...getItemProps(value, i)}
             className={cn(
-              "relative flex flex-col items-center justify-center gap-1.5 rounded-xl px-2 py-2.5 text-[11px] font-medium transition-colors duration-200",
+              "relative isolate flex flex-col items-center justify-center gap-1.5 rounded-xl px-2 py-2.5 text-[11px] font-medium transition-colors duration-200",
               isActive
                 ? "text-foreground"
                 : "text-muted-foreground hover:text-foreground/80",
@@ -46,12 +48,8 @@ export function NavSetting() {
               <motion.span
                 layoutId="nav-setting-thumb"
                 aria-hidden
-                className="absolute inset-0 -z-10 rounded-xl bg-card/90 ring-1 ring-foreground/10"
-                style={{
-                  boxShadow:
-                    "inset 0 1px 0 0 color-mix(in oklch, white 22%, transparent), 0 1px 3px 0 rgb(0 0 0 / 0.10)",
-                }}
-                transition={{ type: "spring", bounce: 0.28, duration: 0.55 }}
+                className="absolute inset-0 -z-10 rounded-xl bg-card shadow-[0_1px_2px_rgba(0,0,0,0.07)] ring-1 ring-black/[0.04] dark:bg-accent dark:ring-white/[0.07]"
+                transition={spring.snappy}
               />
             )}
             <Icon size={15} className="relative" />
