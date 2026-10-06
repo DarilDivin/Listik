@@ -3,8 +3,7 @@
 
 import { useState, useEffect } from 'react';
 import { getCurrentWindow } from '@tauri-apps/api/window'; 
-import { BreakoutRoomRegular, SelectAllOffRegular, SquareMultipleRegular } from '@fluentui/react-icons'; // Import Fluent UI icons
-import { ChromeRestoreIcon } from '@fluentui/react-icons-mdl2';
+import { SquareMultipleRegular } from '@fluentui/react-icons'; // Import Fluent UI icons
 
 interface TitleBarProps {
   title?: string;
