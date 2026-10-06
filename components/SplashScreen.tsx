@@ -34,6 +34,7 @@ type Phase = "cover" | "play" | "fade" | "gone";
 export function SplashScreen() {
   const [phase, setPhase] = useState<Phase>("cover");
   const fadeTimer = useRef<number | undefined>(undefined);
+  const coverRef = useRef<HTMLDivElement>(null);
 
   const fade = useCallback(() => setPhase((p) => (p === "cover" || p === "play" ? "fade" : p)), []);
   const drop = useCallback(() => setPhase("gone"), []);
@@ -77,6 +78,7 @@ export function SplashScreen() {
 
   return (
     <motion.div
+      ref={coverRef}
       aria-hidden
       className="fixed inset-0 z-[99] grid place-items-center bg-background"
       style={{ pointerEvents: phase === "fade" ? "none" : "auto" }}
@@ -84,7 +86,15 @@ export function SplashScreen() {
       animate={{ opacity: phase === "fade" ? 0 : 1 }}
       transition={{ duration: 0.42, ease: [0.4, 0, 0.2, 1] }}
       onAnimationComplete={() => {
-        if (phase === "fade") drop();
+        if (phase !== "fade") return;
+        // Le fondu tourne dans le moteur d'animation du navigateur, mais motion
+        // laisse « opacity: 1 » écrit sur l'élément. Quand l'animation s'achève,
+        // l'élément y retombe le temps d'une image, avant que React ne le
+        // retire : le logo réapparaissait en plein écran par-dessus le
+        // Planificateur (clignotement mesuré image par image). On écrit
+        // l'opacité finale avant de le retirer.
+        if (coverRef.current) coverRef.current.style.opacity = "0";
+        drop();
       }}
     >
       {phase !== "cover" && (
