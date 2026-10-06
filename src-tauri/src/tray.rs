@@ -6,7 +6,8 @@
 //! garde un menu natif court, fait pour agir vite.
 //!
 //! Sur Mac, la barre des menus ouvre le menu natif au clic, comme toutes les
-//! apps de cette barre ; le panneau n'y est pas créé.
+//! apps de cette barre ; le panneau n'y est pas créé. Ailleurs, il n'est créé
+//! qu'au premier clic.
 
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
@@ -43,6 +44,14 @@ struct PanelState {
     anchor: Mutex<Option<Rect>>,
     /// Quand la perte du focus l'a fermé pour la dernière fois.
     hidden_at: Mutex<Option<Instant>>,
+    /// Créé au premier clic : il se montre dès que sa page annonce sa taille
+    /// (pas de fenêtre vide, ni de flash blanc avant le chargement).
+    show_when_ready: Mutex<bool>,
+}
+
+/// Un verrou empoisonné (panique ailleurs) ne doit pas faire planter le tray.
+fn lock<T>(m: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
+    m.lock().unwrap_or_else(|poison| poison.into_inner())
 }
 
 pub fn build(app: &App) -> tauri::Result<()> {
@@ -78,7 +87,7 @@ pub fn build(app: &App) -> tauri::Result<()> {
     };
 
     if !mac {
-        create_panel(app)?;
+        app.manage(PanelState::default());
     }
 
     TrayIconBuilder::with_id("main-tray")
@@ -127,10 +136,11 @@ pub fn build(app: &App) -> tauri::Result<()> {
     Ok(())
 }
 
-/// Crée le panneau caché dès le démarrage : au premier clic, la page est déjà
-/// chargée et le panneau apparaît sans attendre.
-fn create_panel(app: &App) -> tauri::Result<()> {
-    app.manage(PanelState::default());
+/// Crée le panneau, caché, au premier clic plutôt qu'au démarrage : un moteur
+/// de rendu de plus (de l'ordre de 100 Mo) ne se paie que si l'on s'en sert.
+/// La première ouverture attend le chargement de la page ; les suivantes sont
+/// immédiates, la fenêtre restant ensuite en place.
+fn create_panel(app: &AppHandle) -> tauri::Result<WebviewWindow> {
     WebviewWindowBuilder::new(app, PANEL, WebviewUrl::App("/tray".into()))
         .title("Listik")
         .inner_size(PANEL_WIDTH, 360.0)
@@ -145,24 +155,21 @@ fn create_panel(app: &App) -> tauri::Result<()> {
         .minimizable(false)
         .skip_taskbar(true)
         .always_on_top(true)
-        .build()?;
-    Ok(())
+        .build()
 }
 
 /// Ouvre le panneau au-dessus de l'icône, ou le ferme s'il est ouvert. Sans
 /// rectangle d'icône, il se pose près du pointeur.
 pub fn toggle_panel(app: &AppHandle, anchor: Option<Rect>) -> Result<(), String> {
-    let window = panel(app)?;
     let state = app.state::<PanelState>();
+    let existing = app.get_webview_window(PANEL);
 
-    if window.is_visible().map_err(|e| e.to_string())? {
-        return window.hide().map_err(|e| e.to_string());
+    if let Some(window) = &existing {
+        if window.is_visible().map_err(|e| e.to_string())? {
+            return window.hide().map_err(|e| e.to_string());
+        }
     }
-    let just_hidden = state
-        .hidden_at
-        .lock()
-        .unwrap()
-        .is_some_and(|at| at.elapsed() < REOPEN_GUARD);
+    let just_hidden = lock(&state.hidden_at).is_some_and(|at| at.elapsed() < REOPEN_GUARD);
     if just_hidden {
         return Ok(());
     }
@@ -177,8 +184,15 @@ pub fn toggle_panel(app: &AppHandle, anchor: Option<Rect>) -> Result<(), String>
             }
         }
     };
-    *state.anchor.lock().unwrap() = Some(anchor);
+    *lock(&state.anchor) = Some(anchor);
 
+    let Some(window) = existing else {
+        // Première ouverture : la page se charge, et `resize_panel` montrera
+        // la fenêtre quand elle annoncera sa taille.
+        *lock(&state.show_when_ready) = true;
+        create_panel(app).map_err(|e| e.to_string())?;
+        return Ok(());
+    };
     place(app, &window, anchor)?;
     window.show().map_err(|e| e.to_string())?;
     window.set_focus().map_err(|e| e.to_string())
@@ -188,7 +202,7 @@ pub fn toggle_panel(app: &AppHandle, anchor: Option<Rect>) -> Result<(), String>
 pub fn on_panel_blur(window: &tauri::Window) {
     let app = window.app_handle();
     if let Some(state) = app.try_state::<PanelState>() {
-        *state.hidden_at.lock().unwrap() = Some(Instant::now());
+        *lock(&state.hidden_at) = Some(Instant::now());
     }
     let _ = window.hide();
 }
@@ -200,11 +214,17 @@ pub fn resize_panel(app: &AppHandle, height: f64) -> Result<(), String> {
     window
         .set_size(LogicalSize::new(PANEL_WIDTH, height.clamp(120.0, 640.0)))
         .map_err(|e| e.to_string())?;
-    let anchor = *app.state::<PanelState>().anchor.lock().unwrap();
-    match anchor {
-        Some(anchor) => place(app, &window, anchor),
-        None => Ok(()),
+    let state = app.state::<PanelState>();
+    let anchor = *lock(&state.anchor);
+    if let Some(anchor) = anchor {
+        place(app, &window, anchor)?;
     }
+    let first_show = std::mem::take(&mut *lock(&state.show_when_ready));
+    if first_show {
+        window.show().map_err(|e| e.to_string())?;
+        window.set_focus().map_err(|e| e.to_string())?;
+    }
+    Ok(())
 }
 
 fn panel(app: &AppHandle) -> Result<WebviewWindow, String> {

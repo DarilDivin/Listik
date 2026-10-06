@@ -168,10 +168,47 @@ mod line_ending_tests {
 /// Point de passage UNIQUE : toute lecture de `Todo` doit passer par ici, sinon
 /// on renvoie des relations vides selon le chemin emprunté. C'est pourquoi `get`
 /// l'appelle aussi, sur un vecteur d'un seul élément.
+/// Attache sous-tâches et tags : deux requêtes par paquet de tâches, plus
+/// deux requêtes PAR tâche. La liste complète se recharge à chaque mutation,
+/// dans chaque fenêtre ouverte : avec 2 000 tâches, l'ancienne boucle faisait
+/// 4 001 requêtes (360 à 720 ms mesurés, voir `mesure_list_all_2000_taches`).
+/// Mêmes ordres que `list_subtasks` (position) et `list_todo_tags` (nom).
 async fn attach_relations(pool: &SqlitePool, mut todos: Vec<Todo>) -> Result<Vec<Todo>, sqlx::Error> {
+    use std::collections::HashMap;
+    // Bien sous la limite de variables liées de SQLite.
+    const PAQUET: usize = 500;
+
+    let mut sous_taches: HashMap<String, Vec<SubTask>> = HashMap::new();
+    let mut tags: HashMap<String, Vec<Tag>> = HashMap::new();
+    for paquet in todos.chunks(PAQUET) {
+        let marques = vec!["?"; paquet.len()].join(", ");
+
+        let requete = format!(
+            "SELECT {SUBTASK_COLUMNS} FROM sub_tasks WHERE todo_id IN ({marques}) ORDER BY position ASC"
+        );
+        let mut q = sqlx::query_as::<_, SubTask>(&requete);
+        for t in paquet {
+            q = q.bind(&t.id);
+        }
+        for st in q.fetch_all(pool).await? {
+            sous_taches.entry(st.todo_id.clone()).or_default().push(st);
+        }
+
+        let requete = format!(
+            "SELECT tt.todo_id, t.id, t.name, t.parent_id, t.created_at FROM tags t              JOIN task_tags tt ON tt.tag_id = t.id              WHERE tt.todo_id IN ({marques}) ORDER BY t.name COLLATE NOCASE ASC"
+        );
+        let mut q = sqlx::query_as::<_, (String, String, String, Option<String>, String)>(&requete);
+        for t in paquet {
+            q = q.bind(&t.id);
+        }
+        for (todo_id, id, name, parent_id, created_at) in q.fetch_all(pool).await? {
+            tags.entry(todo_id).or_default().push(Tag { id, name, parent_id, created_at });
+        }
+    }
+
     for todo in &mut todos {
-        todo.sub_tasks = list_subtasks(pool, &todo.id).await?;
-        todo.tags = list_todo_tags(pool, &todo.id).await?;
+        todo.sub_tasks = sous_taches.remove(&todo.id).unwrap_or_default();
+        todo.tags = tags.remove(&todo.id).unwrap_or_default();
     }
     Ok(todos)
 }
@@ -2355,7 +2392,7 @@ mod tests {
         create, create_area, create_project, create_subtask, create_tag, delete,
         delete_area, delete_project, delete_tag, due_reminders, duplicate_project,
         duplicate_todo, get, get_settings, list_all, list_areas, list_by_date,
-        list_projects, list_subtasks, list_tags, mark_reminded, reconcile_lists_into_projects,
+        list_projects, list_subtasks, list_tags, list_todo_tags, mark_reminded, reconcile_lists_into_projects,
         set_todo_tags, take_due_digest, todos_needing_embedding, toggle, update,
         update_area, update_project, update_settings, update_subtask, update_tag,
     };
@@ -2448,6 +2485,63 @@ mod tests {
 
         assert_eq!(updated.text, "Nouveau texte");
         assert_eq!(updated.created_at, todo.created_at);
+    }
+
+    /// Le chargement groupé rend exactement ce que rendaient les requêtes par
+    /// tâche : mêmes sous-tâches dans le même ordre, mêmes tags triés par nom,
+    /// rien pour une tâche sans relation.
+    #[tokio::test]
+    async fn relations_groupees_identiques_aux_requetes_par_tache() {
+        use crate::models::{CreateSubTask, CreateTag};
+        let pool = memory_pool().await;
+        let zebre = create_tag(&pool, CreateTag { name: "Zèbre".into(), parent_id: None }).await.unwrap().id;
+        let abeille = create_tag(&pool, CreateTag { name: "abeille".into(), parent_id: None }).await.unwrap().id;
+        let a = create(&pool, new_todo("A")).await.unwrap();
+        let b = create(&pool, new_todo("B")).await.unwrap();
+        let _vide = create(&pool, new_todo("Sans relation")).await.unwrap();
+        for texte in ["un", "deux", "trois"] {
+            create_subtask(&pool, CreateSubTask { todo_id: a.id.clone(), text: texte.into() }).await.unwrap();
+        }
+        create_subtask(&pool, CreateSubTask { todo_id: b.id.clone(), text: "seule".into() }).await.unwrap();
+        set_todo_tags(&pool, &a.id, &[zebre.clone(), abeille.clone()]).await.unwrap();
+        set_todo_tags(&pool, &b.id, &[zebre]).await.unwrap();
+
+        let toutes = list_all(&pool).await.unwrap();
+        assert_eq!(toutes.len(), 3);
+        for t in &toutes {
+            let attendues: Vec<String> = list_subtasks(&pool, &t.id).await.unwrap().into_iter().map(|s| s.id).collect();
+            let obtenues: Vec<String> = t.sub_tasks.iter().map(|s| s.id.clone()).collect();
+            assert_eq!(obtenues, attendues, "sous-tâches de {}", t.text);
+            let attendus: Vec<String> = list_todo_tags(&pool, &t.id).await.unwrap().into_iter().map(|g| g.name).collect();
+            let obtenus: Vec<String> = t.tags.iter().map(|g| g.name.clone()).collect();
+            assert_eq!(obtenus, attendus, "tags de {}", t.text);
+        }
+        let a = toutes.iter().find(|t| t.text == "A").unwrap();
+        assert_eq!(a.sub_tasks.iter().map(|s| s.text.as_str()).collect::<Vec<_>>(), ["un", "deux", "trois"]);
+        assert_eq!(a.tags.iter().map(|g| g.name.as_str()).collect::<Vec<_>>(), ["abeille", "Zèbre"]);
+    }
+
+    /// Mesure, pas un test de non-régression : `cargo test mesure_list_all -- --ignored --nocapture`.
+    /// 2 000 tâches (un an d'usage environ), chacune avec une sous-tâche et deux tags.
+    #[tokio::test]
+    #[ignore]
+    async fn mesure_list_all_2000_taches() {
+        use crate::models::{CreateSubTask, CreateTag};
+        let pool = memory_pool().await;
+        let mut tags = Vec::new();
+        for nom in ["travail", "maison", "perso", "achats", "santé"] {
+            tags.push(create_tag(&pool, CreateTag { name: nom.into(), parent_id: None }).await.unwrap().id);
+        }
+        for i in 0..2000 {
+            let t = create(&pool, new_todo(&format!("Tâche {i}"))).await.unwrap();
+            create_subtask(&pool, CreateSubTask { todo_id: t.id.clone(), text: "étape".into() }).await.unwrap();
+            set_todo_tags(&pool, &t.id, &[tags[i % 5].clone(), tags[(i + 1) % 5].clone()]).await.unwrap();
+        }
+        for essai in 0..3 {
+            let debut = std::time::Instant::now();
+            let toutes = list_all(&pool).await.unwrap();
+            println!("essai {essai} : {} tâches en {:?}", toutes.len(), debut.elapsed());
+        }
     }
 
     #[tokio::test]

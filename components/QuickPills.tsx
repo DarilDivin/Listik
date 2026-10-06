@@ -138,7 +138,8 @@ export function QuickPills({ collapsed, onChoose, entryKey }: QuickPillsProps) {
                 left: collapsed ? 0 : leftFor(i),
                 width: collapsed ? PILL_SIZE : widthFor(item.mode),
                 opacity: collapsed ? 0 : 1,
-                backgroundColor: focused ? "var(--brand-soft)" : "transparent",
+                // « transparent » ne s'interpole pas (avertissement motion) : même valeur, en rgba.
+                backgroundColor: focused ? "var(--brand-soft)" : "rgba(0,0,0,0)",
               }}
               transition={{
                 duration: 0.58,
