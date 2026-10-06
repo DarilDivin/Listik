@@ -1182,7 +1182,7 @@ pub fn resolve_opencode_binary() -> Option<PathBuf> {
     let candidates = ["opencode"];
 
     if let Some(found) = candidates.iter().find_map(|name| find_on_user_path(name)) {
-        return Some(found);
+        return Some(executable_derriere_le_shim(&found).unwrap_or(found));
     }
     candidates.into_iter().map(PathBuf::from).find(|p| {
         cli_command(p)
@@ -1191,6 +1191,45 @@ pub fn resolve_opencode_binary() -> Option<PathBuf> {
             .map(|o| o.status.success())
             .unwrap_or(false)
     })
+}
+
+/// Un wrapper npm `.cmd` ne fait que relancer l'exécutable qu'il nomme
+/// (`"%dp0%\node_modules\opencode-ai\bin\opencode.exe" %*`). On appelle cet
+/// exécutable directement : Rust refuse de passer à un script batch un argument
+/// qui contient un retour à la ligne (protection BatBadBut, CVE-2024-24576), et
+/// toute vraie demande à l'agent en contient — seul « Tester », d'une ligne,
+/// passait. `None` si ce n'est pas un tel wrapper ou si l'exécutable manque.
+fn executable_derriere_le_shim(shim: &Path) -> Option<PathBuf> {
+    let est_batch = shim
+        .extension()
+        .and_then(|e| e.to_str())
+        .is_some_and(|e| e.eq_ignore_ascii_case("cmd") || e.eq_ignore_ascii_case("bat"));
+    if !est_batch {
+        return None;
+    }
+    let texte = std::fs::read_to_string(shim).ok()?;
+    let marque = "\"%dp0%\\";
+    let debut = texte.find(marque)? + marque.len();
+    let relatif = &texte[debut..][..texte[debut..].find('"')?];
+    if !relatif.to_ascii_lowercase().ends_with(".exe") {
+        return None;
+    }
+    let exe = shim.parent()?.join(relatif);
+    exe.is_file().then_some(exe)
+}
+
+/// Filet si l'on n'a qu'un script batch : Rust en refuserait l'argument
+/// multiligne, on le met donc sur une ligne plutôt que d'échouer.
+fn argument_pour(binary: &Path, prompt: &str) -> String {
+    let est_batch = binary
+        .extension()
+        .and_then(|e| e.to_str())
+        .is_some_and(|e| e.eq_ignore_ascii_case("cmd") || e.eq_ignore_ascii_case("bat"));
+    if est_batch {
+        prompt.replace(['\r', '\n'], " ")
+    } else {
+        prompt.to_string()
+    }
 }
 
 /// Un tour `opencode run`. `--format json` produit un flux NDJSON (une ligne
@@ -1205,7 +1244,7 @@ pub async fn run_opencode_turn(
 ) -> Result<String, String> {
     let mut cmd = cli_command_async(binary);
     cmd.arg("run")
-        .arg(prompt)
+        .arg(argument_pour(binary, prompt))
         .arg("--dir")
         .arg(project_dir)
         .arg("--format")
@@ -1394,6 +1433,28 @@ mod tests {
             .unwrap();
         sqlx::migrate!("./migrations").run(&pool).await.unwrap();
         pool
+    }
+
+    #[test]
+    fn opencode_s_appelle_sans_passer_par_le_script_batch() {
+        use super::{argument_pour, executable_derriere_le_shim};
+        let dir = std::env::temp_dir().join(format!("listik-shim-{}", uuid::Uuid::new_v4()));
+        let bin = dir.join("node_modules").join("opencode-ai").join("bin");
+        std::fs::create_dir_all(&bin).unwrap();
+        std::fs::write(bin.join("opencode.exe"), b"").unwrap();
+        let shim = dir.join("opencode.cmd");
+        std::fs::write(
+            &shim,
+            "@ECHO off\r\nGOTO start\r\n:start\r\nSETLOCAL\r\n\"%dp0%\\node_modules\\opencode-ai\\bin\\opencode.exe\"   %*\r\n",
+        )
+        .unwrap();
+        assert_eq!(executable_derriere_le_shim(&shim), Some(dir.join("node_modules\\opencode-ai\\bin\\opencode.exe")));
+        // Un vrai exécutable n'est pas un wrapper.
+        assert_eq!(executable_derriere_le_shim(&bin.join("opencode.exe")), None);
+        // Filet : sur un script batch, la demande tient sur une ligne.
+        assert_eq!(argument_pour(&shim, "a\nb\r\nc"), "a b  c");
+        assert_eq!(argument_pour(&bin.join("opencode.exe"), "a\nb"), "a\nb");
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     /// Les notes ont été retirées au profit du Journal : l'agent ne doit plus
@@ -1725,11 +1786,13 @@ mod tests {
         let _rt = tokio::runtime::Runtime::new().unwrap();
         let _guard = _rt.enter();
 
+        // Si le port est déjà pris (un Listik qui tourne pendant les tests),
+        // c'est le même scénario : il n'y a rien à réserver soi-même.
         let occupied = std::net::TcpListener::bind((
             "127.0.0.1",
             MCP_PORT_RANGE_START,
         ))
-        .unwrap();
+        .ok();
 
         let server = spawn_mcp_server(Arc::new(EchoExecutor) as Arc<dyn ToolExecutor>).unwrap();
 
