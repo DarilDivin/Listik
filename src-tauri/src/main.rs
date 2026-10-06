@@ -6,19 +6,14 @@ mod db;
 mod models;
 mod permissions;
 mod reminders;
+mod tray;
 
 use std::sync::Arc;
 
-use commands::{show_main_window, toggle_quick_window};
+use commands::toggle_quick_window;
 use db::AppState;
-use tauri::{
-    menu::{Menu, MenuItem, PredefinedMenuItem},
-    tray::{TrayIconBuilder, TrayIconEvent},
-    Manager,
-};
-
-/// Le raccourci de capture rapide, tel que l'affiche le menu du tray.
-const QUICK_ACCELERATOR: &str = if cfg!(target_os = "macos") { "Alt+Space" } else { "Alt+Q" };
+use tauri::Manager;
+use tray::QUICK_ACCELERATOR;
 
 fn main() {
     let mut context = tauri::generate_context!();
@@ -105,82 +100,8 @@ fn main() {
             // --- Planificateur de rappels (notifications en arrière-plan) ---
             reminders::spawn_scheduler(app.handle().clone());
 
-            // --- Menu du tray ---
-            // Menu natif du tray : en-tête + groupes séparés (le style est géré
-            // par l'OS ; on soigne la structure, les libellés et le raccourci).
-            let header = MenuItem::with_id(app, "header", "Listik", false, None::<&str>)?;
-            let quick_task =
-                MenuItem::with_id(app, "quick_task", "Tâche rapide", true, Some(QUICK_ACCELERATOR))?;
-            let open_app =
-                MenuItem::with_id(app, "main", "Ouvrir Listik", true, None::<&str>)?;
-            let quit = MenuItem::with_id(app, "quit", "Quitter Listik", true, None::<&str>)?;
-
-            let menu = Menu::with_items(
-                app,
-                &[
-                    &header,
-                    &PredefinedMenuItem::separator(app)?,
-                    &quick_task,
-                    &open_app,
-                    &PredefinedMenuItem::separator(app)?,
-                    &quit,
-                ],
-            )?;
-
-            // Sur Mac, la barre des menus attend une icône « modèle » : une
-            // silhouette noire que le système teinte selon le thème. Ailleurs,
-            // l'icône de l'app en couleurs.
-            let template = cfg!(target_os = "macos");
-            let icon = if template {
-                tauri::image::Image::from_bytes(include_bytes!("../icons/tray-template.png"))?
-            } else {
-                app.default_window_icon()
-                    .cloned()
-                    .ok_or_else(|| std::io::Error::other("icône de fenêtre par défaut manquante"))?
-            };
-
-            let _tray = TrayIconBuilder::with_id("main-tray")
-                .tooltip("Listik - Gestionnaire de tâches")
-                .icon(icon)
-                .icon_as_template(template)
-                .menu(&menu)
-                .on_menu_event(move |app_handle, event| match event.id.as_ref() {
-                    "quick_task" => {
-                        let app_handle = app_handle.clone();
-                        tauri::async_runtime::spawn(async move {
-                            if let Err(e) = toggle_quick_window(app_handle).await {
-                                eprintln!("Erreur capture rapide: {e}");
-                            }
-                        });
-                    }
-                    "main" => {
-                        let app_handle = app_handle.clone();
-                        tauri::async_runtime::spawn(async move {
-                            if let Err(e) = show_main_window(app_handle).await {
-                                eprintln!("Erreur main: {e}");
-                            }
-                        });
-                    }
-                    "quit" => {
-                        app_handle.exit(0);
-                    }
-                    _ => {}
-                })
-                .on_tray_icon_event(|tray, event| {
-                    if let TrayIconEvent::Click {
-                        button: tauri::tray::MouseButton::Left,
-                        ..
-                    } = event
-                    {
-                        let app_handle = tray.app_handle().clone();
-                        tauri::async_runtime::spawn(async move {
-                            if let Err(e) = show_main_window(app_handle).await {
-                                eprintln!("Erreur tray click: {e}");
-                            }
-                        });
-                    }
-                })
-                .build(app)?;
+            // --- Icône du tray ---
+            tray::build(app)?;
 
             println!("🚀 Application Listik démarrée !");
 

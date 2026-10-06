@@ -489,16 +489,38 @@ pub async fn hide_quick_window(app: AppHandle) -> Result<(), String> {
     Ok(())
 }
 
+/// Ouvre la barre de capture rapide, dans un mode imposé (`"tache"`,
+/// `"journal"`, `"question"`) ou neutre (`None`). Jamais une bascule : depuis
+/// le tray, « Nouvelle tâche » doit montrer la barre, pas la cacher si elle
+/// traîne déjà.
+///
+/// Le mode passe par `quick:next-mode`, le même canal que l'accueil : la
+/// barre l'applique à sa prochaine prise de focus. `None` annule un mode
+/// resté en attente.
+pub fn open_quick_in_mode(app: &AppHandle, mode: Option<&str>) -> Result<(), String> {
+    app.emit("quick:next-mode", mode).map_err(|e| e.to_string())?;
+    let window = app
+        .get_webview_window("quick")
+        .ok_or_else(|| "Fenêtre de capture introuvable".to_string())?;
+    window.show().map_err(|e| e.to_string())?;
+    window.set_focus().map_err(|e| e.to_string())
+}
+
+/// Ramène la fenêtre principale au premier plan, même réduite.
+pub fn reveal_main_window(app: &AppHandle) -> Result<(), String> {
+    let window = app
+        .get_webview_window("main")
+        .ok_or_else(|| "Fenêtre principale introuvable".to_string())?;
+    // `show` ne sort pas une fenêtre de la barre des tâches : réduite, elle
+    // restait réduite et « Ouvrir Listik » ne faisait rien.
+    window.unminimize().map_err(|e| e.to_string())?;
+    window.show().map_err(|e| e.to_string())?;
+    window.set_focus().map_err(|e| e.to_string())
+}
+
 #[tauri::command]
 pub async fn show_main_window(app: AppHandle) -> Result<(), String> {
-    match app.get_webview_window("main") {
-        Some(window) => {
-            window.show().map_err(|e| e.to_string())?;
-            window.set_focus().map_err(|e| e.to_string())?;
-            Ok(())
-        }
-        None => Err("Fenêtre principale introuvable".to_string()),
-    }
+    reveal_main_window(&app)
 }
 
 // ---------------------------------------------------------------------------
