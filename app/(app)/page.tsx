@@ -33,6 +33,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import type { SectionKey } from "@/components/ui-prefs";
 import {
   countForView,
+  dayPulse,
   groupTodosByDate,
   PLANNER_VIEWS,
   projectProgress,
@@ -306,11 +307,13 @@ function PlannerPageContent() {
 
   // Pouls du jour (global, indépendant du filtre liste) — lui réagit tout de
   // suite : l'anneau et le compteur récompensent la coche pendant la pause.
-  const { doneToday, totalToday, overdueToday } = useMemo(() => {
-    const day = todos.filter((t) => t.scheduled_for === todayISO);
+  // Bouclé aujourd'hui / (bouclé + ce qui reste dans Aujourd'hui) : la même
+  // vérité que la liste et que son état vide (voir `dayPulse`).
+  const { finishedToday, totalToday, overdueToday } = useMemo(() => {
+    const pulse = dayPulse(todos, todayISO, tomorrowISO);
     return {
-      doneToday: day.filter((t) => t.status === "completed").length,
-      totalToday: day.length,
+      finishedToday: pulse.finished,
+      totalToday: pulse.finished + pulse.remaining,
       // Compté sur TOUTES les tâches, jamais sur `groups` : celui-ci est
       // filtré par tag, et le bandeau ne doit pas changer de discours quand on
       // filtre une liste. Et on repasse par `groupTodosByDate` plutôt que de
@@ -863,7 +866,7 @@ function PlannerPageContent() {
                     <div className="pt-8">
                       <HeroDay
                         date={today}
-                        done={doneToday}
+                        done={finishedToday}
                         total={totalToday}
                         overdue={overdueToday}
                       />
@@ -958,12 +961,18 @@ function PlannerPageContent() {
                       ))}
 
                       {!portalSection && isEmpty && (
-                        // Aujourd'hui vidé par les coches n'est pas « rien de
-                        // prévu » : c'est la journée bouclée.
-                        currentView === "today" && doneToday > 0 ? (
+                        // Sous un filtre, la vue n'est pas vide : elle n'a
+                        // rien avec ce tag. Le filtre se retire juste au-dessus.
+                        tagFilter ? (
+                          <EmptyHint key="empty-filtered">
+                            Aucune tâche @{tagFilterItems.find((t) => t.id === tagFilter)?.label ?? "tag"} ici.
+                          </EmptyHint>
+                        ) : currentView === "today" && finishedToday > 0 ? (
+                          // Aujourd'hui vidé par les coches n'est pas « rien
+                          // de prévu » : c'est la journée bouclée.
                           <EmptyHint key="empty-today-done" done>
                             Tout est fait pour aujourd’hui.{" "}
-                            {doneToday === 1 ? "Une tâche terminée." : `${doneToday} tâches terminées.`}
+                            {finishedToday === 1 ? "Une tâche bouclée." : `${finishedToday} tâches bouclées.`}
                           </EmptyHint>
                         ) : (
                           <EmptyHint key={`empty-${currentView}`}>{EMPTY_COPY[currentView]}</EmptyHint>

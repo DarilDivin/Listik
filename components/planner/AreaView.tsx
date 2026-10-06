@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { motion } from "motion/react";
+import { AnimatePresence, motion } from "motion/react";
 import { ChevronRight, FolderOpen } from "lucide-react";
 import { AnimatedNumber } from "@/components/ui/animated-number";
 import { AnimatedTodoList } from "@/components/todo/AnimatedTodoList";
@@ -83,11 +83,13 @@ export function AreaView({
 
       <div className="pb-10 pt-4">
         {capture}
-        {isEmpty && (
-          <EmptyHint>
-            Rien dans ce domaine pour l’instant. Ses projets et les tâches que vous y capturez viendront ici.
-          </EmptyHint>
-        )}
+        <AnimatePresence mode="popLayout">
+          {isEmpty && (
+            <EmptyHint key="empty-area">
+              Rien dans ce domaine pour l’instant. Ses projets et les tâches que vous y capturez viendront ici.
+            </EmptyHint>
+          )}
+        </AnimatePresence>
 
         {projects.length > 0 && (
           <section>

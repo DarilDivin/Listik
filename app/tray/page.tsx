@@ -19,7 +19,7 @@ import { ListikLogotype } from "@/components/brand/ListikLogo";
 import { QUICK_ITEMS, type QuickMode } from "@/components/QuickPills";
 import { TodoCheckbox } from "@/components/todo/TodoCheckbox";
 import { todosApi } from "@/features/todos/api";
-import { groupTodosByDate } from "@/features/todos/grouping";
+import { dayPulse, groupTodosByDate } from "@/features/todos/grouping";
 import { sortTodos } from "@/features/todos/sort";
 import type { Todo } from "@/features/todos/types";
 import { restorePayloadForToggle } from "@/features/todos/undo";
@@ -88,17 +88,15 @@ export default function TrayPanel() {
     return { late: all.filter((r) => place(r).late), onDay: all.filter((r) => !place(r).late) };
   }, [rawTodos, today, lingering]);
 
-  // Le pouls du jour, comme le planner : ce qui était prévu aujourd'hui. Une
-  // récurrente cochée ici est déjà reportée à sa prochaine date : elle compte
-  // quand même comme faite aujourd'hui.
-  const dayTodos = rawTodos.filter((t) => t.scheduled_for === today && t.status !== "cancelled");
-  const dayIds = new Set(dayTodos.map((t) => t.id));
-  const movedOn = [...lingering.values()].filter(
-    (t) => t.scheduled_for === today && !dayIds.has(t.id),
-  ).length;
-  const dayCount = dayTodos.length + movedOn;
-  const dayDone = dayTodos.filter((t) => t.status === "completed").length + movedOn;
-  const progress = dayCount ? dayDone / dayCount : 0;
+  // Le pouls du jour, le même que l'anneau du Planificateur : bouclé
+  // aujourd'hui / (bouclé + ce qui reste dans Aujourd'hui, retard compris).
+  const pulse = useMemo(() => {
+    const tomorrow = new Date();
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    return dayPulse(rawTodos, today, toLocalISODate(tomorrow));
+  }, [rawTodos, today]);
+  const dayCount = pulse.finished + pulse.remaining;
+  const progress = dayCount ? pulse.finished / dayCount : 0;
 
   const shownLate = rows.late.slice(0, Math.max(MAX_LATE, MAX_ROWS - rows.onDay.length));
   const shownDay = rows.onDay.slice(0, MAX_ROWS - shownLate.length);
@@ -188,6 +186,12 @@ export default function TrayPanel() {
         <ListikLogotype className="h-[15px] w-auto self-center text-foreground" />
         <span className="truncate text-xs text-muted-foreground first-letter:uppercase">
           {dayFormat.format(new Date(`${today}T12:00:00`))}
+          {dayCount > 0 && (
+            <span className="tabular-nums">
+              {" · "}
+              {pulse.finished} / {dayCount}
+            </span>
+          )}
         </span>
       </header>
 
@@ -222,12 +226,15 @@ export default function TrayPanel() {
 
         <SectionLabel
           label="Aujourd'hui"
-          count={dayCount > 0 ? `${dayDone} / ${dayCount}` : undefined}
           onClick={() => void openApp("/")}
         />
         {shownDay.length === 0 ? (
           <p className="px-3 pt-0.5 pb-2 text-muted-foreground">
-            {dayCount > 0 ? "Tout est fait pour aujourd’hui." : "Rien de prévu aujourd’hui."}
+            {pulse.remaining === 0 && pulse.finished > 0
+              ? "Tout est fait pour aujourd’hui."
+              : rows.late.length > 0
+                ? "Rien d’autre de prévu aujourd’hui."
+                : "Rien de prévu aujourd’hui."}
           </p>
         ) : (
           <ul>

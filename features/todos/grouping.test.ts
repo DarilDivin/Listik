@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   countForView,
+  dayPulse,
   groupTodosByDate,
   projectProgress,
   tasksOfArea,
@@ -267,5 +268,38 @@ describe("countForView", () => {
     expect(countForView(groups, "today")).toBe(4);
     expect(countForView(groups, "inbox")).toBe(1);
     expect(countForView(groups, "journal")).toBe(0);
+  });
+});
+
+describe("dayPulse", () => {
+  // Midi heure locale : la date locale ne glisse pas au jour voisin, quel que soit le fuseau.
+  const noon = (day: string) => new Date(`${day}T12:00:00`).toISOString();
+
+  it("compte ce qui a été bouclé aujourd'hui, retard et récurrentes compris", () => {
+    const pulse = dayPulse(
+      [
+        // Terminée aujourd'hui alors qu'elle était en retard.
+        todo({ id: "retard-fait", status: "completed", scheduled_for: "2026-06-10", updated_at: noon(TODAY) }),
+        // Récurrente cochée aujourd'hui : déjà reportée, toujours « à faire ».
+        todo({ id: "routine", recurrence: "daily", scheduled_for: TOMORROW, updated_at: noon(TODAY) }),
+        // Terminée un autre jour : ne compte pas.
+        todo({ id: "hier", status: "completed", scheduled_for: TODAY, updated_at: noon("2026-06-13") }),
+        // Encore dans la vue Aujourd'hui.
+        todo({ id: "reste", scheduled_for: TODAY }),
+        todo({ id: "en-retard", scheduled_for: "2026-06-11" }),
+      ],
+      TODAY,
+      TOMORROW,
+    );
+    expect(pulse).toEqual({ finished: 2, remaining: 2 });
+  });
+
+  it("une récurrente simplement modifiée sans être reportée ne compte pas", () => {
+    const pulse = dayPulse(
+      [todo({ id: "routine", recurrence: "daily", scheduled_for: TODAY, updated_at: noon(TODAY) })],
+      TODAY,
+      TOMORROW,
+    );
+    expect(pulse).toEqual({ finished: 0, remaining: 1 });
   });
 });

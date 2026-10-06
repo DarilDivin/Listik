@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { motion } from "motion/react";
+import { AnimatePresence, motion } from "motion/react";
+import { cn } from "@/lib/utils";
 import { CheckCircle2, RotateCcw } from "lucide-react";
 import { AnimatedNumber } from "@/components/ui/animated-number";
 import { AnimatedTodoList, type TodoListDnd } from "@/components/todo/AnimatedTodoList";
@@ -122,12 +123,14 @@ export function ProjectView({
             />
           </div>
 
-          {total > 0 && (
+          {/* Sans tâche, l'anneau « 0 / 0 » se tait mais garde sa place :
+              la première tâche capturée ne fait pas sauter la page. */}
           <motion.div
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ ...spring.smooth, delay: 0.05 }}
-            className="flex shrink-0 items-center gap-3"
+            aria-hidden={total === 0 || undefined}
+            className={cn("flex shrink-0 items-center gap-3", total === 0 && "invisible")}
           >
             <ProgressRing
               progress={total > 0 ? done.length / total : 0}
@@ -145,12 +148,15 @@ export function ProjectView({
               <span className="text-xs text-muted-foreground">terminées</span>
             </div>
           </motion.div>
-          )}
         </div>
 
-        {/* Un projet sans tâche n'a rien à terminer ; il se supprime depuis le rail. */}
-        {(total > 0 || completed) && (
-        <div className="flex justify-end pt-3">
+        {/* Un projet sans tâche n'a rien à terminer (il se supprime depuis le
+            rail) : le bouton se tait, sa rangée reste pour ne pas faire sauter
+            la capture quand la première tâche arrive. */}
+        <div
+          aria-hidden={(total === 0 && !completed) || undefined}
+          className={cn("flex justify-end pt-3", total === 0 && !completed && "invisible")}
+        >
           {completed ? (
             <Button variant="ghost" size="sm" onClick={onReopen}>
               <RotateCcw />
@@ -163,12 +169,11 @@ export function ProjectView({
             </Button>
           )}
         </div>
-        )}
       </div>
 
       <div className="pb-10 pt-4">
         {capture}
-        {pending.length > 0 ? (
+        {pending.length > 0 && (
           <AnimatedTodoList
             todos={pending}
             onToggle={onToggle}
@@ -177,11 +182,14 @@ export function ProjectView({
             showDate
             dnd={dnd}
           />
-        ) : (
-          <EmptyHint done={total > 0}>
-            {total === 0 ? "Pas encore de tâche dans ce projet." : "Tout est fait dans ce projet."}
-          </EmptyHint>
         )}
+        <AnimatePresence mode="popLayout">
+          {pending.length === 0 && (
+            <EmptyHint key={total === 0 ? "never" : "done"} done={total > 0}>
+              {total === 0 ? "Pas encore de tâche dans ce projet." : "Tout est fait dans ce projet."}
+            </EmptyHint>
+          )}
+        </AnimatePresence>
 
         {done.length > 0 && (
           <div className="mt-6 border-t border-border/60 pt-4">

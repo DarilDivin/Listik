@@ -1,6 +1,6 @@
 "use client";
 
-import type { ReactNode } from "react";
+import type { ReactNode, Ref } from "react";
 import { motion } from "motion/react";
 import { exitTween, spring } from "@/lib/motion";
 import { cn } from "@/lib/utils";
@@ -18,6 +18,8 @@ interface EmptyHintProps {
   /** `task` : gabarit d'une ligne de tâche (colonne de case). `list` : ligne de liste simple (Notes). */
   variant?: "task" | "list";
   className?: string;
+  /** Transmise au conteneur animé : `AnimatePresence mode="popLayout"` en a besoin. */
+  ref?: Ref<HTMLDivElement>;
 }
 
 /**
@@ -26,10 +28,11 @@ interface EmptyHintProps {
  * colonne de case de 18 px, `gap-3`) pour que le texte s'aligne sur celui des
  * tâches. Pas de pastille, pas de bloc centré.
  */
-export function EmptyHint({ children, done = false, action, variant = "task", className }: EmptyHintProps) {
+export function EmptyHint({ children, done = false, action, variant = "task", className, ref }: EmptyHintProps) {
   const task = variant === "task";
   return (
     <motion.div
+      ref={ref}
       initial={{ opacity: 0, y: 6 }}
       animate={{ opacity: 1, y: 0, transition: { opacity: { duration: 0.2 }, default: spring.smooth } }}
       exit={{ opacity: 0, y: 3, transition: exitTween }}

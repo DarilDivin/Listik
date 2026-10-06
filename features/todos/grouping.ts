@@ -5,6 +5,7 @@
 // Boîte de réception / Quand je peux / Aujourd'hui se DÉDUISENT de la date et
 // du rattachement. Cette fonction reste pure : c'est le mur porteur des
 // animations de la page (routage par la donnée, jamais par l'interaction).
+import { toLocalISODate } from "../../lib/date";
 import type { Todo } from "./types";
 
 export type DateGroupKey =
@@ -218,5 +219,47 @@ export function projectProgress(
   return {
     done: items.filter((t) => t.status === "completed").length,
     total: items.length,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Pouls du jour
+// ---------------------------------------------------------------------------
+
+/**
+ * La tâche a-t-elle été bouclée ce jour-là, quelle que soit sa date prévue ?
+ * Une tâche en retard cochée ce matin compte ; une récurrente cochée est déjà
+ * reportée (toujours « à faire », date future) et compte aussi.
+ *
+ * `updated_at` est la seule trace de l'heure de la coche (pas de
+ * `completed_at`) : une modification du jour sur une tâche terminée compte
+ * donc aussi — approximation assumée, comme la stratigraphie de l'Historique.
+ */
+export function finishedOn(todo: Todo, day: string): boolean {
+  if (toLocalISODate(new Date(todo.updated_at)) !== day) return false;
+  if (todo.status === "completed") return true;
+  return (
+    todo.recurrence !== "none" &&
+    todo.status === "pending" &&
+    todo.scheduled_for !== null &&
+    todo.scheduled_for > day
+  );
+}
+
+/**
+ * Pouls du jour : ce qui a été bouclé aujourd'hui, et ce qui reste dans la vue
+ * Aujourd'hui (retard compris). C'est la même vérité que la liste affiche —
+ * l'anneau du Planificateur, son état vide et le panneau du tray la partagent,
+ * sinon l'un dit « tout est fait » quand l'autre dit « rien de prévu ».
+ */
+export function dayPulse(
+  todos: Todo[],
+  today: string,
+  tomorrow: string,
+): { finished: number; remaining: number } {
+  const groups = groupTodosByDate(todos, today, tomorrow);
+  return {
+    finished: todos.filter((t) => finishedOn(t, today)).length,
+    remaining: countForView(groups, "today"),
   };
 }
