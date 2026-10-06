@@ -8,7 +8,7 @@ import { todayLocalISODate } from "@/lib/date";
 /**
  * Données et mutations du Journal pour une page-jour donnée, plus (en option)
  * les blocs écrits en avance (« À venir »). Un seul point d'entrée par vue,
- * même pattern que `usePlannerTodos`/`useNotes`.
+ * même pattern que `usePlannerTodos`.
  *
  * `withUpcoming` (défaut `true`) : le widget Journal de l'accueil (Phase Q)
  * n'affiche que le jour courant et n'a pas besoin de « À venir » — le mettre

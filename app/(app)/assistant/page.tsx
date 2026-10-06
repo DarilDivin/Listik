@@ -248,8 +248,8 @@ function EmptyAssistant({ onSelectSuggestion }: { onSelectSuggestion: (text: str
             Que puis-je faire pour vous ?
           </EmptyTitle>
           <EmptyDescription>
-            Demandez en langage naturel : créer une tâche, prendre une note, ou poser une
-            question sur vos tâches et vos notes.
+            Demandez en langage naturel : créer une tâche, écrire dans le journal, ou poser
+            une question sur vos tâches et votre journal.
           </EmptyDescription>
         </EmptyHeader>
         <EmptyContent className="max-w-lg">

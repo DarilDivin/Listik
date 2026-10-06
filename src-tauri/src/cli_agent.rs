@@ -5,7 +5,7 @@
 //!     (transport « streamable HTTP » que Claude Code et Gemini savent consommer),
 //!   - le **spawn du CLI** (`claude -p` …) en sous-processus avec timeout et
 //!     capture JSON, muni d'un `--mcp-config` qui pointe vers notre serveur HTTP.
-//! R4 (fait) : `DbExecutor` branche les vrais outils (todos/notes/journal) sur
+//! R4 (fait) : `DbExecutor` branche les vrais outils (todos/journal) sur
 //!   le pool SQLite partagé, en émettant les mêmes événements que les commandes.
 //! R5 (fait) : la couche `AgentProvider` (trait) abstrait le moteur plein texte
 //!   — `ClaudeProvider` aujourd'hui, d'autres demain.
@@ -127,7 +127,9 @@ impl ToolExecutor for EchoExecutor {
 }
 
 // ---------------------------------------------------------------------------
-// R4 — DbExecutor : vrais outils (todos / notes / journal) sur le pool sqlx.
+// R4 — DbExecutor : vrais outils (todos / journal) sur le pool sqlx. Plus
+// d'outils notes : le module a été retiré au profit du Journal (Phase P), et
+// une note créée par l'agent partait dans une table qu'aucun écran n'affiche.
 // Les mutations émettent les mêmes événements que les commandes Tauri
 // (`todos:changed`…), pour que le frontend garde son contrat multi-fenêtres.
 // ---------------------------------------------------------------------------
@@ -233,21 +235,6 @@ impl DbExecutor {
                 input_schema: json!({ "type": "object", "properties": { "id": { "type": "string" } }, "required": ["id"] }),
             },
             ToolSpec {
-                name: "list_notes".into(),
-                description: "Liste toutes les notes.".into(),
-                input_schema: json!({ "type": "object", "properties": {} }),
-            },
-            ToolSpec {
-                name: "search_notes".into(),
-                description: "Recherche des notes par contenu (FTS). `query` obligatoire.".into(),
-                input_schema: json!({ "type": "object", "properties": { "query": { "type": "string" } }, "required": ["query"] }),
-            },
-            ToolSpec {
-                name: "create_note".into(),
-                description: "Crée une note (`title` et `content` optionnels).".into(),
-                input_schema: json!({ "type": "object", "properties": { "title": { "type": "string" }, "content": { "type": "string" } } }),
-            },
-            ToolSpec {
                 name: "list_journal".into(),
                 description: "Liste les entrées de journal d'un jour. `date` (YYYY-MM-DD) obligatoire.".into(),
                 input_schema: json!({ "type": "object", "properties": { "date": { "type": "string" } }, "required": ["date"] }),
@@ -300,7 +287,7 @@ impl ToolExecutor for DbExecutor {
     ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<Value, String>> + Send + 'a>>
     {
         use crate::db;
-        use crate::models::{CreateJournalEntry, CreateNote, UpdateJournalEntry, UpdateTodo};
+        use crate::models::{CreateJournalEntry, UpdateJournalEntry, UpdateTodo};
 
         Box::pin(async move {
             match tool {
@@ -354,28 +341,6 @@ impl ToolExecutor for DbExecutor {
                 db::delete(&self.pool, &id).await.map_err(sqlx_err)?;
                 self.emit(crate::commands::TODOS_CHANGED);
                 Ok(json!({ "deleted": true }))
-            }
-            "list_notes" => {
-                let notes = db::list_notes(&self.pool).await.map_err(sqlx_err)?;
-                Ok(serde_json::to_value(notes).map_err(|e| e.to_string())?)
-            }
-            "search_notes" => {
-                let query = required_str(&arguments, "query")?;
-                let notes = db::search_notes(&self.pool, &query).await.map_err(sqlx_err)?;
-                Ok(serde_json::to_value(notes).map_err(|e| e.to_string())?)
-            }
-            "create_note" => {
-                let note = db::create_note(
-                    &self.pool,
-                    CreateNote {
-                        title: args_opt_string(&arguments, "title"),
-                        content: args_opt_string(&arguments, "content"),
-                    },
-                )
-                .await
-                .map_err(sqlx_err)?;
-                self.emit(crate::commands::NOTES_CHANGED);
-                Ok(serde_json::to_value(note).map_err(|e| e.to_string())?)
             }
             "list_journal" => {
                 let date = required_str(&arguments, "date")?;
@@ -1429,6 +1394,17 @@ mod tests {
             .unwrap();
         sqlx::migrate!("./migrations").run(&pool).await.unwrap();
         pool
+    }
+
+    /// Les notes ont été retirées au profit du Journal : l'agent ne doit plus
+    /// pouvoir en créer (elles partaient dans une table qu'aucun écran n'affiche).
+    #[tokio::test(flavor = "multi_thread")]
+    async fn db_executor_n_expose_plus_les_notes() {
+        let executor = DbExecutor::new(mem_pool().await, None);
+        let names: Vec<String> = executor.tools().into_iter().map(|t| t.name).collect();
+        assert!(names.iter().all(|n| !n.contains("note")), "outils exposés : {names:?}");
+        assert!(names.iter().any(|n| n == "create_journal_entry"));
+        assert!(executor.call("create_note", json!({ "content": "x" })).await.is_err());
     }
 
     #[tokio::test(flavor = "multi_thread")]

@@ -13,10 +13,8 @@ interface EmptyHintProps {
    * (et l'accent) : « rien n'a commencé » n'est pas une réussite.
    */
   done?: boolean;
-  /** Action qui fait la chose (« Nouvelle note »), quand rien d'autre à l'écran ne la propose. */
+  /** Action qui fait la chose, quand rien d'autre à l'écran ne la propose (DESIGN-SYSTEM §4.7). */
   action?: { label: string; onClick: () => void };
-  /** `task` : gabarit d'une ligne de tâche (colonne de case). `list` : ligne de liste simple (Notes). */
-  variant?: "task" | "list";
   className?: string;
   /** Transmise au conteneur animé : `AnimatePresence mode="popLayout"` en a besoin. */
   ref?: Ref<HTMLDivElement>;
@@ -28,8 +26,7 @@ interface EmptyHintProps {
  * colonne de case de 18 px, `gap-3`) pour que le texte s'aligne sur celui des
  * tâches. Pas de pastille, pas de bloc centré.
  */
-export function EmptyHint({ children, done = false, action, variant = "task", className, ref }: EmptyHintProps) {
-  const task = variant === "task";
+export function EmptyHint({ children, done = false, action, className, ref }: EmptyHintProps) {
   return (
     <motion.div
       ref={ref}
@@ -38,12 +35,10 @@ export function EmptyHint({ children, done = false, action, variant = "task", cl
       exit={{ opacity: 0, y: 3, transition: exitTween }}
       className={cn("flex items-start gap-3 px-3 py-2.5", className)}
     >
-      {task && (
-        <span aria-hidden className="mt-[2px] flex size-[18px] shrink-0 items-center justify-center">
-          {done && <DoneMark />}
-        </span>
-      )}
-      <div className={cn("min-w-0 leading-snug text-muted-foreground", task ? "text-[15px]" : "text-sm")}>
+      <span aria-hidden className="mt-[2px] flex size-[18px] shrink-0 items-center justify-center">
+        {done && <DoneMark />}
+      </span>
+      <div className="min-w-0 text-[15px] leading-snug text-muted-foreground">
         <p>{children}</p>
         {action && (
           <button

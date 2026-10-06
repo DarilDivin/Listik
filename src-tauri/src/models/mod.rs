@@ -1,7 +1,6 @@
 pub mod ai;
 pub mod area;
 pub mod journal_entry;
-pub mod note;
 pub mod project;
 mod serde;
 pub mod settings;
@@ -15,7 +14,6 @@ pub use journal_entry::{
     CreateJournalEntry, JournalDayCount, JournalEntry, JournalExport, JournalHit, JournalPiece,
     UpdateJournalEntry,
 };
-pub use note::{CreateNote, Note, UpdateNote};
 pub use project::{CreateProject, Project, ProjectStatus, UpdateProject};
 pub use settings::{Settings, UpdateSettings};
 pub use subtask::{CreateSubTask, SubTask, UpdateSubTask};

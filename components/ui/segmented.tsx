@@ -22,7 +22,7 @@ interface SegmentedProps<T extends string> {
 
 /**
  * Choix un-parmi-N compact, à la taille de son contenu — le même registre que
- * la bascule Écrire/Aperçu des notes : un rail à peine teinté, un pouce à plat
+ * les onglets de filtre (`FilterTabs`) : un rail à peine teinté, un pouce à plat
  * qui glisse (ressort `snappy`, sans rebond) avec l'ombre de contact codifiée
  * des segmented controls (DESIGN-SYSTEM §2.1).
  *

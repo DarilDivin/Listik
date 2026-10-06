@@ -39,7 +39,7 @@ un composant — uniquement les tokens sémantiques (`bg-background`, `bg-card`,
 `text-muted-foreground`…).
 
 Exception codifiée — **ombre de contact des pouces de segmented control**
-(`FilterTabs`, `NoteEditor` bascule Écrire/Aperçu, `Segmented`) : un noir/blanc en alpha
+(`FilterTabs`, `Segmented`) : un noir/blanc en alpha
 très faible (`shadow-[0_1px_3px_rgba(0,0,0,0.08)] ring-1 ring-black/[0.04]
 dark:ring-white/[0.07]`) plutôt qu'un token — un token neutre teinté serait
 trop visible à ce niveau de subtilité. Réservé à ce micro-relief précis, pas
@@ -130,7 +130,7 @@ une carte. Jamais pour un état vide (voir §4.7).
   `tabular-nums`.
 - Échelle utilitaire : `.text-large-title` (2 rem/700, titres de page pleine —
   Réglages, Assistant), `.text-title-2` (1.3125 rem/600, titres de colonne/
-  section plus étroite — liste Notes), `.text-headline`. Gros chiffre bento :
+  section plus étroite — rubriques des Réglages), `.text-headline`. Gros chiffre bento :
   `font-mono text-2xl font-semibold tabular-nums` (voir `HeroDay`). Toute
   nouvelle page doit choisir un de ces trois paliers plutôt qu'une taille
   Tailwind ad hoc (`text-2xl`, `text-3xl`…) — le hero du Planificateur
@@ -159,7 +159,7 @@ Patterns codifiés :
 - **Pastille glissante** : l'état actif d'un groupe est un `motion.span`
   `layoutId` partagé (dock `dock-active`, sidebar `sidebar-active-pill`,
   filtres `filter-thumb`, listes `list-filter-pill`, accent `accent-ring`,
-  notes `note-selected-pill`, éditeur `note-mode-thumb`, rubriques des
+  rubriques des
   Réglages `settings-nav-pill`) — jamais deux groupes avec le même
   `layoutId`.
   `Segmented` (`components/ui/segmented.tsx`) tire le sien de `useId()` :
@@ -321,9 +321,8 @@ L'état vide s'écrit, comme la page blanche du Journal :
 
 - **Une phrase posée là où serait la première ligne**, alignée à gauche sur le
   texte des lignes voisines. `EmptyHint` reprend le gabarit d'une ligne de
-  tâche (`px-3 py-2.5`, colonne de case de 18 px, `gap-3`) ; variante `list`
-  sans colonne de case (Notes). Jamais de bloc centré, de pastille d'icône ni
-  de titre gras.
+  tâche (`px-3 py-2.5`, colonne de case de 18 px, `gap-3`). Jamais de bloc
+  centré, de pastille d'icône ni de titre gras.
 - **Elle dit ce qui viendra ici**, pas « X vide » (le nom de la vue est déjà
   dans le rail). Ex. : « Tout est trié. Ce que vous capturez sans date ni
   projet attend ici. »
@@ -332,10 +331,10 @@ L'état vide s'écrit, comme la page blanche du Journal :
   vidé par les coches dit « Tout est fait pour aujourd'hui. » et compte les
   tâches terminées.
 - **Une action seulement si rien à l'écran ne la propose déjà** : un lien
-  texte qui fait la chose (« Nouvelle note »). Sous la rangée de capture, pas
+  texte qui fait la chose (`action`). Sous la rangée de capture, pas
   de lien « Capturer » : la rangée se nomme elle-même.
-- **Une seule voix par absence** : un panneau secondaire vide (éditeur de
-  notes sans note ouverte) se tait quand la liste voisine parle déjà.
+- **Une seule voix par absence** : un panneau secondaire vide se tait quand
+  la liste voisine parle déjà.
 - **Rien autour ne la contredit** : un projet sans tâche ne montre ni anneau
   « 0 / 0 » ni « Terminer le projet ».
 

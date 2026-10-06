@@ -19,7 +19,7 @@ const SUGGESTIONS = [
   "Ajoute appeler le dentiste vendredi",
   "Qu'est-ce que j'ai cette semaine ?",
   "Qu'est-ce qui est en retard ?",
-  "Note : idée d'article sur le RAG",
+  "Note dans le journal : idée d'article sur le RAG",
 ];
 
 export function Suggestions({ onSelect }: { onSelect: (prompt: string) => void }) {
