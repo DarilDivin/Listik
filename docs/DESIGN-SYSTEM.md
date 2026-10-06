@@ -98,6 +98,14 @@ déjà celui de l'Omnibar, pas `--card`) : elle réutilise seulement l'ombre via
 l'utilitaire jumeau `.shadow-floating` (même recette oklch, même variante
 sombre — jamais de `rgba(0,0,0,…)` en dur pour cette ombre).
 
+Le panneau du tray (`/tray`, clic gauche sur l'icône de la zone de
+notification, Windows) fait l'inverse : fenêtre **opaque** (`bg-background`)
+avec l'ombre du système (`shadow: true`), qui lui donne sous Windows 11 les
+coins arrondis, le liseré et l'ombre des panneaux natifs (son, réseau). Pas de
+CSS d'ombre ni de marge transparente. Dedans, la règle commune : contenu à
+plat, groupes séparés par des hairlines `border-border/60`, pastilles
+`bg-brand-soft text-brand` pour les trois modes de capture.
+
 Pour les petites pastilles d'icône (empty states, hero assistant), utiliser
 `bg-brand-soft text-brand` — un aplat teinté, pas une carte.
 

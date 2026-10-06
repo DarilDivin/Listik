@@ -224,15 +224,17 @@ export function UIPrefsProvider({ children }: { children: ReactNode }) {
     if (isReflection(storedReflection)) setReflectionState(storedReflection);
   }, []);
 
-  // Pont explicite entre la fenêtre principale et /quick. Au premier montage,
-  // la capture demande son état actuel ; ensuite chaque changement utile est
-  // publié immédiatement. Ainsi un accent choisi pendant que /quick est caché
-  // reste le même à sa prochaine ouverture.
+  // Pont explicite entre la fenêtre principale et /quick (et le panneau du
+  // tray, /tray, lui aussi monté caché pour toute la session). Au premier
+  // montage, la fenêtre secondaire demande son état actuel ; ensuite chaque
+  // changement utile est publié immédiatement. Ainsi un accent choisi pendant
+  // qu'elle est cachée reste le même à sa prochaine ouverture.
   useEffect(() => {
     let stopSync: (() => void) | undefined;
     let stopRequest: (() => void) | undefined;
     let cancelled = false;
-    const quickWindow = window.location.pathname.replace(/\/$/, "") === "/quick";
+    const path = window.location.pathname.replace(/\/$/, "");
+    const secondaryWindow = path === "/quick" || path === "/tray";
 
     const setup = async () => {
       stopSync = await listen<SharedQuickPrefs>(QUICK_PREFS_SYNC, ({ payload }) => {
@@ -240,7 +242,7 @@ export function UIPrefsProvider({ children }: { children: ReactNode }) {
         if (typeof payload.oled === "boolean") setOledState(payload.oled);
         if (payload.reflection && isReflection(payload.reflection)) setReflectionState(payload.reflection);
       });
-      if (quickWindow) {
+      if (secondaryWindow) {
         await emit(QUICK_PREFS_REQUEST).catch(() => {});
       } else {
         stopRequest = await listen(QUICK_PREFS_REQUEST, () => {

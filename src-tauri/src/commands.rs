@@ -529,12 +529,15 @@ pub async fn open_quick_window(app: AppHandle, mode: Option<String>) -> Result<(
     open_quick_in_mode(&app, mode.as_deref())
 }
 
-/// Ouvre ou ferme le panneau du tray, posé près du pointeur. Le clic sur
-/// l'icône passe par `tray::toggle_panel` avec le rectangle de l'icône ; cette
-/// commande sert à l'ouvrir sans le tray (débogage).
+/// Ouvre ou ferme le panneau du tray sans cliquer sur l'icône (débogage),
+/// posé contre elle comme au clic — près du pointeur si le système ne donne
+/// pas sa position.
 #[tauri::command]
 pub async fn toggle_tray_panel(app: AppHandle) -> Result<(), String> {
-    crate::tray::toggle_panel(&app, None)
+    let anchor = app
+        .tray_by_id("main-tray")
+        .and_then(|tray| tray.rect().ok().flatten());
+    crate::tray::toggle_panel(&app, anchor)
 }
 
 /// Le panneau du tray annonce la hauteur de son contenu (pixels logiques).
