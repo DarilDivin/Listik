@@ -6,6 +6,9 @@ import {
 } from "@hugeicons/core-free-icons";
 import type { IconSvgElement } from "@hugeicons/react";
 
+/** Demande à la fenêtre principale d'ouvrir une section (payload : son chemin). */
+export const APP_NAVIGATE_EVENT = "app:navigate";
+
 export interface AppNavItem {
   href: string;
   label: string;

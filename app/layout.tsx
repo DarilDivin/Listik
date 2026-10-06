@@ -29,7 +29,11 @@ export default function RootLayout({
   // La barre de capture rapide est une fenêtre flottante transparente : elle ne
   // doit hériter ni du fond `bg-background` ni de la TitleBar.
   // `trailingSlash: true` (next.config) → le chemin est « /quick/ » : on normalise.
-  const isQuick = usePathname()?.replace(/\/$/, "") === "/quick";
+  const pathname = usePathname()?.replace(/\/$/, "");
+  const isQuick = pathname === "/quick";
+  // Le panneau du tray : une fenêtre opaque sans chrome (ni TitleBar, ni
+  // grain), dont la page occupe toute la surface.
+  const isTray = pathname === "/tray";
   // Sur Mac, la fenêtre garde ses trois pastilles natives (barre de titre
   // « Overlay », voir tauri.macos.conf.json) : une bande fixe de 28 px leur
   // fait place et sert de poignée, à la place de la TitleBar Windows 11.
@@ -53,7 +57,9 @@ export default function RootLayout({
           <UIPrefsProvider>
             <TooltipProvider delayDuration={250}>
             <MotionConfig reducedMotion="user">
-              {isQuick ? (
+              {isTray ? (
+                <SWRConfig value={SWR_OPTIONS}>{children}</SWRConfig>
+              ) : isQuick ? (
                 <div className="h-screen w-screen overflow-hidden bg-transparent">
                   <SWRConfig value={SWR_OPTIONS}>
                     {children}

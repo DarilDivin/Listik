@@ -523,6 +523,26 @@ pub async fn show_main_window(app: AppHandle) -> Result<(), String> {
     reveal_main_window(&app)
 }
 
+/// Ouvre la capture rapide dans un mode donné (le panneau du tray s'en sert).
+#[tauri::command]
+pub async fn open_quick_window(app: AppHandle, mode: Option<String>) -> Result<(), String> {
+    open_quick_in_mode(&app, mode.as_deref())
+}
+
+/// Ouvre ou ferme le panneau du tray, posé près du pointeur. Le clic sur
+/// l'icône passe par `tray::toggle_panel` avec le rectangle de l'icône ; cette
+/// commande sert à l'ouvrir sans le tray (débogage).
+#[tauri::command]
+pub async fn toggle_tray_panel(app: AppHandle) -> Result<(), String> {
+    crate::tray::toggle_panel(&app, None)
+}
+
+/// Le panneau du tray annonce la hauteur de son contenu (pixels logiques).
+#[tauri::command]
+pub async fn resize_tray_panel(app: AppHandle, height: f64) -> Result<(), String> {
+    crate::tray::resize_panel(&app, height)
+}
+
 // ---------------------------------------------------------------------------
 // Correction IA à la capture (Phase R2) — appel direct Rust → Groq, plus de
 // sidecar Python. Best-effort : sans clé configurée ou en cas d'erreur

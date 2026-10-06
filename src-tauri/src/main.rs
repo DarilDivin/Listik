@@ -36,13 +36,20 @@ fn main() {
         // Fermer la fenêtre principale la masque : l'app continue dans le tray
         // (ou la barre des menus) et `show_main_window` peut la rouvrir. La
         // détruire laissait le tray et Alt+Q sans fenêtre à montrer.
-        .on_window_event(|window, event| {
-            if let tauri::WindowEvent::CloseRequested { api, .. } = event {
-                if window.label() == "main" {
-                    api.prevent_close();
-                    let _ = window.hide();
-                }
+        //
+        // Le panneau du tray se masque aussi (Alt+F4 le détruirait), et se
+        // ferme dès qu'il perd le focus, comme un panneau du système.
+        .on_window_event(|window, event| match event {
+            tauri::WindowEvent::CloseRequested { api, .. }
+                if window.label() == "main" || window.label() == tray::PANEL =>
+            {
+                api.prevent_close();
+                let _ = window.hide();
             }
+            tauri::WindowEvent::Focused(false) if window.label() == tray::PANEL => {
+                tray::on_panel_blur(window);
+            }
+            _ => {}
         })
         .setup(|app| {
             // --- Base de données (accès SQL côté Rust) ---
@@ -178,6 +185,9 @@ fn main() {
             commands::toggle_quick_window,
             commands::hide_quick_window,
             commands::show_main_window,
+            commands::open_quick_window,
+            commands::toggle_tray_panel,
+            commands::resize_tray_panel,
             commands::get_settings,
             commands::update_settings,
             commands::ai_parse,

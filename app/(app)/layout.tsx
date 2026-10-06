@@ -9,6 +9,7 @@ import { SearchOverlay } from "@/components/SearchOverlay";
 import { SplashScreen } from "@/components/SplashScreen";
 import { Onboarding } from "@/components/onboarding/Onboarding";
 import { SidebarSlotProvider, useSidebarSlot } from "@/components/sidebar-slot";
+import { APP_NAVIGATE_EVENT } from "@/components/app-nav";
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
 import { useUIPrefs } from "@/components/ui-prefs";
 import { QUICK_OPEN_JOURNAL_EVENT } from "@/features/journal/quick";
@@ -100,6 +101,14 @@ export default function AppLayout({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     const unlisten = listen(QUICK_OPEN_JOURNAL_EVENT, () => router.push("/journal"));
+    return () => {
+      void unlisten.then((stop) => stop());
+    };
+  }, [router]);
+
+  // Le panneau du tray ouvre l'app sur une section précise.
+  useEffect(() => {
+    const unlisten = listen<string>(APP_NAVIGATE_EVENT, ({ payload }) => router.push(payload));
     return () => {
       void unlisten.then((stop) => stop());
     };
