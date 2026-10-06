@@ -20,8 +20,7 @@ import { AiProviderSetting } from "@/components/settings/AiProviderSetting";
 import { GroqApiKeySetting } from "@/components/settings/GroqApiKeySetting";
 import { SettingsGroup } from "@/components/settings/SettingsGroup";
 import { SettingsRow } from "@/components/settings/SettingsRow";
-import { useUIPrefs, type NavStyle } from "@/components/ui-prefs";
-import { Segmented } from "@/components/ui/segmented";
+import { NavSetting } from "@/components/settings/NavSetting";
 import { PulseSetting } from "@/components/settings/PulseSetting";
 import { ReflectionSetting } from "@/components/settings/ReflectionSetting";
 import { ShortcutsSetting } from "@/components/settings/ShortcutsSetting";
@@ -31,10 +30,6 @@ import { cn } from "@/lib/utils";
 import { exportBackup, manquants, resume } from "@/features/backup/export";
 import { chooseBackup, restoreBackup } from "@/features/backup/restore";
 
-const NAV_OPTIONS: { value: NavStyle; label: string }[] = [
-  { value: "dock", label: "Dock" },
-  { value: "sidebar", label: "Barre latérale" },
-];
 const SECTIONS = [
   { id: "appearance", label: "Apparence", description: "Ce que vous voyez au quotidien", icon: PaintBoardIcon },
   { id: "rhythm", label: "Rythme", description: "Avancement et rappels", icon: CalendarClockIcon },
@@ -115,16 +110,11 @@ function SettingsSection({ id, title, description, children }: { id: SectionId; 
   return <div><div className="mb-7"><h2 id={`${id}-heading`} className="text-title-2 text-foreground">{title}</h2><p className="mt-1.5 text-sm text-muted-foreground">{description}</p></div><div className="flex flex-col gap-9">{children}</div></div>;
 }
 
-function NavStyleSetting() {
-  const { nav, setNav } = useUIPrefs();
-  return <Segmented options={NAV_OPTIONS} value={nav} onChange={setNav} aria-label="Navigation" />;
-}
-
 function AppearanceSection() { return <SettingsSection id="appearance" title="Apparence" description="Appliquée tout de suite, dans l’app comme dans la fenêtre rapide.">
   <SettingsGroup>
     <ThemeSetting />
     <SettingsRow label="Couleur d’accent" description="Sélections, progression et actions actives."><AccentPicker size="sm" /></SettingsRow>
-    <SettingsRow label="Navigation" description="Un dock flottant ou une barre latérale."><NavStyleSetting /></SettingsRow>
+    <SettingsRow label="Navigation" description="Un dock flottant ou une barre latérale."><NavSetting /></SettingsRow>
   </SettingsGroup>
 </SettingsSection>; }
 

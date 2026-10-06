@@ -159,8 +159,8 @@ Patterns codifiés :
   `layoutId` partagé (dock `dock-active`, sidebar `sidebar-active-pill`,
   filtres `filter-thumb`, listes `list-filter-pill`, accent `accent-ring`,
   notes `note-selected-pill`, éditeur `note-mode-thumb`, rubriques des
-  Réglages `settings-nav-pill`, tuiles de navigation de l'accueil
-  `nav-setting-thumb`) — jamais deux groupes avec le même `layoutId`.
+  Réglages `settings-nav-pill`) — jamais deux groupes avec le même
+  `layoutId`.
   `Segmented` (`components/ui/segmented.tsx`) tire le sien de `useId()` :
   plusieurs instances sur une page ne se volent pas leur pouce.
 - **Cascade** : sections/cartes entrent avec `delay: i * 0.05` + `spring.smooth`.
