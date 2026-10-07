@@ -1455,6 +1455,9 @@ mod tests {
             "@ECHO off\r\nGOTO start\r\n:start\r\nSETLOCAL\r\n\"%dp0%\\node_modules\\opencode-ai\\bin\\opencode.exe\"   %*\r\n",
         )
         .unwrap();
+        // Les wrappers npm `.cmd` n'existent que sous Windows, où `\` sépare les
+        // dossiers ; ailleurs, le chemin écrit dans le wrapper ne se résout pas.
+        #[cfg(windows)]
         assert_eq!(executable_derriere_le_shim(&shim), Some(dir.join("node_modules\\opencode-ai\\bin\\opencode.exe")));
         // Un vrai exécutable n'est pas un wrapper.
         assert_eq!(executable_derriere_le_shim(&bin.join("opencode.exe")), None);
