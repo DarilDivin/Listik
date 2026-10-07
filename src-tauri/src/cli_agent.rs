@@ -692,11 +692,24 @@ fn bare_name_off_mac(name: &str) -> Option<PathBuf> {
     (!cfg!(target_os = "macos")).then(|| PathBuf::from(name))
 }
 
+/// Windows : lancer un programme console sans lui ouvrir de fenêtre.
+///
+/// L'app publiée n'a pas de console (`windows_subsystem = "windows"`) : sans ce
+/// drapeau, chaque `claude --version` de la détection ouvre son propre terminal.
+/// En dev, les enfants héritent du terminal de `tauri dev`, d'où rien de visible.
+#[cfg(windows)]
+const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+
 /// Une commande synchrone qui voit le PATH de l'utilisateur.
 fn cli_command(program: impl AsRef<std::ffi::OsStr>) -> std::process::Command {
     let mut cmd = std::process::Command::new(program);
     if let Some(path) = user_path() {
         cmd.env("PATH", path);
+    }
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        cmd.creation_flags(CREATE_NO_WINDOW);
     }
     cmd
 }
@@ -707,6 +720,8 @@ fn cli_command_async(program: impl AsRef<std::ffi::OsStr>) -> tokio::process::Co
     if let Some(path) = user_path() {
         cmd.env("PATH", path);
     }
+    #[cfg(windows)]
+    cmd.creation_flags(CREATE_NO_WINDOW);
     cmd
 }
 
