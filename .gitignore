@@ -52,3 +52,6 @@ sidecar/listik_vec.db
 # animation du logo (Remotion, sous-projet npm)
 motion/node_modules
 motion/out
+
+# Générée par scripts/nouveautes.mjs à la publication du site
+site/nouveautes/

@@ -47,6 +47,22 @@ jobs:
           if ($env:GITHUB_REF_NAME -ne "v$version") {
             throw "Le tag $env:GITHUB_REF_NAME ne correspond pas à la version $version de tauri.conf.json."
           }
+      # Une version ne part pas sans ses notes : NOUVEAUTES.md doit avoir une
+      # section datée pour ce tag. Les notes courtes (résumé + lien vers la page
+      # Nouveautés) deviennent le texte de la version sur GitHub, et celui que
+      # l'app affiche en proposant la mise à jour.
+      - name: Release notes
+        id: notes
+        shell: bash
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          node scripts/nouveautes.mjs check "$version"
+          {
+            echo 'body<<NOTES_EOF'
+            node scripts/nouveautes.mjs notes "$version"
+            echo
+            echo 'NOTES_EOF'
+          } >> "$GITHUB_OUTPUT"
       - uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -57,7 +73,7 @@ jobs:
           args: ${{ matrix.args }}
           tagName: v__VERSION__
           releaseName: Listik v__VERSION__
-          releaseBody: "Consultez les notes de version et téléchargez l’installateur adapté à votre ordinateur : .exe ou .msi pour Windows, .dmg pour macOS (version d’essai, non signée par Apple)."
+          releaseBody: ${{ steps.notes.outputs.body }}
           releaseDraft: false
           prerelease: false
           uploadUpdaterJson: true

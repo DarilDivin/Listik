@@ -30,8 +30,22 @@ export function UpdateManager() {
           const update = await check({ timeout: 10_000 });
           if (!update) return;
 
+          // Les notes de version commencent par une phrase de résumé (voir
+          // NOUVEAUTES.md) ; le détail vit sur la page Nouveautés du site. Le
+          // lien part dans le navigateur (garde de navigation, navigation.rs).
+          const summary = update.body?.split(/\n\s*\n/)[0]?.trim();
           toast(`Listik ${update.version} est disponible`, {
-            description: update.body || "La mise à jour sera installée puis Listik redémarrera.",
+            description: (
+              <span>
+                {summary || "La mise à jour sera installée puis Listik redémarrera."}{" "}
+                <a
+                  href={`https://listik.daril.fr/nouveautes/#v${update.version}`}
+                  className="underline underline-offset-2"
+                >
+                  Voir les nouveautés
+                </a>
+              </span>
+            ),
             duration: Infinity,
             action: {
               label: "Installer",

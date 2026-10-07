@@ -5,6 +5,8 @@ on:
     branches: [main]
     paths:
       - "site/**"
+      - "NOUVEAUTES.md"
+      - "scripts/nouveautes.mjs"
       - ".github/workflows/pages.yml"
   workflow_dispatch:
 
@@ -25,6 +27,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      # La page Nouveautés n'est pas versionnée : elle se génère ici, depuis NOUVEAUTES.md.
+      - run: node scripts/nouveautes.mjs site
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:

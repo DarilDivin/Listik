@@ -57,59 +57,63 @@ prefersDark.addEventListener("change", applyAccent);
 
 /* Démonstration de la saisie : le texte se tape, chaque élément reconnu s'allume.
    Sans JavaScript (ou sans animation), l'état final reste affiché. */
+// La démonstration n'existe que sur l'accueil : ailleurs (page Nouveautés),
+// on passe directement au lien de téléchargement.
 const demo = document.querySelector(".demo");
 const demoText = document.querySelector("#demo-text");
-const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
+if (demo && demoText) {
+  const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
 
-function demoParts() {
-  return Array.from(demoText.childNodes).map((node) => ({
-    text: node.textContent,
-    tok: node.nodeType === 1 ? node.dataset.tok : null,
-    className: node.nodeType === 1 ? node.className : "",
-  }));
-}
-
-const parts = demoParts();
-let demoRunning = false;
-
-async function playDemo() {
-  if (demoRunning || reduceMotion.matches) return;
-  demoRunning = true;
-  demo.classList.add("is-typing");
-  demo.querySelectorAll("[data-tok]").forEach((el) => el.classList.remove("is-on"));
-  demoText.replaceChildren();
-  const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-
-  for (const part of parts) {
-    let target = demoText;
-    if (part.tok) {
-      target = document.createElement("mark");
-      target.className = part.className;
-      target.dataset.tok = part.tok;
-      demoText.append(target);
-    }
-    for (const char of part.text) {
-      target.append(char);
-      await wait(char === " " ? 70 : 48 + Math.random() * 46);
-    }
-    if (part.tok) {
-      target.classList.add("is-on");
-      demo.querySelector(`.parsed [data-tok="${part.tok}"]`)?.classList.add("is-on");
-      await wait(260);
-    }
+  function demoParts() {
+    return Array.from(demoText.childNodes).map((node) => ({
+      text: node.textContent,
+      tok: node.nodeType === 1 ? node.dataset.tok : null,
+      className: node.nodeType === 1 ? node.className : "",
+    }));
   }
-  await wait(1200);
-  demo.classList.remove("is-typing");
-  demoRunning = false;
-}
 
-if ("IntersectionObserver" in window) {
-  const observer = new IntersectionObserver((entries) => {
-    if (entries.some((entry) => entry.isIntersecting)) { void playDemo(); observer.disconnect(); }
-  }, { threshold: 0.5 });
-  observer.observe(demo);
+  const parts = demoParts();
+  let demoRunning = false;
+
+  async function playDemo() {
+    if (demoRunning || reduceMotion.matches) return;
+    demoRunning = true;
+    demo.classList.add("is-typing");
+    demo.querySelectorAll("[data-tok]").forEach((el) => el.classList.remove("is-on"));
+    demoText.replaceChildren();
+    const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+    for (const part of parts) {
+      let target = demoText;
+      if (part.tok) {
+        target = document.createElement("mark");
+        target.className = part.className;
+        target.dataset.tok = part.tok;
+        demoText.append(target);
+      }
+      for (const char of part.text) {
+        target.append(char);
+        await wait(char === " " ? 70 : 48 + Math.random() * 46);
+      }
+      if (part.tok) {
+        target.classList.add("is-on");
+        demo.querySelector(`.parsed [data-tok="${part.tok}"]`)?.classList.add("is-on");
+        await wait(260);
+      }
+    }
+    await wait(1200);
+    demo.classList.remove("is-typing");
+    demoRunning = false;
+  }
+
+  if ("IntersectionObserver" in window) {
+    const observer = new IntersectionObserver((entries) => {
+      if (entries.some((entry) => entry.isIntersecting)) { void playDemo(); observer.disconnect(); }
+    }, { threshold: 0.5 });
+    observer.observe(demo);
+  }
+  demo.addEventListener("click", () => void playDemo());
 }
-demo.addEventListener("click", () => void playDemo());
 
 /* Dernière version : lien direct vers l'installateur, sinon le paquet .msi, sinon la page GitHub.
    La version Mac n'apparaît que si la dernière version contient vraiment un .dmg. */
@@ -149,7 +153,7 @@ async function showLatestRelease() {
     downloadLinks.forEach((link) => { link.href = primary?.browser_download_url || releaseUrl; });
     msiLinks.forEach((link) => { link.href = msi?.browser_download_url || releaseUrl; });
     document.querySelectorAll("[data-version]").forEach((el) => { if (version) el.textContent = `Version ${version}`; });
-    releaseStatus.textContent = primary
+    if (releaseStatus) releaseStatus.textContent = primary
       ? `Version ${version} · ${forMac ? "version d’essai pour Mac" : "installateur Windows"} · ${formatSize(primary.size)}`
       : `Version ${version} · voir les fichiers sur GitHub`;
 
@@ -175,7 +179,7 @@ async function showLatestRelease() {
       show("[data-mac-only]", true);
     }
   } catch {
-    releaseStatus.textContent = "Voir la dernière version disponible sur GitHub.";
+    if (releaseStatus) releaseStatus.textContent = "Voir la dernière version disponible sur GitHub.";
   }
 }
 

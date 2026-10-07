@@ -72,11 +72,20 @@ installations existantes.
    .\scripts\build-signed-release.ps1
    ```
 
-3. Committez les fichiers de version, poussez `main`, puis créez et poussez le
+3. Datez la section de la version dans `NOUVEAUTES.md` (`## 0.2.0` devient
+   `## 0.2.0 — 2026-10-04`) et relisez-la : c’est ce que liront les
+   utilisateurs. Le workflow de publication refuse un tag dont la section
+   n’existe pas ou n’est pas datée. Pour vérifier avant :
+
+   ```powershell
+   node scripts/nouveautes.mjs check 0.2.0
+   ```
+
+4. Committez les fichiers de version, poussez `main`, puis créez et poussez le
    tag correspondant :
 
    ```powershell
-   git add package.json pnpm-lock.yaml src-tauri/Cargo.toml src-tauri/tauri.conf.json
+   git add package.json pnpm-lock.yaml src-tauri/Cargo.toml src-tauri/tauri.conf.json NOUVEAUTES.md
    git commit -m "release: v0.2.0"
    git push origin main
    git tag v0.2.0
@@ -88,6 +97,16 @@ Le workflow **Publish release** construit les installateurs Windows et macOS
 crée la release GitHub et y dépose `latest.json`. Au démarrage, Listik trouve
 ce manifeste, vérifie la signature et propose l’installation de la nouvelle
 version.
+
+Les notes viennent de `NOUVEAUTES.md` (`scripts/nouveautes.mjs`) :
+
+- **La release GitHub** et **la notification de mise à jour** reçoivent le
+  résumé de la version, avec un lien vers sa section sur le site.
+- **La page https://listik.daril.fr/nouveautes/** est régénérée par
+  **Publish download site** dès que `NOUVEAUTES.md` change sur `main` : la
+  version datée y apparaît au moment du push.
+- **La page n’est pas versionnée** (`site/nouveautes/` est ignoré). Pour la voir
+  en local : `node scripts/nouveautes.mjs site`, puis servir `site/`.
 
 ## Tester avant une publication publique
 

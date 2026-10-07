@@ -1,6 +1,6 @@
 # Site de téléchargement de Listik
 
-Une seule page statique (`index.html`, `styles.css`, `app.js`), publiée sur GitHub Pages par `.github/workflows/pages.yml` à chaque envoi sur `main` qui touche `site/`. Toutes les adresses sont relatives (`./…`) : le site est servi sous `/Listik/`.
+Deux pages statiques : l’accueil (`index.html`, `styles.css`, `app.js`) et la page Nouveautés (`nouveautes/index.html`), générée depuis `NOUVEAUTES.md` par `scripts/nouveautes.mjs` au moment de la publication et jamais modifiée à la main. Le site est publié sur GitHub Pages par `.github/workflows/pages.yml` à chaque envoi sur `main` qui touche `site/` ou `NOUVEAUTES.md`, à l’adresse https://listik.daril.fr/. Les adresses restent relatives (`./…`, `../…`).
 
 ## Identité
 
