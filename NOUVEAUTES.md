@@ -27,6 +27,7 @@ Règles :
 - Quand une liste est vide, Listik dit ce qui viendra s'y ranger. Quand vous avez tout bouclé, il vous le dit aussi.
 - Le compteur du jour compte tout ce que vous avez bouclé aujourd'hui, y compris les tâches en retard et les routines.
 - Listik reste rapide avec un long historique de tâches.
+- L'installateur Windows porte le logo de Listik et parle français.
 
 ### Corrigé
 
