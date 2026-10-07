@@ -13,7 +13,7 @@ Règles :
 - Écrire pour les utilisateurs : ce qui change pour eux, en français, au vouvoiement. Pas de nom de fichier ni de jargon.
 -->
 
-## 0.2.2
+## 0.2.2 — 2026-10-07
 
 > Un panneau dans la zone de notification, des réglages plus clairs, et une série de corrections de sécurité.
 
@@ -37,6 +37,7 @@ Règles :
 - Votre clé Groq n'est plus copiée dans les sauvegardes.
 - Sous Windows, OpenCode répond aux vraies questions : seul le test de connexion fonctionnait.
 - L'assistant ne peut plus supprimer de tâche ni réécrire votre journal : il peut seulement y ajouter.
+- Sous Windows, l'assistant n'ouvre plus une fenêtre de terminal à chaque utilisation.
 - « Ouvrir Listik », depuis la zone de notification, rouvre aussi une fenêtre réduite.
 - Les réglages affichent la bonne version de Listik.
 

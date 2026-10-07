@@ -1,6 +1,6 @@
 [package]
 name = "app"
-version = "0.2.1"
+version = "0.2.2"
 description = "Listik, an offline-first personal task manager and journal."
 authors = ["Daril D."]
 license = "MIT"
