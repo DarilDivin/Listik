@@ -80,6 +80,21 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ],
+    "copyright": "© 2026 Daril D.",
+    "windows": {
+      "nsis": {
+        "installerIcon": "icons/icon.ico",
+        "headerImage": "installer/nsis-header.bmp",
+        "sidebarImage": "installer/nsis-sidebar.bmp",
+        "languages": ["French"],
+        "displayLanguageSelector": false
+      },
+      "wix": {
+        "language": "fr-FR",
+        "bannerPath": "installer/wix-banner.bmp",
+        "dialogImagePath": "installer/wix-dialog.bmp"
+      }
+    },
     "macOS": {
       "signingIdentity": "-",
       "minimumSystemVersion": "13.3",

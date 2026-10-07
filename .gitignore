@@ -55,3 +55,6 @@ motion/out
 
 # Générée par scripts/nouveautes.mjs à la publication du site
 site/nouveautes/
+
+# Cache du build de release (scripts/build-signed-release.ps1, NEXT_DIST_DIR)
+/.next-release/
