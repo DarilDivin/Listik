@@ -9,7 +9,6 @@ import {
   ArrowLeft01Icon,
   ArrowRight01Icon,
   Attachment01Icon,
-  Download01Icon,
   Mic01Icon,
   Search01Icon,
 } from "@hugeicons/core-free-icons";
@@ -32,6 +31,7 @@ import {
   type JournalSheetHandle,
 } from "@/components/journal/JournalSheet";
 import { JournalDensity } from "@/components/journal/JournalDensity";
+import { ExportPassage } from "@/components/journal/ExportPassage";
 import {
   Tooltip,
   TooltipContent,
@@ -132,8 +132,8 @@ function JournalPageContent() {
   // elle a commencé — voir `terminer`.
   const { appendEntry } = useJournalMutations();
 
-  // L'export sort TOUT le journal, pas le jour affiché : ce qu'on veut d'un
-  // export, c'est pouvoir partir avec ses écrits — pas en découper une page.
+  // L'export du journal ENTIER : partir avec tous ses écrits, en Markdown. Un
+  // passage à partager, lui, passe par `ExportPassage`.
   const [exporte, setExporte] = useState(false);
   const exporter = async () => {
     setExporte(true);
@@ -428,22 +428,13 @@ function JournalPageContent() {
               {enregistre ? "Abandonner l'enregistrement" : "Enregistrer une note vocale"}
             </TooltipContent>
           </Tooltip>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                variant="ghost"
-                size="icon-sm"
-                aria-label="Exporter le journal"
-                disabled={exporte}
-                onClick={exporter}
-              >
-                <AppIcon icon={Download01Icon} />
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent side="bottom" sideOffset={8}>
-              Exporter le journal
-            </TooltipContent>
-          </Tooltip>
+          {/* Un passage — la sélection, le moment du curseur, la page — en
+              texte, PDF, image ou Word ; et tout le journal, comme avant. */}
+          <ExportPassage
+            lire={() => feuilleRef.current?.portees() ?? null}
+            onToutLeJournal={() => void exporter()}
+            toutLeJournalEnCours={exporte}
+          />
           <Tooltip>
             <TooltipTrigger asChild>
               <Button

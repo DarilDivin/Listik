@@ -5,9 +5,11 @@ mod commands;
 mod db;
 mod models;
 mod navigation;
+mod passage;
 mod permissions;
 mod reminders;
 mod tray;
+mod word;
 
 use std::sync::Arc;
 
@@ -177,6 +179,10 @@ fn main() {
             commands::list_journal_pieces,
             commands::set_journal_piece_apercu,
             commands::export_journal,
+            passage::lire_image_piece,
+            passage::ecrire_passage,
+            passage::imprimer_passage,
+            passage::exporter_word,
             commands::update_journal_entry,
             commands::delete_journal_entry,
             commands::set_journal_entry_tags,

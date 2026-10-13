@@ -14,11 +14,14 @@ import { ListPlugin } from "@lexical/react/LexicalListPlugin";
 import { LinkPlugin } from "@lexical/react/LexicalLinkPlugin";
 import { MarkdownShortcutPlugin } from "@lexical/react/LexicalMarkdownShortcutPlugin";
 import { TRANSFORMERS } from "@lexical/markdown";
+import { $generateJSONFromSelectedNodes } from "@lexical/clipboard";
 import {
   $createParagraphNode,
   $getRoot,
   $getSelection,
+  $isNodeSelection,
   $isRangeSelection,
+  $isRootNode,
   $parseSerializedNode,
   COMMAND_PRIORITY_LOW,
   DRAGOVER_COMMAND,
@@ -26,7 +29,9 @@ import {
   KEY_BACKSPACE_COMMAND,
   PASTE_COMMAND,
   type LexicalNode,
+  type SerializedLexicalNode,
 } from "lexical";
+import { repriseAutour } from "@/features/journal/passage";
 import {
   $createRepereNode,
   $isRepereNode,
@@ -363,6 +368,8 @@ export interface JournalSheetHandle {
    * fois la note faite, il ne reste qu'une pièce à poser, comme les autres.
    */
   poser: (pieceId: string) => void;
+  /** Ce qui peut partir à l'export d'un passage — voir `Portees`. */
+  portees: () => Portees | null;
 }
 
 /**
@@ -525,6 +532,73 @@ function PiecePlugin({
 
 // ---------------------------------------------------------------------------
 
+/**
+ * Ce qu'on peut faire partir de la feuille : la sélection, la reprise où se
+ * trouve le curseur, ou la page entière. Les nœuds sont SÉRIALISÉS — une copie
+ * figée, que l'export lit sans toucher à l'éditeur.
+ */
+export interface Portees {
+  /** Vide quand rien n'est sélectionné (un simple curseur ne compte pas). */
+  selection: SerializedLexicalNode[] | null;
+  /** Vide quand la feuille n'a jamais eu de curseur. */
+  reprise: { heure: string; noeuds: SerializedLexicalNode[] } | null;
+  page: SerializedLexicalNode[];
+  /** Combien de moments la page compte — un seul, et « ce passage » EST la page. */
+  moments: number;
+}
+
+/**
+ * Lit les portées à la demande.
+ *
+ * La sélection de Lexical survit à la perte du focus : elle reste dans l'état
+ * de l'éditeur. Mais la page la lit quand même AVANT que le menu prenne le
+ * focus (au `pointerdown`) — on ne parie pas sur ce qu'un menu fait de la
+ * sélection en s'ouvrant.
+ */
+function PassagePlugin({ lireRef }: { lireRef: RefObject<(() => Portees) | null> }) {
+  const [editor] = useLexicalComposerContext();
+
+  useEffect(() => {
+    lireRef.current = () => {
+      const page = editor.getEditorState().toJSON().root.children;
+      return editor.read(() => {
+        const sel = $getSelection();
+        const selection =
+          $isRangeSelection(sel) && !sel.isCollapsed()
+            ? $generateJSONFromSelectedNodes(editor, sel).nodes
+            : null;
+
+        // Le bloc du curseur, à la racine. Un curseur posé ENTRE deux blocs
+        // (sur la racine même) désigne l'enfant à son décalage.
+        let bloc: LexicalNode | null = null;
+        if ($isRangeSelection(sel)) {
+          const n = sel.anchor.getNode();
+          bloc = $isRootNode(n)
+            ? n.getChildAtIndex(Math.min(sel.anchor.offset, n.getChildrenSize() - 1))
+            : n.getTopLevelElement();
+        } else if ($isNodeSelection(sel)) {
+          bloc = sel.getNodes()[0]?.getTopLevelElement() ?? null;
+        }
+        const reprise = bloc ? repriseAutour(page, bloc.getIndexWithinParent()) : null;
+
+        return {
+          selection,
+          reprise,
+          page,
+          moments: Math.max(1, page.filter((n) => n.type === "repere").length),
+        };
+      });
+    };
+    return () => {
+      lireRef.current = null;
+    };
+  }, [editor, lireRef]);
+
+  return null;
+}
+
+// ---------------------------------------------------------------------------
+
 interface JournalSheetProps {
   reprises: Reprise[];
   /** La feuille a changé ; `affichees` : les entrées qu'elle a posées, les seules qu'on peut effacer. */
@@ -562,6 +636,7 @@ export const JournalSheet = forwardRef<JournalSheetHandle, JournalSheetProps>(
   // composeur, la poignée doit donc être posée depuis là.
   const poserRef = useRef<(() => void) | null>(null);
   const insererRef = useRef<((pieceId: string) => void) | null>(null);
+  const lirePorteesRef = useRef<(() => Portees) | null>(null);
   const afficheesRef = useRef<Set<string>>(new Set());
   // Même stabilité que `onSegments` : le plugin de sauvegarde se réabonne quand elle change.
   const pousserSegments = useCallback(
@@ -573,6 +648,7 @@ export const JournalSheet = forwardRef<JournalSheetHandle, JournalSheetProps>(
     () => ({
       attacher: () => poserRef.current?.(),
       poser: (pieceId: string) => insererRef.current?.(pieceId),
+      portees: () => lirePorteesRef.current?.() ?? null,
     }),
     [],
   );
@@ -638,6 +714,7 @@ export const JournalSheet = forwardRef<JournalSheetHandle, JournalSheetProps>(
           onErreur={onErreurPiece ?? (() => {})}
         />
         <SauvegardePlugin onSegments={pousserSegments} />
+        <PassagePlugin lireRef={lirePorteesRef} />
       </div>
     </LexicalComposer>
   );

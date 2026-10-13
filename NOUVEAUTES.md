@@ -13,6 +13,16 @@ Règles :
 - Écrire pour les utilisateurs : ce qui change pour eux, en français, au vouvoiement. Pas de nom de fichier ni de jargon.
 -->
 
+## 0.2.3
+
+> Un texte écrit dans le journal se partage tel quel : en message, en PDF, en images ou en Word.
+
+### Nouveau
+
+- Le bouton d'export du journal partage désormais un passage : votre sélection, le moment où se trouve le curseur, ou toute la page. Le menu dit ce qui partira, et combien de mots.
+- Copiez le texte pour un message, ou enregistrez-le en PDF (format A4), en images au format story (découpées en pages numérotées quand le texte est long) ou en document Word. Le PDF, les images et Word gardent les photos du passage. Les heures du journal ne partent jamais.
+- L'export de tout le journal en Markdown reste dans le même menu.
+
 ## 0.2.2 — 2026-10-07
 
 > Un panneau dans la zone de notification, des réglages plus clairs, et une série de corrections de sécurité.

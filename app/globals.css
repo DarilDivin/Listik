@@ -1243,3 +1243,160 @@ body.quick-window nextjs-portal {
   font-variant-numeric: tabular-nums;
   color: var(--color-muted-foreground);
 }
+
+/* ──────────────────────────────────────────────────────────────────────────
+ * Un passage qui part : la feuille d'un PDF ou d'une image.
+ *
+ * C'est une page de LECTURE, pas la page de l'app : une serif de livre,
+ * une encre et un papier FIXES. Elle n'hérite d'aucun jeton du thème — en
+ * thème sombre, elle sortirait sinon en encre pâle sur papier blanc.
+ * Les polices sont celles du système (Iowan/Charter sur Mac, Sitka et
+ * Georgia sous Windows) : rien à embarquer, rien à télécharger.
+ * Voir `features/journal/partage.ts`.
+ * ────────────────────────────────────────────────────────────────────────── */
+.passage-feuille {
+  box-sizing: border-box;
+  background: #fffdf9;
+  color: #22201c;
+  font-family: "Iowan Old Style", "Charter", "Sitka Text", Georgia, Cambria, serif;
+  font-size: 12pt;
+  line-height: 1.6;
+  font-variant-ligatures: common-ligatures;
+  orphans: 3;
+  widows: 3;
+  overflow-wrap: break-word;
+}
+.passage-feuille > :first-child,
+.passage-flux > :first-child {
+  margin-top: 0;
+}
+.passage-feuille p {
+  margin: 0 0 0.85em;
+}
+.passage-feuille h1,
+.passage-feuille h2,
+.passage-feuille h3,
+.passage-feuille h4,
+.passage-feuille h5,
+.passage-feuille h6 {
+  font-weight: 600;
+  line-height: 1.25;
+  margin: 1.6em 0 0.6em;
+  break-after: avoid;
+}
+.passage-feuille h1 { font-size: 1.6em; }
+.passage-feuille h2 { font-size: 1.35em; }
+.passage-feuille h3 { font-size: 1.15em; }
+.passage-feuille h4,
+.passage-feuille h5,
+.passage-feuille h6 { font-size: 1em; }
+/* Un titre en TÊTE du passage est le titre du texte : il a de l'air sous lui. */
+.passage-feuille > :is(h1, h2, h3):first-child,
+.passage-flux > :is(h1, h2, h3):first-child {
+  margin-bottom: 1.2em;
+}
+.passage-feuille blockquote {
+  margin: 1em 0;
+  padding-left: 1em;
+  border-left: 2px solid #d8d2c8;
+  font-style: italic;
+  color: #4a463f;
+}
+.passage-feuille ul,
+.passage-feuille ol {
+  margin: 0 0 0.85em;
+  padding-left: 1.5em;
+}
+.passage-feuille ul { list-style: disc; }
+.passage-feuille ol { list-style: decimal; }
+.passage-feuille li { margin: 0.2em 0; }
+.passage-feuille a {
+  color: inherit;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.passage-feuille code,
+.passage-feuille pre {
+  font-family: ui-monospace, "Cascadia Code", Consolas, monospace;
+  font-size: 0.85em;
+}
+.passage-feuille pre {
+  margin: 1em 0;
+  white-space: pre-wrap;
+}
+.passage-feuille figure {
+  margin: 1.4em 0;
+  break-inside: avoid;
+}
+.passage-feuille img {
+  display: block;
+  max-width: 100%;
+  max-height: 60vh;
+  margin: 0 auto;
+}
+.passage-feuille figcaption {
+  margin-top: 0.5em;
+  text-align: center;
+  font-size: 0.85em;
+  font-style: italic;
+  color: #6b665d;
+}
+
+/* L'image : une carte au format d'une story, à la largeur d'un téléphone.
+   Le corps est plus grand qu'à l'impression — elle se lit sur un écran. */
+.passage-image {
+  position: relative;
+  padding: 52px 44px;
+  font-size: 17px;
+  line-height: 1.62;
+}
+.passage-image img {
+  max-height: 520px;
+}
+.passage-image[data-folio]::after {
+  content: attr(data-folio);
+  position: absolute;
+  right: 44px;
+  bottom: 24px;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  color: #9a9488;
+}
+/* La fenêtre d'une page sur le texte composé une seule fois : elle le rogne
+   entre deux lignes (voir `paginer`). `overflow: hidden` en fait aussi un
+   contexte de formatage : les marges du flux n'en débordent pas. */
+.passage-fenetre {
+  overflow: hidden;
+}
+/* Rendue hors de l'écran, mais RENDUE : une feuille cachée n'a pas de mesure. */
+.passage-scene {
+  position: fixed;
+  left: -100000px;
+  top: 0;
+  pointer-events: none;
+}
+
+/* Le PDF : la feuille n'existe qu'à l'impression, et elle y est SEULE. */
+#impression-passage {
+  display: none;
+}
+@media print {
+  @page {
+    size: A4;
+    margin: 24mm 25mm;
+  }
+  html,
+  body {
+    height: auto !important;
+    overflow: visible !important;
+    background: #fff !important;
+  }
+  body > :not(#impression-passage) {
+    display: none !important;
+  }
+  /* Le papier crème est celui de l'IMAGE ; une feuille imprimée est blanche. */
+  #impression-passage {
+    display: block;
+    background: #fff;
+  }
+}
