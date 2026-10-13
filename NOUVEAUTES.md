@@ -13,7 +13,7 @@ Règles :
 - Écrire pour les utilisateurs : ce qui change pour eux, en français, au vouvoiement. Pas de nom de fichier ni de jargon.
 -->
 
-## 0.2.3
+## 0.2.3 — 2026-10-13
 
 > Un texte écrit dans le journal se partage tel quel : en message, en PDF, en images ou en Word.
 
