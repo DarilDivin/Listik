@@ -470,6 +470,12 @@ export default function QuickPage() {
 
     let frame = 0;
     let settleTimer: ReturnType<typeof setTimeout> | undefined;
+    // Tant que la réserve n'est pas en place, Radix place le menu dans une
+    // page de 56 px : faute de place, il le retourne AU-DESSUS du champ. Le
+    // mesurer alors donnerait une hauteur absurde — et un resserrement suivi
+    // d'un regrandissement. On attend que la page ait grandi.
+    let pret = false;
+    let mesure = false;
     const measure = () => {
       const popovers = Array.from(
         document.querySelectorAll<HTMLElement>("[data-radix-popper-content-wrapper]"),
@@ -484,15 +490,18 @@ export default function QuickPage() {
         // Le gestionnaire de fenêtres redimensionne hors du frame courant ;
         // une seconde mesure récupère la position finale de Radix.
         settleTimer = setTimeout(() => {
+          pret = true;
           frame = requestAnimationFrame(measure);
         }, 90);
         return;
       }
+      if (!pret || (!mesure && window.innerHeight < TASK_OVERLAY_FALLBACK_HEIGHT - 1)) return;
 
       // Pendant la création du portail, garder la réserve initiale évite que
       // le menu soit coupé entre deux frames.
       if (popovers.length === 0) return;
 
+      mesure = true;
       const bottom = Math.max(...popovers.map((element) => element.getBoundingClientRect().bottom));
       const next = Math.ceil(bottom + TASK_OVERLAY_MARGIN);
       setTaskOverlayHeight((current) => (current === next ? current : next));

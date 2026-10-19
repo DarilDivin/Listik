@@ -179,7 +179,15 @@ fn marges(fenetre: &WebviewWindow) -> (f64, f64, f64, f64) {
     (gauche, haut, droite, bas)
 }
 
-fn placer(hwnd: isize, c: Cadre) {
+fn placer(hwnd: isize, c: Cadre, numero: u64) {
+    // Le pas a été posté par un fil d'animation, et attend son tour dans la
+    // file du fil principal. Une nouvelle demande a pu arriver entre-temps :
+    // on le vérifie AU MOMENT de l'exécuter, sinon un pas d'un resserrement
+    // abandonné passerait APRÈS l'agrandissement qui l'a remplacé, et la
+    // fenêtre resterait coincée à mi-chemin.
+    if GENERATION.load(Ordering::SeqCst) != numero {
+        return;
+    }
     unsafe {
         // SYNCHRONE, sur le fil de la fenêtre : `WM_SIZE` et la peinture du
         // fond se font AVANT que l'appel rende la main. En asynchrone, le
@@ -214,7 +222,7 @@ pub fn poser(fenetre: &WebviewWindow, de: Cadre, vers: Cadre, duree: Duration) {
     let app = fenetre.app_handle().clone();
     if duree.is_zero() {
         let cible = exterieur(vers);
-        let _ = app.run_on_main_thread(move || placer(hwnd, cible));
+        let _ = app.run_on_main_thread(move || placer(hwnd, cible, numero));
         return;
     }
     std::thread::spawn(move || {
@@ -225,7 +233,7 @@ pub fn poser(fenetre: &WebviewWindow, de: Cadre, vers: Cadre, duree: Duration) {
             }
             let x = debut.elapsed().as_secs_f64() / duree.as_secs_f64();
             let cadre = exterieur(de.vers(vers, METAMORPHOSE.valeur(x.min(1.0))));
-            let _ = app.run_on_main_thread(move || placer(hwnd, cadre));
+            let _ = app.run_on_main_thread(move || placer(hwnd, cadre, numero));
             if x >= 1.0 {
                 return;
             }
