@@ -33,6 +33,17 @@ const HAUTEUR_BARRE = 56;
 const HAUTEUR_JOURNAL = 480;
 const TASK_OVERLAY_FALLBACK_HEIGHT = 460;
 const TASK_OVERLAY_MARGIN = 12;
+/** La réponse que montre l'essai automatique (voir `quick:essai-scene`). */
+const REPONSE_ESSAI = [
+  "Trois choses comptent aujourd’hui :",
+  [
+    "- relire le dossier de presse avant midi ;",
+    "- réserver l’hôtel pour Lisbonne ;",
+    "- appeler le dentiste pour décaler le rendez-vous.",
+  ].join("\n"),
+  "Le reste peut attendre demain.",
+].join("\n\n");
+
 /** Le fondu d'entrée d'une scène — la fenêtre, elle, a déjà sa taille. */
 const ENTREE = { duration: 0.2, ease: [0.22, 0.9, 0.28, 1] as const };
 
@@ -114,6 +125,8 @@ export default function QuickPage() {
   /** Mode imposé à la PROCHAINE ouverture, une seule fois (l'accueil ouvre ainsi la fenêtre en mode Tâche). */
   const nextModeRef = useRef<Exclude<QuickMode, "neutre"> | null>(null);
   const taskOverlayPrimed = useRef(false);
+  /** L'essai automatique est en cours (voir plus bas) : personne ne regarde. */
+  const essaiRef = useRef(false);
 
   const resetAsk = useCallback(() => {
     setAskPhase("idle");
@@ -240,6 +253,7 @@ export default function QuickPage() {
 
       if (blurTimer) clearTimeout(blurTimer);
       blurTimer = setTimeout(() => {
+        if (essaiRef.current) return;
         if (!document.hasFocus() && !isOverlayOpen() && !keepsWindowOpen) hide();
       }, 120);
     });
@@ -262,6 +276,57 @@ export default function QuickPage() {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [hide]);
+
+  // L'ESSAI AUTOMATIQUE (src-tauri/src/cadre, `essai_si_demande`) : Rust
+  // annonce une scène, la page s'y met. C'est ce qui permet à la CI macOS de
+  // photographier chaque état de la barre sans personne devant l'écran — et
+  // sans appeler l'IA. L'événement n'est émis que si l'app a été lancée avec
+  // `LISTIK_ESSAI_RAPIDE`.
+  useEffect(() => {
+    const question = "Que dois-je faire aujourd'hui ?";
+    const unlisten = listen<string>("quick:essai-scene", ({ payload }) => {
+      essaiRef.current = true;
+      const racine = document.documentElement;
+      switch (payload) {
+        case "neutre":
+          resetQuickSurface();
+          break;
+        case "saisie":
+          resetQuickSurface();
+          setNeutralText("Acheter du pain demain");
+          break;
+        case "tache":
+          switchMode("tache");
+          break;
+        case "journal":
+          switchMode("journal");
+          break;
+        case "reflexion":
+          switchMode("question");
+          setTurns([{ id: "essai", question }]);
+          setPending(true);
+          setAskPhase("reflexion");
+          break;
+        case "reponse":
+          setTurns([{ id: "essai", question, answer: REPONSE_ESSAI }]);
+          setPending(false);
+          setAskPhase("reponse");
+          break;
+        case "reponse-sombre":
+          racine.classList.add("dark");
+          break;
+        case "neutre-sombre":
+          resetQuickSurface();
+          break;
+        case "retour":
+          racine.classList.remove("dark");
+          break;
+      }
+    });
+    return () => {
+      void unlisten.then((stop) => stop());
+    };
+  }, [resetQuickSurface, switchMode]);
 
   const handleSubmit = useCallback(
     async (data: SmartTaskData) => {

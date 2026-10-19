@@ -121,6 +121,7 @@ fn main() {
             if let Some(quick) = app.get_webview_window(cadre::QUICK) {
                 cadre::preparer(&quick);
             }
+            cadre::essai_si_demande(app.handle());
 
             println!("🚀 Application Listik démarrée !");
 

@@ -397,8 +397,7 @@ pub async fn toggle_quick_window(app: AppHandle) -> Result<(), String> {
             window.hide().map_err(|e| e.to_string())?;
         } else {
             crate::cadre::ancrer(&window);
-            window.show().map_err(|e| e.to_string())?;
-            window.set_focus().map_err(|e| e.to_string())?;
+            crate::cadre::montrer(&window).map_err(|e| e.to_string())?;
         }
     } else {
         // Filet de sécurité : la fenêtre est normalement déclarée en config.
@@ -448,8 +447,7 @@ pub fn open_quick_in_mode(app: &AppHandle, mode: Option<&str>) -> Result<(), Str
     if !window.is_visible().unwrap_or(false) {
         crate::cadre::ancrer(&window);
     }
-    window.show().map_err(|e| e.to_string())?;
-    window.set_focus().map_err(|e| e.to_string())
+    crate::cadre::montrer(&window).map_err(|e| e.to_string())
 }
 
 /// Ramène la fenêtre principale au premier plan, même réduite.

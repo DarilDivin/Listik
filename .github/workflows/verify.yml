@@ -63,11 +63,24 @@ jobs:
           sleep 15
           screencapture -x macos-screenshot.png || true
           if kill -0 "$PID" 2>/dev/null; then echo "Toujours lancée après 15 s"; kill "$PID"; else echo "L'app s'est arrêtée au lancement"; exit 1; fi
+      # La barre rapide, scène par scène : l'app la parcourt d'elle-même et la
+      # photographie (voir `essai_si_demande` dans src-tauri/src/cadre). C'est
+      # le seul regard qu'on ait sur le panneau macOS sans Mac.
+      - name: Quick bar scenes
+        run: |
+          APP="$(ls -d "$PWD"/src-tauri/target/release/bundle/macos/*.app | head -n 1)"
+          BIN="$APP/Contents/MacOS/$(defaults read "$APP/Contents/Info" CFBundleExecutable)"
+          LISTIK_ESSAI_RAPIDE="$PWD/captures-rapide" "$BIN" &
+          PID=$!
+          sleep 40
+          kill "$PID" 2>/dev/null || true
+          ls captures-rapide || echo "Aucune capture"
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: macos-build
           path: |
             macos-screenshot.png
+            captures-rapide/*.png
             src-tauri/target/release/bundle/dmg/*.dmg
           if-no-files-found: ignore

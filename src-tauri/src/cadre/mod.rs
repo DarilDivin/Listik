@@ -24,7 +24,12 @@ use std::time::Duration;
 
 use tauri::{Manager, WebviewWindow};
 
+// La courbe n'est calculée à la main que sous Windows : sur Mac, Core
+// Animation l'applique elle-même.
+#[cfg_attr(not(windows), allow(dead_code))]
 pub mod courbe;
+#[cfg(target_os = "macos")]
+mod macos;
 #[cfg(windows)]
 mod windows;
 
@@ -49,6 +54,7 @@ pub struct Cadre {
 
 impl Cadre {
     /// Le cadre à l'avancement `p` (0 = `self`, 1 = `vers`).
+    #[cfg_attr(not(windows), allow(dead_code))]
     pub fn vers(self, vers: Cadre, p: f64) -> Cadre {
         let m = |a: f64, b: f64| a + (b - a) * p;
         Cadre {
@@ -144,23 +150,46 @@ pub fn ancrer(fenetre: &WebviewWindow) {
     });
     if let Some((largeur, hauteur)) = taille {
         let cible = ancre.contenu(largeur, hauteur);
-        poser(fenetre, cible, cible, Duration::ZERO);
+        poser(fenetre, cible, cible, Duration::ZERO, ancre.echelle);
         *geometrie.contenu.lock().unwrap() = Some(cible);
     }
 }
 
-/// Amène le contenu de `de` à `vers`.
-fn poser(fenetre: &WebviewWindow, de: Cadre, vers: Cadre, duree: Duration) {
+/// Amène le contenu de `de` à `vers`. `echelle` : celle de l'écran de
+/// l'ancre (macOS compte en points).
+fn poser(fenetre: &WebviewWindow, de: Cadre, vers: Cadre, duree: Duration, echelle: f64) {
     #[cfg(windows)]
-    windows::poser(fenetre, de, vers, duree);
+    {
+        let _ = echelle;
+        windows::poser(fenetre, de, vers, duree);
+    }
 
-    #[cfg(not(windows))]
+    #[cfg(target_os = "macos")]
+    {
+        let _ = de;
+        macos::poser(fenetre, vers, duree, echelle);
+    }
+
+    #[cfg(not(any(windows, target_os = "macos")))]
     {
         use tauri::{PhysicalPosition, PhysicalSize};
-        let _ = (de, duree);
+        let _ = (de, duree, echelle);
         let _ = fenetre.set_size(PhysicalSize::new(vers.largeur as u32, vers.hauteur as u32));
         let _ = fenetre.set_position(PhysicalPosition::new(vers.x as i32, vers.y as i32));
     }
+}
+
+/// Montre la barre et lui donne le clavier.
+///
+/// Sur Mac, SANS activer l'application : c'est tout l'intérêt d'un panneau.
+/// `set_focus` de Tauri activerait Listik, et la barre des menus avec.
+pub fn montrer(fenetre: &WebviewWindow) -> tauri::Result<()> {
+    fenetre.show()?;
+    #[cfg(target_os = "macos")]
+    macos::montrer(fenetre);
+    #[cfg(not(target_os = "macos"))]
+    fenetre.set_focus()?;
+    Ok(())
 }
 
 /// La page annonce la taille de sa scène, en pixels CSS. Le cadre s'y
@@ -185,7 +214,7 @@ pub fn quick_cadre(fenetre: WebviewWindow, largeur: f64, hauteur: f64, anime: bo
     }
     let resserre = vers.largeur <= de.largeur && vers.hauteur <= de.hauteur;
     let duree = if anime && resserre { DUREE } else { Duration::ZERO };
-    poser(&fenetre, de, vers, duree);
+    poser(&fenetre, de, vers, duree, ancre.echelle);
     *contenu = Some(vers);
     Ok(())
 }
@@ -205,8 +234,59 @@ pub fn quick_couleurs(fenetre: WebviewWindow, fond: [u8; 3], lisere: [u8; 3]) ->
 pub fn preparer(fenetre: &WebviewWindow) {
     #[cfg(windows)]
     windows::preparer(fenetre);
-    #[cfg(not(windows))]
+    #[cfg(target_os = "macos")]
+    macos::preparer(fenetre);
+    #[cfg(not(any(windows, target_os = "macos")))]
     let _ = fenetre;
+}
+
+/// Les scènes que parcourt l'essai automatique, dans l'ordre.
+const SCENES_ESSAI: [&str; 9] = [
+    "neutre",
+    "saisie",
+    "tache",
+    "journal",
+    "reflexion",
+    "reponse",
+    "reponse-sombre",
+    "neutre-sombre",
+    "retour",
+];
+
+/// L'ESSAI AUTOMATIQUE de la barre, pour la CI macOS — personne n'y a de Mac
+/// pour la regarder. Si `LISTIK_ESSAI_RAPIDE` désigne un dossier, l'app ouvre
+/// la barre, la fait passer par chaque scène (la page obéit à
+/// `quick:essai-scene`) et, sur Mac, en prend une capture d'écran dans ce
+/// dossier. Sans la variable, rien ne se passe.
+pub fn essai_si_demande(app: &tauri::AppHandle) {
+    let Ok(dossier) = std::env::var("LISTIK_ESSAI_RAPIDE") else { return };
+    let app = app.clone();
+    std::thread::spawn(move || {
+        use tauri::Emitter;
+        // Le temps que la page de la barre soit chargée et à l'écoute.
+        std::thread::sleep(Duration::from_secs(8));
+        let Some(fenetre) = app.get_webview_window(QUICK) else { return };
+        let _ = fenetre.emit("quick:essai-scene", "debut");
+        ancrer(&fenetre);
+        let _ = montrer(&fenetre);
+        for (rang, scene) in SCENES_ESSAI.iter().enumerate() {
+            let _ = fenetre.emit("quick:essai-scene", scene);
+            // Assez pour qu'un resserrement animé (0,58 s) soit fini.
+            std::thread::sleep(Duration::from_millis(2500));
+            capturer(&dossier, rang, scene);
+        }
+    });
+}
+
+fn capturer(dossier: &str, rang: usize, scene: &str) {
+    #[cfg(target_os = "macos")]
+    {
+        let _ = std::fs::create_dir_all(dossier);
+        let chemin = format!("{dossier}/{rang:02}-{scene}.png");
+        let _ = std::process::Command::new("screencapture").args(["-x", &chemin]).status();
+    }
+    #[cfg(not(target_os = "macos"))]
+    let _ = (dossier, rang, scene);
 }
 
 #[cfg(test)]

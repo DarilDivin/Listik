@@ -74,6 +74,26 @@ windows = { version = "0.61", features = [
     "Win32_Graphics_Gdi",
 ] }
 
+# La barre rapide en vrai panneau macOS (voir cadre/macos.rs). Versions
+# alignées sur celles que tire déjà tao.
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2 = "0.6"
+block2 = "0.6"
+objc2-foundation = { version = "0.3", default-features = false, features = ["std", "NSArray", "NSGeometry", "NSObject"] }
+objc2-quartz-core = { version = "0.3", default-features = false, features = ["std", "CAMediaTimingFunction"] }
+objc2-app-kit = { version = "0.3", default-features = false, features = [
+    "std",
+    "block2",
+    "objc2-quartz-core",
+    "NSAnimation",
+    "NSAnimationContext",
+    "NSGraphics",
+    "NSPanel",
+    "NSResponder",
+    "NSScreen",
+    "NSWindow",
+] }
+
 [dev-dependencies]
 # Relire un .docx produit par word.rs ; meme version que celle de docx-rs.
 zip = { version = "8", default-features = false, features = ["deflate"] }
