@@ -1,4 +1,4 @@
-//! Le cadre natif sur macOS : un vrai panneau, comme Spotlight.
+//! La toile sur macOS : un vrai panneau, comme Spotlight.
 //!
 //! — NON ACTIVANT : l'ouvrir ne fait pas passer Listik au premier plan. La
 //!   barre des menus reste celle de l'application qu'on utilisait, et en
@@ -11,25 +11,23 @@
 //! — sur TOUS les bureaux et par-dessus une application en plein écran ;
 //! — hors du cycle ⌘` des fenêtres.
 //!
-//! L'ombre est celle du système. La fenêtre étant transparente, macOS la
-//! calcule d'après ce qui est peint : elle épouse la capsule. Mais il la garde
-//! en cache — on la fait recalculer après chaque changement de forme.
+//! L'OMBRE est celle du système. La fenêtre étant transparente, macOS la
+//! calcule d'après ce qui est peint : elle épouse la capsule, les pastilles,
+//! la bulle, le panneau — toutes les formes à la fois. Mais il la garde en
+//! cache : on la fait recalculer à chaque mouvement des formes, et une
+//! dernière fois une fois tout au repos.
 
-use std::ptr::NonNull;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
 
-use block2::RcBlock;
 use objc2::runtime::AnyObject;
-use objc2::{define_class, ClassType, MainThreadMarker, MainThreadOnly};
+use objc2::{define_class, ClassType, MainThreadOnly};
 use objc2_app_kit::{
-    NSAnimatablePropertyContainer, NSAnimationContext, NSPanel, NSResponder, NSScreen,
-    NSStatusWindowLevel, NSWindow, NSWindowCollectionBehavior, NSWindowStyleMask,
+    NSPanel, NSResponder, NSStatusWindowLevel, NSWindow, NSWindowCollectionBehavior,
+    NSWindowStyleMask,
 };
-use objc2_foundation::{NSObject, NSPoint, NSRect, NSSize};
-use objc2_quartz_core::CAMediaTimingFunction;
+use objc2_foundation::NSObject;
 use tauri::WebviewWindow;
-
-use super::Cadre;
 
 define_class!(
     // La chaîne complète des ancêtres, comme l'exige `define_class!`.
@@ -93,60 +91,6 @@ pub fn preparer(fenetre: &WebviewWindow) {
     });
 }
 
-/// Pixels physiques, origine en haut à gauche (Tauri) → points, origine en
-/// bas à gauche de l'écran principal (AppKit).
-fn rect_appkit(c: Cadre, echelle: f64, hauteur_principal: f64) -> NSRect {
-    let l = c.largeur / echelle;
-    let h = c.hauteur / echelle;
-    NSRect::new(
-        NSPoint::new(c.x / echelle, hauteur_principal - c.y / echelle - h),
-        NSSize::new(l, h),
-    )
-}
-
-/// Fait recalculer l'ombre un peu plus tard : après un agrandissement, la
-/// page n'a peint sa nouvelle forme qu'une ou deux images après le cadre.
-fn rafraichir_ombre_bientot(fenetre: &WebviewWindow, ptr: usize) {
-    let fenetre = fenetre.clone();
-    std::thread::spawn(move || {
-        std::thread::sleep(Duration::from_millis(120));
-        let _ = fenetre.run_on_main_thread(move || unsafe { fenetre_native(ptr).invalidateShadow() });
-    });
-}
-
-pub fn poser(fenetre: &WebviewWindow, vers: Cadre, duree: Duration, echelle: f64) {
-    let Some(ptr) = pointeur(fenetre) else { return };
-    let suite = fenetre.clone();
-    let _ = fenetre.run_on_main_thread(move || unsafe {
-        let Some(mtm) = MainThreadMarker::new() else { return };
-        let Some(principal) = NSScreen::screens(mtm).firstObject() else { return };
-        let rect = rect_appkit(vers, echelle, principal.frame().size.height);
-        let fen = fenetre_native(ptr);
-
-        if duree.is_zero() {
-            fen.setFrame_display(rect, true);
-            fen.invalidateShadow();
-            rafraichir_ombre_bientot(&suite, ptr);
-            return;
-        }
-
-        // Le resserrement, animé par Core Animation avec la courbe de la page
-        // (`MORPH_EASE`). `setFrame:display:animate:` imposerait la durée et
-        // la courbe du système.
-        let secondes = duree.as_secs_f64();
-        let changements = RcBlock::new(move |contexte: NonNull<NSAnimationContext>| {
-            let contexte = contexte.as_ref();
-            contexte.setDuration(secondes);
-            contexte.setTimingFunction(Some(&CAMediaTimingFunction::functionWithControlPoints(
-                0.22, 0.9, 0.28, 1.0,
-            )));
-            fenetre_native(ptr).animator().setFrame_display(rect, true);
-        });
-        let fin = RcBlock::new(move || fenetre_native(ptr).invalidateShadow());
-        NSAnimationContext::runAnimationGroup_completionHandler(&changements, Some(&fin));
-    });
-}
-
 /// Montre le panneau SANS activer l'application : `orderFrontRegardless` le
 /// pose devant, `makeKeyWindow` lui donne le clavier. `set_focus` de Tauri,
 /// lui, activerait Listik tout entier.
@@ -161,5 +105,26 @@ pub fn montrer(fenetre: &WebviewWindow) {
         fen.makeKeyWindow();
         let page = &*(vue.inner() as *const NSResponder);
         fen.makeFirstResponder(Some(page));
+    });
+}
+
+/// Chaque demande porte un numéro : seule la DERNIÈRE programme le recalcul
+/// final, une fois les formes au repos.
+static DERNIERE: AtomicU64 = AtomicU64::new(0);
+
+/// Fait recalculer l'ombre tout de suite — elle suit la métamorphose avec
+/// une image de retard — puis une dernière fois 120 ms après le dernier
+/// mouvement : au repos, l'ombre doit coller EXACTEMENT à la forme.
+pub fn rafraichir_ombre(fenetre: &WebviewWindow) {
+    let Some(ptr) = pointeur(fenetre) else { return };
+    let _ = fenetre.run_on_main_thread(move || unsafe { fenetre_native(ptr).invalidateShadow() });
+
+    let numero = DERNIERE.fetch_add(1, Ordering::SeqCst) + 1;
+    let fenetre = fenetre.clone();
+    std::thread::spawn(move || {
+        std::thread::sleep(Duration::from_millis(120));
+        if DERNIERE.load(Ordering::SeqCst) == numero {
+            let _ = fenetre.run_on_main_thread(move || unsafe { fenetre_native(ptr).invalidateShadow() });
+        }
     });
 }

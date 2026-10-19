@@ -394,21 +394,22 @@ pub async fn toggle_quick_window(app: AppHandle) -> Result<(), String> {
             window
                 .emit("quick:will-hide", ())
                 .map_err(|e| e.to_string())?;
-            window.hide().map_err(|e| e.to_string())?;
+            crate::cadre::cacher(&window).map_err(|e| e.to_string())?;
         } else {
             crate::cadre::ancrer(&window);
             crate::cadre::montrer(&window).map_err(|e| e.to_string())?;
         }
     } else {
         // Filet de sécurité : la fenêtre est normalement déclarée en config.
-        // Taille A TENIR IDENTIQUE à "quick" dans tauri.conf.json : la barre
-        // au neutre. La page l'ajuste ensuite à chaque scène (`quick_cadre`).
+        // Taille A TENIR IDENTIQUE à "quick" dans tauri.conf.json : la toile
+        // fixe de la barre (voir cadre/mod.rs).
         WebviewWindowBuilder::new(&app, "quick", WebviewUrl::App("/quick".into()))
             .title("Capture rapide")
-            .inner_size(600.0, 56.0)
+            .inner_size(760.0, 720.0)
             .resizable(false)
             .decorations(false)
-            .shadow(true)
+            .transparent(true)
+            .shadow(false)
             .skip_taskbar(true)
             .always_on_top(true)
             .build()
@@ -424,7 +425,7 @@ pub async fn hide_quick_window(app: AppHandle) -> Result<(), String> {
         window
             .emit("quick:will-hide", ())
             .map_err(|e| e.to_string())?;
-        window.hide().map_err(|e| e.to_string())?;
+        crate::cadre::cacher(&window).map_err(|e| e.to_string())?;
     }
     Ok(())
 }

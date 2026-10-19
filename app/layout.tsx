@@ -63,8 +63,12 @@ export default function RootLayout({
                 <div className="h-screen w-screen overflow-hidden bg-transparent">
                   <SWRConfig value={SWR_OPTIONS}>
                     {children}
+                    {/* Sous la barre, pas dans un coin : la fenêtre rapide est
+                        une toile bien plus grande que la barre, et un toast
+                        au coin flotterait loin d'elle. */}
                     <Toaster
-                      position="top-right"
+                      position="top-center"
+                      offset={{ top: 96 }}
                       closeButton
                       toastOptions={{ duration: 3000 }}
                     />

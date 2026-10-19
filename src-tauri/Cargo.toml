@@ -67,30 +67,21 @@ tauri-plugin-global-shortcut = "2"
 webview2-com = "0.38"
 windows = { version = "0.61", features = [
     "Win32_System_Com",
-    # Le cadre natif de la barre rapide (voir cadre/windows.rs).
-    "Win32_Graphics_Dwm",
+    # La toile traversante de la barre rapide (voir cadre/windows.rs).
     "Win32_UI_WindowsAndMessaging",
     "Win32_UI_Shell",
-    "Win32_Graphics_Gdi",
 ] }
 
 # La barre rapide en vrai panneau macOS (voir cadre/macos.rs). Versions
 # alignées sur celles que tire déjà tao.
 [target.'cfg(target_os = "macos")'.dependencies]
 objc2 = "0.6"
-block2 = "0.6"
-objc2-foundation = { version = "0.3", default-features = false, features = ["std", "NSArray", "NSGeometry", "NSObject"] }
-objc2-quartz-core = { version = "0.3", default-features = false, features = ["std", "CAMediaTimingFunction"] }
+objc2-foundation = { version = "0.3", default-features = false, features = ["std", "NSObject"] }
 objc2-app-kit = { version = "0.3", default-features = false, features = [
     "std",
-    "block2",
-    "objc2-quartz-core",
-    "NSAnimation",
-    "NSAnimationContext",
     "NSGraphics",
     "NSPanel",
     "NSResponder",
-    "NSScreen",
     "NSWindow",
 ] }
 

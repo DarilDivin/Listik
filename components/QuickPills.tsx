@@ -85,6 +85,9 @@ export function QuickPills({
   return (
     <motion.div
       className="relative shrink-0"
+      // Une forme cliquable de la toile de la barre rapide (voir
+      // src-tauri/src/cadre) : hors des formes, les clics la traversent.
+      data-forme
       animate={{ width: collapsed ? 0 : expandedWidth, opacity: collapsed ? 0 : 1 }}
       transition={{ duration: 0.58, ease: ELASTIQUE }}
       style={{ height: PILL, pointerEvents: collapsed ? "none" : "auto" }}

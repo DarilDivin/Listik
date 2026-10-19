@@ -25,14 +25,21 @@ import { cn } from "@/lib/utils";
 
 type AskPhase = "idle" | "reflexion" | "reponse";
 
-/** La largeur unique de la barre et de tout ce qui s'en déplie. */
-const LARGEUR = 600;
-/** La hauteur d'une barre au repos. */
-const HAUTEUR_BARRE = 56;
-/** Le Journal est un panneau d'écriture : une hauteur fixe, généreuse. */
-const HAUTEUR_JOURNAL = 480;
-const TASK_OVERLAY_FALLBACK_HEIGHT = 460;
-const TASK_OVERLAY_MARGIN = 12;
+const BAR_WIDTH = 420;
+const ACTIVE_BAR_WIDTH = 520;
+const TASK_MIN_HEIGHT = 52;
+/** La marge au-dessus de la barre, dans la toile : la place de son ombre.
+ *  À TENIR IDENTIQUE à `MARGE_HAUT` dans src-tauri/src/cadre/mod.rs. */
+const MARGE_HAUT = 24;
+const RESPONSE_WIDTH = 440;
+const RESPONSE_MIN_HEIGHT = 272;
+const RESPONSE_MAX_HEIGHT = 560;
+const JOURNAL_SIZE = { width: 680, height: 600 };
+// Mouvement posé, sans rebond : la surface est un objet dense, pas une
+// notification. Cette courbe est partagée par toute la scène rapide.
+const MORPH_EASE = [0.22, 0.9, 0.28, 1] as const;
+const MORPH_DURATION = 0.58;
+
 /** La réponse que montre l'essai automatique (voir `quick:essai-scene`). */
 const REPONSE_ESSAI = [
   "Trois choses comptent aujourd’hui :",
@@ -44,55 +51,46 @@ const REPONSE_ESSAI = [
   "Le reste peut attendre demain.",
 ].join("\n\n");
 
-/** Le fondu d'entrée d'une scène — la fenêtre, elle, a déjà sa taille. */
-const ENTREE = { duration: 0.2, ease: [0.22, 0.9, 0.28, 1] as const };
+/**
+ * Ce que la toile tient pour cliquable : la barre (`data-forme`), les
+ * pastilles (`data-forme`), les menus de Radix et les toasts. Ailleurs, les
+ * clics la traversent (voir src-tauri/src/cadre).
+ */
+const SELECTEUR_FORMES = "[data-forme], [data-radix-popper-content-wrapper] > *, [data-sonner-toast]";
 
 function isOverlayOpen() {
   return !!document.querySelector("[data-radix-popper-content-wrapper]");
 }
 
-/**
- * Résout une couleur CSS (oklch, color-mix…) en octets sRGB, en la peignant
- * sur un pixel. `dessous` est peint d'abord : une couleur translucide (le
- * liseré du thème sombre) se lit alors telle qu'elle apparaît sur le fond.
- */
-function enOctets(couleur: string, dessous?: string): [number, number, number] {
-  const c = document.createElement("canvas");
-  c.width = c.height = 1;
-  const ctx = c.getContext("2d", { willReadFrequently: true });
-  if (!ctx) return [128, 128, 128];
-  if (dessous) {
-    ctx.fillStyle = dessous;
-    ctx.fillRect(0, 0, 1, 1);
-  }
-  ctx.fillStyle = couleur;
-  ctx.fillRect(0, 0, 1, 1);
-  const d = ctx.getImageData(0, 0, 1, 1).data;
-  return [d[0], d[1], d[2]];
+function clamp(value: number, min: number, max: number) {
+  return Math.min(max, Math.max(min, value));
 }
 
 /**
- * Barre de capture rapide, construite comme Spotlight et les barres de
- * Windows : la FENÊTRE est la barre. Le système en trace le contour et
- * l'ombre ; un clic à côté tombe dans l'application d'en dessous.
+ * Barre de capture rapide (style Spotlight) : une TOILE transparente, de
+ * taille fixe, où la barre se métamorphose — capsule, bulle de réflexion,
+ * panneau de réponse, Journal — et où ses pastilles flottent à côté d'elle.
  *
- * La géométrie est tenue par Rust (`src-tauri/src/cadre`) : l'écran et le
- * point d'ancrage sont choisis à l'ouverture, le haut reste fixe et tout se
- * déplie VERS LE BAS, à la même largeur. La page ne fait que mesurer sa
- * scène et l'annoncer (`quick_cadre`) ; le cadre grandit d'un coup — la
- * scène entre en fondu — et se resserre en s'animant.
+ * Seules les formes peintes existent pour la souris : la page les annonce à
+ * Rust à chaque mouvement (`quick_formes`), et Rust rend la fenêtre
+ * traversante dès que le pointeur les quitte. Un clic à côté de la barre
+ * atteint donc l'application d'en dessous. La toile est posée une fois à
+ * l'ouverture (l'écran du pointeur, au cinquième haut) et ne bouge plus :
+ * la barre s'accroche en haut et tout se déplie vers le bas.
  *
- * Scènes : la barre neutre (l'Assistant, avec les pastilles Tâche et Journal
- * DANS la barre), les deux outils de capture, et pour une question : la
- * réflexion (la présence animée prend la place du bouton d'envoi, dans la
- * barre) puis la conversation, qui se déplie sous le champ.
+ * Sur Mac, l'ombre est celle du système — elle suit chaque forme, même en
+ * pleine métamorphose ; sous Windows, elle est dessinée ici.
  *
- * On l'ouvre par le raccourci global ou le tray. Elle se ferme après
+ * On l'ouvre via le raccourci global ou le tray. Elle se ferme après
  * validation (mode Tâche), sur Échap, ou quand elle perd le focus — SAUF
- * pendant une question ou dans le Journal, voir plus bas.
+ * pendant qu'une question est en cours de réflexion ou de réponse, ou dans
+ * le Journal.
  *
- * Pas de bouton d'annuler pendant la réflexion (décision utilisateur,
- * 2026-09-16) : c'est un processus de réflexion. Échap reste le filet global.
+ * Pour une question : `reflexion` (`QuickBubble`, un cercle) puis `reponse`
+ * (`QuickAnswer`). Une relance depuis `reponse` NE repasse PAS par la bulle.
+ * Pas de bouton d'annuler pendant `reflexion` (décision utilisateur,
+ * 2026-09-16) : c'est un processus de réflexion. Échap reste le filet
+ * global.
  *
  * Ouvrir dans l'Assistant transmet la DERNIÈRE question/réponse par un
  * événement front-à-front (`QUICK_OPEN_ASSISTANT_EVENT`).
@@ -117,26 +115,35 @@ export default function QuickPage() {
   const [askPhase, setAskPhase] = useState<AskPhase>("idle");
   const [turns, setTurns] = useState<Turn[]>([]);
   const [pending, setPending] = useState(false);
-  const [taskOverlayHeight, setTaskOverlayHeight] = useState<number | null>(null);
-  const [taskOverlayOpen, setTaskOverlayOpen] = useState(false);
-  const [sceneHeight, setSceneHeight] = useState(HAUTEUR_BARRE);
+  const [answerHeight, setAnswerHeight] = useState(RESPONSE_MIN_HEIGHT);
+  const [height, setHeight] = useState<number | undefined>(undefined);
+  /** La barre est montrée : c'est le seul moment où l'on suit ses formes. */
+  const [ouverte, setOuverte] = useState(false);
   const pendingRef = useRef(false); // garde de réentrance, voir assistant/page.tsx
   const wasHidden = useRef(true);
   /** Mode imposé à la PROCHAINE ouverture, une seule fois (l'accueil ouvre ainsi la fenêtre en mode Tâche). */
   const nextModeRef = useRef<Exclude<QuickMode, "neutre"> | null>(null);
-  const taskOverlayPrimed = useRef(false);
-  /** L'essai automatique est en cours (voir plus bas) : personne ne regarde. */
+  /** L'essai automatique est en cours : personne ne regarde. */
   const essaiRef = useRef(false);
+
+  // La règle CSS qui retire les ombres dessinées sur Mac (l'ombre y est
+  // celle du système) se règle sur <html> : les menus de Radix sont portés
+  // hors de la page, sous <body>.
+  useEffect(() => {
+    document.documentElement.dataset.plateforme = mac ? "mac" : "autre";
+  }, [mac]);
 
   const resetAsk = useCallback(() => {
     setAskPhase("idle");
     setTurns([]);
+    setAnswerHeight(RESPONSE_MIN_HEIGHT);
     pendingRef.current = false;
     setPending(false);
   }, []);
 
   // La fenêtre est conservée cachée entre deux raccourcis. On la remet dans
-  // son état neutre AVANT de la cacher : elle se rouvrira barre, pas panneau.
+  // son état neutre AVANT de la cacher, sinon Motion conserve une réponse ou
+  // une bulle dans le DOM et la fait sortir au prochain affichage.
   const resetQuickSurface = useCallback(() => {
     setMode("neutre");
     setNeutralText("");
@@ -145,6 +152,7 @@ export default function QuickPage() {
 
   const hide = useCallback(() => {
     wasHidden.current = true;
+    setOuverte(false);
     flushSync(resetQuickSurface);
     invoke("hide_quick_window").catch(() => {});
   }, [resetQuickSurface]);
@@ -152,10 +160,12 @@ export default function QuickPage() {
   useEffect(() => {
     const unlisten = listen("quick:will-hide", () => {
       // Le raccourci global cache la fenêtre directement. On remet la scène
-      // au neutre avant la prochaine ouverture.
+      // au neutre avant la prochaine ouverture, pour qu'elle ne se
+      // métamorphose jamais depuis un contenu périmé.
       if (wasHidden.current) return;
 
       wasHidden.current = true;
+      setOuverte(false);
       flushSync(() => {
         resetQuickSurface();
         setMountKey((key) => key + 1);
@@ -167,26 +177,6 @@ export default function QuickPage() {
     };
   }, [resetQuickSurface]);
 
-  // Les couleurs que le SYSTÈME peint lui-même : le fond découvert pendant
-  // un agrandissement, et le liseré de Windows 11. Elles suivent le thème,
-  // l'accent et le mode OLED, tous posés sur <html>.
-  useEffect(() => {
-    const envoyer = () => {
-      const style = getComputedStyle(document.documentElement);
-      const popover = style.getPropertyValue("--popover").trim() || "#fff";
-      const fond = enOctets(popover);
-      const lisere = enOctets(style.getPropertyValue("--border").trim() || "#ccc", popover);
-      invoke("quick_couleurs", { fond, lisere }).catch(() => {});
-    };
-    envoyer();
-    const observateur = new MutationObserver(envoyer);
-    observateur.observe(document.documentElement, {
-      attributes: true,
-      attributeFilter: ["class", "data-accent", "data-oled"],
-    });
-    return () => observateur.disconnect();
-  }, []);
-
   const switchMode = useCallback((next: Exclude<QuickMode, "neutre">) => {
     setMode(next);
     setNeutralText("");
@@ -194,6 +184,9 @@ export default function QuickPage() {
   }, [resetAsk]);
 
   const returnToNeutral = useCallback(() => {
+    // La cible compacte doit être connue avant le rendu du fondu, même si la
+    // scène précédente est un Journal de plusieurs centaines de pixels.
+    setHeight(TASK_MIN_HEIGHT);
     resetQuickSurface();
   }, [resetQuickSurface]);
 
@@ -236,6 +229,7 @@ export default function QuickPage() {
         if (blurTimer) clearTimeout(blurTimer);
         if (wasHidden.current) {
           wasHidden.current = false;
+          setOuverte(true);
           resetQuickSurface();
           setMountKey((k) => k + 1);
         }
@@ -277,6 +271,42 @@ export default function QuickPage() {
     return () => window.removeEventListener("keydown", onKey);
   }, [hide]);
 
+  // Les FORMES de la toile, annoncées à Rust à chaque changement : ce sont
+  // elles qui décident où la souris est captée, et où elle traverse. La
+  // boucle ne tourne que barre ouverte — une fenêtre cachée ne passe pas
+  // toujours `document.hidden`, et une boucle par image toute la journée
+  // viderait la batterie. Elle n'envoie rien tant que rien ne bouge.
+  useEffect(() => {
+    if (!ouverte) return;
+    let image = 0;
+    let precedent = "";
+    const tour = () => {
+      const formes = Array.from(document.querySelectorAll<HTMLElement>(SELECTEUR_FORMES))
+        .map((element) => {
+          const r = element.getBoundingClientRect();
+          return {
+            x: r.left,
+            y: r.top,
+            largeur: r.width,
+            hauteur: r.height,
+            // L'arrondi suit la métamorphose : on le relit à chaque image.
+            rayon: parseFloat(getComputedStyle(element).borderTopLeftRadius) || 0,
+          };
+        })
+        .filter((f) => f.largeur > 1 && f.hauteur > 1);
+      const cle = formes
+        .map((f) => [f.x, f.y, f.largeur, f.hauteur, f.rayon].map(Math.round).join(","))
+        .join(";");
+      if (cle !== precedent) {
+        precedent = cle;
+        invoke("quick_formes", { formes }).catch(() => {});
+      }
+      image = requestAnimationFrame(tour);
+    };
+    image = requestAnimationFrame(tour);
+    return () => cancelAnimationFrame(image);
+  }, [ouverte]);
+
   // L'ESSAI AUTOMATIQUE (src-tauri/src/cadre, `essai_si_demande`) : Rust
   // annonce une scène, la page s'y met. C'est ce qui permet à la CI macOS de
   // photographier chaque état de la barre sans personne devant l'écran — et
@@ -286,9 +316,12 @@ export default function QuickPage() {
     const question = "Que dois-je faire aujourd'hui ?";
     const unlisten = listen<string>("quick:essai-scene", ({ payload }) => {
       essaiRef.current = true;
+      wasHidden.current = false;
+      setOuverte(true);
       const racine = document.documentElement;
       switch (payload) {
         case "neutre":
+        case "neutre-sombre":
           resetQuickSurface();
           break;
         case "saisie":
@@ -315,11 +348,9 @@ export default function QuickPage() {
         case "reponse-sombre":
           racine.classList.add("dark");
           break;
-        case "neutre-sombre":
-          resetQuickSurface();
-          break;
         case "retour":
           racine.classList.remove("dark");
+          resetQuickSurface();
           break;
       }
     });
@@ -336,8 +367,8 @@ export default function QuickPage() {
     [captureTask, hide],
   );
 
-  // Pose/complète un tour — partagé par la toute première question et les
-  // relances (qui restent dans la conversation).
+  // Pose/complète un tour — partagé par la toute première question (qui
+  // vient de la bulle) et les relances (qui restent dans le panneau réponse).
   const askQuestion = useCallback(
     async (text: string) => {
       const id = crypto.randomUUID();
@@ -367,8 +398,9 @@ export default function QuickPage() {
     [turns],
   );
 
-  // Première question : la présence de réflexion jusqu'à la réponse, PUIS la
-  // conversation se déplie — jamais l'inverse.
+  // Première question : bulle de réflexion jusqu'à la réponse, PUIS bascule
+  // en panneau réponse — jamais l'inverse (le panneau n'a pas d'état
+  // "réflexion" à lui, la bulle le porte déjà).
   const handleAskSubmit = useCallback(
     (text: string) => {
       if (pendingRef.current) return;
@@ -407,7 +439,10 @@ export default function QuickPage() {
   }, [hide]);
 
   // Neutre sans mot-clé, validé : « va vers l'assistant » veut dire prendre
-  // tout le chemin Question — réflexion, puis conversation.
+  // tout le chemin Question — bascule en mode Question (pastilles repliées),
+  // puis soumission immédiate. Pas de raccourci qui ouvrirait juste la
+  // fenêtre principale : ce serait plus pauvre que la bulle + réponse que la
+  // fenêtre rapide sait déjà montrer.
   const handleNeutralSubmit = useCallback(() => {
     const text = neutralText.trim();
     if (!text) return;
@@ -415,28 +450,41 @@ export default function QuickPage() {
     handleAskSubmit(text);
   }, [neutralText, switchMode, handleAskSubmit]);
 
-  // C'est la hauteur NATURELLE de la scène qui fait celle de la fenêtre. On
-  // mesure son CONTENEUR, qui ne change jamais : `popLayout` retire la scène
-  // sortante du flux, si bien qu'il a toujours la hauteur de l'entrante. (Une
-  // référence posée sur la scène elle-même serait écrasée par celle que
-  // `popLayout` y pose pour la mesurer à son tour.)
-  const sceneObserverRef = useRef<ResizeObserver | null>(null);
+  // Seule la scène qui ENTRE pilote la hauteur compacte. Mesurer le conteneur
+  // partagé pendant un fondu superposé ferait conserver la hauteur du Journal
+  // qui sort, puis provoquerait le saut que l'on cherche à éviter.
+  const measureObserverRef = useRef<ResizeObserver | null>(null);
+
   const measureScene = useCallback((element: HTMLDivElement | null) => {
-    sceneObserverRef.current?.disconnect();
     if (!element) return;
+    measureObserverRef.current?.disconnect();
     const update = () => {
       const next = Math.ceil(element.getBoundingClientRect().height);
-      if (next > 0) setSceneHeight((current) => (current === next ? current : next));
+      // Une coque qui se contracte modifie la largeur de son enfant à chaque
+      // frame. Si sa hauteur reste la même, redemander un rendu React ne fait
+      // qu'ajouter une saccade à une animation qui devrait rester composée.
+      setHeight((current) => (current === next ? current : next));
     };
     const observer = new ResizeObserver(update);
-    sceneObserverRef.current = observer;
+    measureObserverRef.current = observer;
     observer.observe(element);
     update();
   }, []);
-  useEffect(() => () => sceneObserverRef.current?.disconnect(), []);
 
-  /** Icône de tête cliquable, posée dans la barre active — le seul chemin de retour au neutre. */
-  const returnBadge = (targetMode: Exclude<QuickMode, "neutre">) => {
+  useEffect(() => () => measureObserverRef.current?.disconnect(), []);
+
+  // Le panneau réponse grandit avec la conversation, jusqu'à une hauteur au
+  // delà de laquelle c'est son fil qui défile.
+  const surAnswerHeight = useCallback((naturelle: number) => {
+    const next = clamp(naturelle, RESPONSE_MIN_HEIGHT, RESPONSE_MAX_HEIGHT);
+    setAnswerHeight((current) => (current === next ? current : next));
+  }, []);
+
+  /** Icône de tête cliquable, posée dans la barre/le panneau actif — le seul chemin de retour au neutre. */
+  const returnBadge = (
+    targetMode: Exclude<QuickMode, "neutre">,
+    compact = false,
+  ) => {
     const item = QUICK_ITEMS.find((i) => i.mode === targetMode);
     if (!item) return null;
     return (
@@ -445,210 +493,149 @@ export default function QuickPage() {
         onClick={returnToNeutral}
         title="Revenir — les pastilles ressortent"
         aria-label="Revenir au choix"
-        className="grid size-6 shrink-0 place-items-center self-center rounded-md text-brand transition hover:bg-brand-soft focus-visible:bg-brand-soft focus-visible:outline-none forced-colors:focus-visible:outline forced-colors:focus-visible:outline-2"
+        className={cn(
+          "grid shrink-0 place-items-center text-brand transition focus-visible:outline-none forced-colors:focus-visible:outline forced-colors:focus-visible:outline-2",
+          compact
+            ? "size-6 self-center rounded-md hover:bg-brand-soft focus-visible:bg-brand-soft"
+            : "size-9 self-start rounded-xl bg-brand-soft hover:brightness-95 focus-visible:bg-brand-soft dark:hover:brightness-110",
+        )}
       >
-        <AppIcon icon={item.icon} size={16} />
+        <AppIcon icon={item.icon} size={compact ? 16 : 18} />
       </button>
     );
   };
 
   const collapsed = mode !== "neutre" || neutralText.trim().length > 0;
+  const isBubble = mode === "question" && askPhase === "reflexion";
+  const isReponse = mode === "question" && askPhase === "reponse";
+  const isJournal = mode === "journal";
   const isTask = mode === "tache";
-  const sceneKey = mode === "question" ? `question-${askPhase}` : mode;
-
-  // Les menus de la barre Tâche (date, liste, suggestions) sont portés hors
-  // de la scène par Radix. La barre nous signale leur ouverture : on réserve
-  // d'abord une hauteur (Radix ne place un menu que s'il a la place), puis on
-  // la mesure une fois le menu posé. La fenêtre grandit pour le contenir —
-  // il s'ouvre DANS le panneau, sous le champ, pas en débordement.
-  useEffect(() => {
-    if (!isTask || !taskOverlayOpen) {
-      taskOverlayPrimed.current = false;
-      setTaskOverlayHeight(null);
-      return;
-    }
-
-    let frame = 0;
-    let settleTimer: ReturnType<typeof setTimeout> | undefined;
-    // Tant que la réserve n'est pas en place, Radix place le menu dans une
-    // page de 56 px : faute de place, il le retourne AU-DESSUS du champ. Le
-    // mesurer alors donnerait une hauteur absurde — et un resserrement suivi
-    // d'un regrandissement. On attend que la page ait grandi.
-    let pret = false;
-    let mesure = false;
-    const measure = () => {
-      const popovers = Array.from(
-        document.querySelectorAll<HTMLElement>("[data-radix-popper-content-wrapper]"),
-      ).filter((element) => {
-        const rect = element.getBoundingClientRect();
-        return rect.width > 0 && rect.height > 0;
-      });
-
-      if (!taskOverlayPrimed.current) {
-        taskOverlayPrimed.current = true;
-        setTaskOverlayHeight(TASK_OVERLAY_FALLBACK_HEIGHT);
-        // Le gestionnaire de fenêtres redimensionne hors du frame courant ;
-        // une seconde mesure récupère la position finale de Radix.
-        settleTimer = setTimeout(() => {
-          pret = true;
-          frame = requestAnimationFrame(measure);
-        }, 90);
-        return;
-      }
-      if (!pret || (!mesure && window.innerHeight < TASK_OVERLAY_FALLBACK_HEIGHT - 1)) return;
-
-      // Pendant la création du portail, garder la réserve initiale évite que
-      // le menu soit coupé entre deux frames.
-      if (popovers.length === 0) return;
-
-      mesure = true;
-      const bottom = Math.max(...popovers.map((element) => element.getBoundingClientRect().bottom));
-      const next = Math.ceil(bottom + TASK_OVERLAY_MARGIN);
-      setTaskOverlayHeight((current) => (current === next ? current : next));
-    };
-
-    const observer = new MutationObserver(() => {
-      cancelAnimationFrame(frame);
-      frame = requestAnimationFrame(measure);
-    });
-    observer.observe(document.body, {
-      childList: true,
-      subtree: true,
-      attributes: true,
-      attributeFilter: ["data-state", "style"],
-    });
-    window.addEventListener("resize", measure);
-    measure();
-
-    return () => {
-      observer.disconnect();
-      window.removeEventListener("resize", measure);
-      cancelAnimationFrame(frame);
-      if (settleTimer) clearTimeout(settleTimer);
-    };
-  }, [isTask, taskOverlayOpen]);
-
-  // La taille de la fenêtre : la scène, ou le menu ouvert s'il descend plus
-  // bas. Rust décide du geste — d'un coup pour grandir, animé pour se
-  // resserrer. Cachée, elle se remet à la taille de la barre sans animer :
-  // une animation invisible pourrait encore courir à la réouverture.
-  const windowHeight = Math.max(sceneHeight, isTask ? (taskOverlayHeight ?? 0) : 0);
-  useEffect(() => {
-    invoke("quick_cadre", {
-      largeur: LARGEUR,
-      hauteur: windowHeight,
-      anime: !wasHidden.current,
-    }).catch(() => {});
-  }, [windowHeight]);
+  const taskHeight = Math.max(Math.ceil(height ?? TASK_MIN_HEIGHT), TASK_MIN_HEIGHT);
+  const activeHeight = TASK_MIN_HEIGHT;
+  // Le panneau réponse a des coins, lui aussi : il n'est plus la fenêtre
+  // entière, mais une forme posée dans la toile.
+  const shellRadius = isReponse || isJournal ? 22 : isBubble ? 32 : mode === "neutre" ? 26 : 20;
+  const shellWidth = isBubble
+    ? 64
+    : isReponse
+      ? RESPONSE_WIDTH
+      : isJournal
+        ? JOURNAL_SIZE.width
+        : collapsed
+          ? ACTIVE_BAR_WIDTH
+          : BAR_WIDTH;
+  const shellHeight = isBubble
+    ? 64
+    : isReponse
+      ? answerHeight
+      : isJournal
+        ? JOURNAL_SIZE.height
+        : isTask
+          ? taskHeight
+        : collapsed
+          ? activeHeight
+          : height ?? 52;
+  const sceneKey = isBubble ? "reflexion" : isReponse ? "reponse" : mode;
 
   return (
     <div
-      className={cn(
-        "h-screen w-screen overflow-hidden bg-popover text-foreground",
-        // Sur Mac, la fenêtre est transparente et l'ombre du système suit
-        // la forme peinte : la capsule de Spotlight. Sous Windows, c'est le
-        // système qui arrondit les coins de la fenêtre opaque.
-        mac && "rounded-[28px]",
-      )}
+      className="flex h-screen w-screen justify-center bg-transparent"
+      style={{ paddingTop: MARGE_HAUT }}
     >
-      <div ref={measureScene} className="relative w-full">
-        <AnimatePresence initial={false} mode="popLayout">
+      <motion.div
+        style={{ gap: collapsed ? 0 : 14 }}
+        className="relative flex items-start transition-[gap] duration-[580ms]"
+      >
           <motion.div
-            key={sceneKey}
-            initial={{ opacity: 0, y: -4 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, transition: { duration: 0.12 } }}
-            transition={ENTREE}
-            className="w-full"
+            // Une forme cliquable de la toile (voir src-tauri/src/cadre).
+            data-forme
+            // Née à sa taille : grandie depuis zéro, elle ferait mesurer au
+            // champ sa hauteur sur une largeur nulle — et il la garderait.
+            initial={false}
+            animate={{ width: shellWidth, height: shellHeight, borderRadius: shellRadius }}
+            transition={{ duration: MORPH_DURATION, ease: MORPH_EASE }}
+            className={cn(
+              "relative shrink-0 overflow-hidden border border-transparent bg-popover shadow-floating",
+              "transition-[border-color] duration-[580ms]",
+              (isReponse || isJournal) && "border-border/70",
+            )}
           >
-            {mode === "neutre" && (
-              <div className="flex h-14 items-center pr-2">
-                <div className="h-full min-w-0 flex-1">
-                  <BarreAssistant
-                    key={`neutre-${mountKey}`}
-                    value={neutralText}
-                    onValueChange={handleNeutralChange}
-                    onSubmit={handleNeutralSubmit}
-                    placeholder="Écrire, capturer, demander…"
-                    autoFocus
-                    variant="inline"
-                  />
-                </div>
-                {/* Les pastilles vivent DANS la barre : une ombre système ne
-                    sait pas entourer des formes flottantes séparées. Elles
-                    se replient dès qu'on écrit, et se refondent l'une dans
-                    l'autre en partant. */}
-                <QuickPills
-                  collapsed={collapsed}
-                  onChoose={switchMode}
-                  entryKey={mountKey}
-                  size={40}
-                  gap={12}
-                  shapeClassName="bg-muted"
-                />
-              </div>
-            )}
-            {mode === "tache" && (
-              <div className="flex min-h-14 items-center">
-                <BarreTache
-                  key={`tache-${mountKey}`}
-                  variant="inline"
-                  autoFocus
-                  onSubmit={handleSubmit}
-                  placeholder="Capturer une tâche…"
-                  lists={lists}
-                  leading={returnBadge("tache")}
-                  showControls={false}
-                  onOverlayChange={setTaskOverlayOpen}
-                />
-              </div>
-            )}
-            {mode === "journal" && (
-              <div style={{ height: HAUTEUR_JOURNAL }}>
-                <BarreJournal
-                  key={`journal-${mountKey}`}
-                  autoFocus
-                  leading={returnBadge("journal")}
-                  onOpenInJournal={handleOpenInJournal}
-                  onClose={hide}
-                />
-              </div>
-            )}
-            {mode === "question" && askPhase === "idle" && (
-              <div className="h-14">
-                <BarreAssistant
-                  key={`question-${mountKey}`}
-                  autoFocus
-                  onSubmit={handleAskSubmit}
-                  placeholder="Demander, créer, chercher…"
-                  leading={returnBadge("question")}
-                  variant="inline"
-                />
-              </div>
-            )}
-            {mode === "question" && askPhase === "reflexion" && (
-              // La question reste lisible là où on l'a tapée ; la présence
-              // prend la place du bouton d'envoi le temps de la réflexion.
-              <div className="flex h-14 items-center gap-2 pr-2.5 pl-3">
-                {returnBadge("question")}
-                <p className="min-w-0 flex-1 truncate text-[0.9375rem] text-muted-foreground">
-                  {turns[0]?.question}
-                </p>
-                <QuickBubble size={36} />
-              </div>
-            )}
-            {mode === "question" && askPhase === "reponse" && (
-              <QuickAnswer
-                turns={turns}
-                pending={pending}
-                onFollowUp={handleFollowUp}
-                leading={returnBadge("question")}
-                onOpenInAssistant={handleOpenInAssistant}
-              />
-            )}
+            <div className="relative h-full w-full">
+              <AnimatePresence initial={false} mode="sync">
+                <motion.div
+                  ref={isJournal || isReponse || isBubble ? undefined : measureScene}
+                  key={sceneKey}
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  exit={{ opacity: 0 }}
+                  transition={{ duration: 0.2, ease: MORPH_EASE }}
+                  className={cn(
+                    "w-full",
+                    isReponse || isJournal
+                      ? "absolute inset-0 h-full"
+                      : "absolute inset-x-0 top-1/2 -translate-y-1/2",
+                  )}
+                >
+                  {mode === "neutre" && (
+                    <BarreAssistant
+                      key={`neutre-${mountKey}`}
+                      value={neutralText}
+                      onValueChange={handleNeutralChange}
+                      onSubmit={handleNeutralSubmit}
+                      placeholder="Écrire, capturer, demander…"
+                      autoFocus
+                      variant="inline"
+                    />
+                  )}
+                  {mode === "tache" && (
+                    <BarreTache
+                      key={`tache-${mountKey}`}
+                      variant="inline"
+                      autoFocus
+                      onSubmit={handleSubmit}
+                      placeholder="Capturer une tâche…"
+                      lists={lists}
+                      leading={returnBadge("tache", true)}
+                      showControls={false}
+                    />
+                  )}
+                  {mode === "journal" && (
+                    <BarreJournal
+                      key={`journal-${mountKey}`}
+                      autoFocus
+                      leading={returnBadge("journal", true)}
+                      onOpenInJournal={handleOpenInJournal}
+                      onClose={hide}
+                    />
+                  )}
+                  {mode === "question" && askPhase === "idle" && (
+                    <BarreAssistant
+                      key={`question-${mountKey}`}
+                      autoFocus
+                      onSubmit={handleAskSubmit}
+                      placeholder="Demander, créer, chercher…"
+                      leading={returnBadge("question", true)}
+                      variant="inline"
+                    />
+                  )}
+                  {isBubble && <QuickBubble />}
+                  {isReponse && (
+                    <QuickAnswer
+                      turns={turns}
+                      pending={pending}
+                      onFollowUp={handleFollowUp}
+                      leading={returnBadge("question", true)}
+                      onOpenInAssistant={handleOpenInAssistant}
+                      onHauteurNaturelle={surAnswerHeight}
+                    />
+                  )}
+                </motion.div>
+              </AnimatePresence>
+            </div>
           </motion.div>
-        </AnimatePresence>
-      </div>
+
+          <QuickPills collapsed={collapsed} onChoose={switchMode} entryKey={mountKey} />
+      </motion.div>
     </div>
   );
 }

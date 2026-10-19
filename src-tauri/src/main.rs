@@ -118,9 +118,7 @@ fn main() {
 
             // --- Le cadre natif de la barre rapide (voir cadre/mod.rs) ---
             app.manage(cadre::Geometrie::default());
-            if let Some(quick) = app.get_webview_window(cadre::QUICK) {
-                cadre::preparer(&quick);
-            }
+            cadre::preparer(app.handle());
             cadre::essai_si_demande(app.handle());
 
             println!("🚀 Application Listik démarrée !");
@@ -195,8 +193,7 @@ fn main() {
             commands::delete_journal_entry,
             commands::set_journal_entry_tags,
             commands::toggle_quick_window,
-            cadre::quick_cadre,
-            cadre::quick_couleurs,
+            cadre::quick_formes,
             commands::hide_quick_window,
             commands::show_main_window,
             commands::open_quick_window,

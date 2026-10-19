@@ -268,14 +268,12 @@ body.quick-window nextjs-portal {
   display: none !important;
 }
 
-/* La fenêtre rapide EST la barre : son cadre natif (ombre, contour) suffit.
-   Le liseré de focus des barres intégrées y dessinerait une boîte dans la
-   boîte, et les menus s'y ouvrent DANS le panneau — sans l'ombre d'une carte
-   qui flotterait au-dessus de la page. */
-body.quick-window form {
-  border-color: transparent;
-}
-body.quick-window [data-slot="popover-content"] {
+/* Sur Mac, l'ombre de la barre rapide est celle du SYSTÈME : macOS la
+   calcule d'après ce qui est peint, et elle suit chaque forme. Une ombre CSS
+   par-dessus en ferait deux. (`data-plateforme` est posé par la page.) */
+html[data-plateforme="mac"] body.quick-window .shadow-floating,
+html[data-plateforme="mac"] body.quick-window [data-slot="popover-content"],
+html[data-plateforme="mac"] body.quick-window [data-sonner-toast] {
   box-shadow: none;
 }
 
