@@ -1,6 +1,6 @@
 "use client";
 
-import { useLayoutEffect, useRef } from "react";
+import { useCallback, useLayoutEffect, useRef } from "react";
 import type { DateMatch } from "@/features/todos/smartParse";
 import { HighlightedOverlay } from "./HighlightedOverlay";
 
@@ -78,19 +78,42 @@ export function AutoGrowTextarea({
   const padY = compact ? 0 : 6;
   const oneLine = padY * 2 + LINE_HEIGHT;
 
+  /** Le champ conversation prend la hauteur de son texte, à SA largeur. */
+  const ajusterConversation = useCallback(() => {
+    const el = conversationRef.current;
+    if (!el) return;
+    el.style.height = "0px";
+    const height = Math.min(el.scrollHeight, 144);
+    el.style.height = `${Math.max(LINE_HEIGHT, height)}px`;
+    const multiline = height > LINE_HEIGHT + 2;
+    if (multiline !== wasMultiline.current) {
+      wasMultiline.current = multiline;
+      onMultilineChange?.(multiline);
+    }
+  }, [onMultilineChange]);
+
+  // La hauteur dépend aussi de la LARGEUR : monté dans une forme qui se
+  // métamorphose (la bulle de la barre rapide qui s'ouvre en panneau), le
+  // champ naît étroit, son texte d'invite s'y replie sur dix lignes — et il
+  // gardait cette hauteur une fois la forme ouverte. On la recalcule donc
+  // quand la largeur change, pas seulement quand le texte change.
+  useLayoutEffect(() => {
+    const el = conversationRef.current;
+    if (!isConversation || !el) return;
+    let largeur = el.clientWidth;
+    const observateur = new ResizeObserver(() => {
+      if (el.clientWidth === largeur) return;
+      largeur = el.clientWidth;
+      ajusterConversation();
+    });
+    observateur.observe(el);
+    return () => observateur.disconnect();
+  }, [isConversation, ajusterConversation]);
+
   // Détecte le passage multi-ligne d'après la hauteur réelle du miroir.
   useLayoutEffect(() => {
     if (isConversation) {
-      const el = conversationRef.current;
-      if (!el) return;
-      el.style.height = "0px";
-      const height = Math.min(el.scrollHeight, 144);
-      el.style.height = `${Math.max(LINE_HEIGHT, height)}px`;
-      const multiline = height > LINE_HEIGHT + 2;
-      if (multiline !== wasMultiline.current) {
-        wasMultiline.current = multiline;
-        onMultilineChange?.(multiline);
-      }
+      ajusterConversation();
       return;
     }
 
@@ -101,7 +124,7 @@ export function AutoGrowTextarea({
       wasMultiline.current = multiline;
       onMultilineChange?.(multiline);
     }
-  }, [value, oneLine, onMultilineChange, isConversation]);
+  }, [value, oneLine, onMultilineChange, isConversation, ajusterConversation]);
 
   useLayoutEffect(() => {
     if (focusSignal === undefined) return;
