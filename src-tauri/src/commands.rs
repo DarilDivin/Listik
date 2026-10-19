@@ -405,7 +405,7 @@ pub async fn toggle_quick_window(app: AppHandle) -> Result<(), String> {
         // fixe de la barre (voir cadre/mod.rs).
         WebviewWindowBuilder::new(&app, "quick", WebviewUrl::App("/quick".into()))
             .title("Capture rapide")
-            .inner_size(760.0, 720.0)
+            .inner_size(1000.0, 860.0)
             .resizable(false)
             .decorations(false)
             .transparent(true)

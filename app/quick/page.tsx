@@ -12,6 +12,7 @@ import BarreJournal from "@/components/BarreJournal";
 import BarreAssistant from "@/components/BarreAssistant";
 import { QuickBubble } from "@/components/QuickBubble";
 import { QuickAnswer } from "@/components/QuickAnswer";
+import { QuickResizeHandle, type Taille } from "@/components/QuickResizeHandle";
 import { QuickPills, QUICK_ITEMS, QUICK_NEXT_MODE_EVENT, type QuickMode } from "@/components/QuickPills";
 import { useTodosSync } from "@/features/todos/useTodosSync";
 import { useCaptureTask } from "@/features/todos/useCaptureTask";
@@ -34,7 +35,13 @@ const MARGE_HAUT = 24;
 const RESPONSE_WIDTH = 440;
 const RESPONSE_MIN_HEIGHT = 272;
 const RESPONSE_MAX_HEIGHT = 560;
-const JOURNAL_SIZE = { width: 680, height: 600 };
+/** Ce que la poignée ne laisse pas réduire davantage. */
+const RESPONSE_MIN = { width: 380, height: 240 };
+const JOURNAL_DEFAULT = { width: 680, height: 600 };
+const JOURNAL_MIN = { width: 480, height: 360 };
+/** Les tailles choisies à la poignée, gardées d'une ouverture à l'autre. */
+const CLE_TAILLE_REPONSE = "listik.rapide.taille-reponse";
+const CLE_TAILLE_JOURNAL = "listik.rapide.taille-journal";
 // Mouvement posé, sans rebond : la surface est un objet dense, pas une
 // notification. Cette courbe est partagée par toute la scène rapide.
 const MORPH_EASE = [0.22, 0.9, 0.28, 1] as const;
@@ -64,6 +71,25 @@ function isOverlayOpen() {
 
 function clamp(value: number, min: number, max: number) {
   return Math.min(max, Math.max(min, value));
+}
+
+function lireTaille(cle: string): Taille | null {
+  try {
+    const v = JSON.parse(localStorage.getItem(cle) ?? "null");
+    if (v && Number.isFinite(v.width) && Number.isFinite(v.height)) return { width: v.width, height: v.height };
+  } catch {
+    // Stockage indisponible : la taille par défaut fera l'affaire.
+  }
+  return null;
+}
+
+function ecrireTaille(cle: string, taille: Taille | null) {
+  try {
+    if (taille) localStorage.setItem(cle, JSON.stringify(taille));
+    else localStorage.removeItem(cle);
+  } catch {
+    // Idem : on perd seulement le souvenir de la taille.
+  }
 }
 
 /**
@@ -116,6 +142,15 @@ export default function QuickPage() {
   const [turns, setTurns] = useState<Turn[]>([]);
   const [pending, setPending] = useState(false);
   const [answerHeight, setAnswerHeight] = useState(RESPONSE_MIN_HEIGHT);
+  // Les tailles choisies à la poignée. Celle de la réponse est `null` tant
+  // qu'on n'y a pas touché : le panneau suit alors la conversation.
+  const [tailleReponse, setTailleReponse] = useState<Taille | null>(null);
+  const [tailleJournal, setTailleJournal] = useState<Taille>(JOURNAL_DEFAULT);
+  /** Un glissé de poignée est en cours. */
+  const [glisse, setGlisse] = useState(false);
+  const glisseRef = useRef(false);
+  /** Ce que la toile laisse au panneau (elle peut être réduite sur un petit écran). */
+  const [espace, setEspace] = useState<Taille>({ width: 984, height: 824 });
   const [height, setHeight] = useState<number | undefined>(undefined);
   /** La barre est montrée : c'est le seul moment où l'on suit ses formes. */
   const [ouverte, setOuverte] = useState(false);
@@ -132,6 +167,16 @@ export default function QuickPage() {
   useEffect(() => {
     document.documentElement.dataset.plateforme = mac ? "mac" : "autre";
   }, [mac]);
+
+  useEffect(() => {
+    setTailleReponse(lireTaille(CLE_TAILLE_REPONSE));
+    setTailleJournal(lireTaille(CLE_TAILLE_JOURNAL) ?? JOURNAL_DEFAULT);
+    const mesurer = () =>
+      setEspace({ width: window.innerWidth - 16, height: window.innerHeight - MARGE_HAUT - 12 });
+    mesurer();
+    window.addEventListener("resize", mesurer);
+    return () => window.removeEventListener("resize", mesurer);
+  }, []);
 
   const resetAsk = useCallback(() => {
     setAskPhase("idle");
@@ -215,6 +260,24 @@ export default function QuickPage() {
     };
   }, []);
 
+  // L'OUVERTURE, annoncée par Rust (`cadre::montrer`). Le focus suffisait
+  // presque toujours — mais il peut se perdre, et une page qui se croit
+  // fermée n'envoie pas ses formes : la barre devenait traversante.
+  const reveler = useCallback(() => {
+    if (!wasHidden.current) return;
+    wasHidden.current = false;
+    setOuverte(true);
+    resetQuickSurface();
+    setMountKey((k) => k + 1);
+  }, [resetQuickSurface]);
+
+  useEffect(() => {
+    const unlisten = listen("quick:montree", reveler);
+    return () => {
+      void unlisten.then((stop) => stop());
+    };
+  }, [reveler]);
+
   // Focus + reset à l'affichage ; fermeture au blur — SUSPENDUE tant qu'une
   // question est en vol ou affichée (decision 04 du roadmap) : une réponse
   // qu'on veut lire ou dans laquelle on veut cliquer ne peut pas disparaître
@@ -227,12 +290,7 @@ export default function QuickPage() {
     const unlisten = win.onFocusChanged(({ payload: focused }) => {
       if (focused) {
         if (blurTimer) clearTimeout(blurTimer);
-        if (wasHidden.current) {
-          wasHidden.current = false;
-          setOuverte(true);
-          resetQuickSurface();
-          setMountKey((k) => k + 1);
-        }
+        reveler();
         // Un mode imposé s'applique à la prise de focus, que la fenêtre sorte
         // d'un état caché ou non : au tout premier affichage après le
         // lancement, `wasHidden` peut déjà être tombé.
@@ -256,7 +314,7 @@ export default function QuickPage() {
       if (blurTimer) clearTimeout(blurTimer);
       unlisten.then((stop) => stop());
     };
-  }, [hide, mode, askPhase, resetQuickSurface]);
+  }, [hide, mode, askPhase, reveler]);
 
   // Échap → fermer TOUTE la fenêtre, même pendant une question : le filet
   // global reste le filet global, à la différence du blur ci-dessus.
@@ -294,6 +352,12 @@ export default function QuickPage() {
           };
         })
         .filter((f) => f.largeur > 1 && f.hauteur > 1);
+      // Pendant un glissé de poignée, TOUTE la toile retient la souris : on
+      // agrandit en sortant du panneau, et la souris passerait sinon à
+      // l'application d'en dessous au premier pixel dehors.
+      if (glisseRef.current) {
+        formes.push({ x: 0, y: 0, largeur: window.innerWidth, hauteur: window.innerHeight, rayon: 0 });
+      }
       const cle = formes
         .map((f) => [f.x, f.y, f.largeur, f.hauteur, f.rayon].map(Math.round).join(","))
         .join(";");
@@ -515,21 +579,30 @@ export default function QuickPage() {
   // Le panneau réponse a des coins, lui aussi : il n'est plus la fenêtre
   // entière, mais une forme posée dans la toile.
   const shellRadius = isReponse || isJournal ? 22 : isBubble ? 32 : mode === "neutre" ? 26 : 20;
+  // Les panneaux : la taille choisie à la poignée, bornée à la toile.
+  const reponse = {
+    width: Math.min(tailleReponse?.width ?? RESPONSE_WIDTH, espace.width),
+    height: Math.min(tailleReponse?.height ?? answerHeight, espace.height),
+  };
+  const journal = {
+    width: Math.min(tailleJournal.width, espace.width),
+    height: Math.min(tailleJournal.height, espace.height),
+  };
   const shellWidth = isBubble
     ? 64
     : isReponse
-      ? RESPONSE_WIDTH
+      ? reponse.width
       : isJournal
-        ? JOURNAL_SIZE.width
+        ? journal.width
         : collapsed
           ? ACTIVE_BAR_WIDTH
           : BAR_WIDTH;
   const shellHeight = isBubble
     ? 64
     : isReponse
-      ? answerHeight
+      ? reponse.height
       : isJournal
-        ? JOURNAL_SIZE.height
+        ? journal.height
         : isTask
           ? taskHeight
         : collapsed
@@ -553,7 +626,8 @@ export default function QuickPage() {
             // champ sa hauteur sur une largeur nulle — et il la garderait.
             initial={false}
             animate={{ width: shellWidth, height: shellHeight, borderRadius: shellRadius }}
-            transition={{ duration: MORPH_DURATION, ease: MORPH_EASE }}
+            // Sous la poignée, la forme suit la souris sans délai.
+            transition={glisse ? { duration: 0 } : { duration: MORPH_DURATION, ease: MORPH_EASE }}
             className={cn(
               "relative shrink-0 overflow-hidden border border-transparent bg-popover shadow-floating",
               "transition-[border-color] duration-[580ms]",
@@ -631,6 +705,33 @@ export default function QuickPage() {
                   )}
                 </motion.div>
               </AnimatePresence>
+              {(isReponse || isJournal) && (
+                <QuickResizeHandle
+                  taille={isReponse ? reponse : journal}
+                  min={isReponse ? RESPONSE_MIN : JOURNAL_MIN}
+                  max={espace}
+                  onGlisse={(enCours) => {
+                    glisseRef.current = enCours;
+                    setGlisse(enCours);
+                    // La taille n'est gardée qu'au lâcher : l'écrire à chaque
+                    // image du glissé ne servirait à rien.
+                    if (!enCours) {
+                      if (isReponse) ecrireTaille(CLE_TAILLE_REPONSE, reponse);
+                      else ecrireTaille(CLE_TAILLE_JOURNAL, journal);
+                    }
+                  }}
+                  onChange={(taille) => (isReponse ? setTailleReponse(taille) : setTailleJournal(taille))}
+                  onReinitialiser={() => {
+                    if (isReponse) {
+                      setTailleReponse(null);
+                      ecrireTaille(CLE_TAILLE_REPONSE, null);
+                    } else {
+                      setTailleJournal(JOURNAL_DEFAULT);
+                      ecrireTaille(CLE_TAILLE_JOURNAL, null);
+                    }
+                  }}
+                />
+              )}
             </div>
           </motion.div>
 

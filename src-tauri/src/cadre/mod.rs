@@ -32,10 +32,15 @@ mod windows;
 /// La fenêtre concernée.
 pub const QUICK: &str = "quick";
 
-/// La toile, en pixels CSS : le Journal (680 × 600), sa marge d'ombre, et la
-/// place des menus de la barre Tâche. À TENIR IDENTIQUE à `TOILE` dans
-/// app/quick/page.tsx et à la fenêtre `quick` des tauri*.conf.json.
-const TOILE: (f64, f64) = (760.0, 720.0);
+/// La toile, en pixels CSS : assez pour agrandir un panneau (réponse,
+/// Journal) à la poignée, avec sa marge d'ombre. La largeur tient sur tout
+/// écran ; la hauteur se réduit à l'espace sous la barre (voir `ancrer`).
+/// À TENIR IDENTIQUE à la fenêtre `quick` des tauri*.conf.json.
+const TOILE: (f64, f64) = (1000.0, 860.0);
+/// La hauteur en dessous de laquelle la toile ne descend pas : le Journal à
+/// sa taille par défaut (600) et ses marges. Plutôt que de le tronquer, la
+/// barre remonte.
+const TOILE_HAUTEUR_MIN: f64 = 640.0;
 /// La marge entre le haut de la toile et celui de la barre : la place de
 /// l'ombre. À TENIR IDENTIQUE à `MARGE_HAUT` côté page.
 const MARGE_HAUT: f64 = 24.0;
@@ -111,13 +116,16 @@ pub fn ancrer(fenetre: &WebviewWindow) {
     let zone = ecran.work_area();
     let (zx, zy) = (zone.position.x as f64, zone.position.y as f64);
     let (zl, zh) = (zone.size.width as f64, zone.size.height as f64);
-    let (l, h) = ((TOILE.0 * s).round(), (TOILE.1 * s).round());
-
+    let l = (TOILE.0 * s).min(zl).round();
     let x = (zx + (zl - l) / 2.0).round();
     // Le haut de la BARRE au cinquième ; la toile commence une marge plus
-    // haut. Sur un petit écran, elle remonte plutôt que de déborder.
+    // haut, et descend jusqu'au bas de l'écran au plus. Sur un petit écran,
+    // elle se réduit — et ne remonte la barre que si même le Journal par
+    // défaut n'y tiendrait plus.
     let y = (zy + zh * HAUTEUR_ANCRE - MARGE_HAUT * s).round();
-    let y = y.min(zy + zh - h).max(zy);
+    let bas = zy + zh;
+    let h = (TOILE.1 * s).min(bas - y).max((TOILE_HAUTEUR_MIN * s).min(zh)).round();
+    let y = y.min(bas - h).max(zy);
 
     let _ = fenetre.set_size(PhysicalSize::new(l as u32, h as u32));
     let _ = fenetre.set_position(PhysicalPosition::new(x as i32, y as i32));
@@ -129,8 +137,14 @@ pub fn ancrer(fenetre: &WebviewWindow) {
 /// Sur Mac, SANS activer l'application : c'est tout l'intérêt d'un panneau.
 /// `set_focus` de Tauri activerait Listik, et la barre des menus avec.
 pub fn montrer(fenetre: &WebviewWindow) -> tauri::Result<()> {
+    use tauri::Emitter;
     fenetre.state::<Geometrie>().ouverte.store(true, Ordering::SeqCst);
     fenetre.show()?;
+    // La page apprend l'ouverture par ce signal, pas par le focus : un
+    // événement de focus peut se perdre (première ouverture juste après le
+    // lancement), et une page qui se croit fermée n'envoie pas ses formes —
+    // la barre deviendrait traversante de part en part.
+    let _ = fenetre.emit("quick:montree", ());
     #[cfg(target_os = "macos")]
     macos::montrer(fenetre);
     #[cfg(not(target_os = "macos"))]
@@ -142,7 +156,11 @@ pub fn montrer(fenetre: &WebviewWindow) -> tauri::Result<()> {
 }
 
 pub fn cacher(fenetre: &WebviewWindow) -> tauri::Result<()> {
-    fenetre.state::<Geometrie>().ouverte.store(false, Ordering::SeqCst);
+    let geometrie = fenetre.state::<Geometrie>();
+    geometrie.ouverte.store(false, Ordering::SeqCst);
+    // Les formes d'une barre fermée ne valent plus rien : à la prochaine
+    // ouverture, on attend celles de la page.
+    geometrie.formes.lock().unwrap().clear();
     fenetre.hide()
 }
 
@@ -152,7 +170,12 @@ fn actualiser(fenetre: &WebviewWindow) {
     let Some((ox, oy, s)) = *geometrie.origine.lock().unwrap() else { return };
     let Ok(p) = fenetre.cursor_position() else { return };
     let (x, y) = ((p.x - ox) / s, (p.y - oy) / s);
-    let dedans = geometrie.formes.lock().unwrap().iter().any(|f| f.contient(x, y));
+    let formes = geometrie.formes.lock().unwrap();
+    // Sans forme connue (la page n'a encore rien envoyé), on RETIENT la
+    // souris : mieux vaut un clic avalé qu'une barre qu'on ne peut pas
+    // toucher.
+    let dedans = formes.is_empty() || formes.iter().any(|f| f.contient(x, y));
+    drop(formes);
     let traversante = !dedans;
     if geometrie.traversante.swap(traversante, Ordering::SeqCst) != traversante {
         appliquer(fenetre, traversante);
