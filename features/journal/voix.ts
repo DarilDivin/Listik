@@ -42,6 +42,15 @@ export interface Enregistrement {
   arreter: () => Promise<NoteEnregistree>;
   /** Arrête et JETTE : le micro se ferme, rien n'est rendu. */
   annuler: () => void;
+  /**
+   * L'oreille de l'ANIMATION, distincte de celle qui ramasse les crêtes. La
+   * lueur la lit à chaque image, à son propre rythme et avec ses propres
+   * réglages (spectre lissé, voir `ecoute.ts`) ; partager l'analyseur des
+   * crêtes aurait lié ce qu'on garde à ce qu'on montre.
+   *
+   * Muette dès l'arrêt : son contexte se ferme avec le micro.
+   */
+  analyseur: AnalyserNode;
 }
 
 /**
@@ -94,7 +103,7 @@ function typeRetenu(): string {
  * Lève si le micro est refusé ou absent — à l'appelant de le dire.
  */
 export async function enregistrer(
-  surNiveau: (niveau: number) => void,
+  surNiveau: (niveau: number) => void = () => {},
 ): Promise<Enregistrement> {
   const flux = await navigator.mediaDevices.getUserMedia({
     // Ce n'est pas de la musique, c'est une voix dans une pièce : le
@@ -127,8 +136,17 @@ export async function enregistrer(
   if (contexte.state === "suspended") await contexte.resume();
   const analyseur = contexte.createAnalyser();
   analyseur.fftSize = 1024;
-  contexte.createMediaStreamSource(flux).connect(analyseur);
+  const source = contexte.createMediaStreamSource(flux);
+  source.connect(analyseur);
   const tampon = new Uint8Array(analyseur.fftSize);
+
+  // La seconde oreille, branchée elle aussi APRÈS le `start()`. 2048 points :
+  // à 48 kHz, des cases de 23 Hz — assez fines pour séparer la fondamentale
+  // d'une voix grave de ses premiers formants.
+  const oreille = contexte.createAnalyser();
+  oreille.fftSize = 2048;
+  oreille.smoothingTimeConstant = 0.6;
+  source.connect(oreille);
 
   const mesures: number[] = [];
   const battement = setInterval(() => {
@@ -152,6 +170,7 @@ export async function enregistrer(
   };
 
   return {
+    analyseur: oreille,
     arreter: () =>
       new Promise<NoteEnregistree>((resolve, reject) => {
         // La durée se lit AVANT d'attendre `onstop` : l'événement arrive

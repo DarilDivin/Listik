@@ -165,12 +165,9 @@ function JournalPageContent() {
   const [sortie, setSortie] = useState(false);
   const sessionRef = useRef<Enregistrement | null>(null);
   const departRef = useRef(0);
-  // La bande y dépose son écouteur : sans ce relais, la page se rendrait
-  // vingt fois par seconde — avec l'éditeur du jour dedans.
-  const niveauRef = useRef<(niveau: number) => void>(() => {});
-  const abonner = useCallback((surNiveau: (niveau: number) => void) => {
-    niveauRef.current = surNiveau;
-  }, []);
+  // L'oreille de la lueur. Un état et pas la session lue au rendu : la bande
+  // doit se remonter sur la bonne quand on enchaîne deux enregistrements.
+  const [analyseur, setAnalyseur] = useState<AnalyserNode | null>(null);
 
   // Le jour où l'enregistrement a COMMENCÉ. On peut tourner les pages en
   // parlant : la note appartient au jour qu'on avait sous les yeux quand on a
@@ -182,7 +179,8 @@ function JournalPageContent() {
     // s'enregistrerait pour n'avoir nulle part où se poser.
     setCherche(false);
     try {
-      sessionRef.current = await ouvrirLeMicro((n) => niveauRef.current(n));
+      sessionRef.current = await ouvrirLeMicro();
+      setAnalyseur(sessionRef.current.analyseur);
       departRef.current = performance.now();
       jourRef.current = day;
       setSortie(false);
@@ -317,7 +315,7 @@ function JournalPageContent() {
       {enregistre && !cherche && (
         <BandeEnregistrement
           depart={departRef.current}
-          abonner={abonner}
+          analyseur={analyseur}
           partant={sortie}
           onParti={partie}
           onTerminer={() => void terminer()}

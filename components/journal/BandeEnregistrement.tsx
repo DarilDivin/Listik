@@ -5,6 +5,8 @@ import { createPortal } from "react-dom";
 import { Check, X } from "lucide-react";
 import { minutage } from "@/features/journal/voix";
 import { palette, peindreHalo } from "@/features/journal/halo";
+import { creerOreille } from "@/features/journal/ecoute";
+import { creerAurore } from "@/features/journal/aurore";
 import { Button } from "@/components/ui/button";
 import {
   Tooltip,
@@ -31,8 +33,8 @@ const SORTIE_MS = 400;
 interface BandeEnregistrementProps {
   /** L'instant du départ, pour compter le temps écoulé. */
   depart: number;
-  /** S'abonner aux niveaux mesurés par la session en cours. */
-  abonner: (surNiveau: (niveau: number) => void) => void;
+  /** L'oreille de la session : la lueur la lit elle-même, à chaque image. */
+  analyseur: AnalyserNode | null;
   /** L'enregistrement est fini : jouer la sortie, puis appeler `onParti`. */
   partant: boolean;
   /** La sortie est jouée — la page peut démonter. */
@@ -58,21 +60,23 @@ interface BandeEnregistrementProps {
  * au montage, ouvrait DEUX micros — React monte, démonte et remonte les effets
  * en développement, et le second `getUserMedia` sur un appareil déjà pris rend
  * un flux muet. La lueur restait plate d'un bout à l'autre, sans erreur pour
- * le dire. Elle ne fait donc que MONTRER, et les niveaux lui arrivent.
+ * le dire. Elle ne fait donc que MONTRER : on lui tend l'analyseur, et elle
+ * l'écoute à son rythme — une image sur deux écrans, pas vingt fois par
+ * seconde comme les crêtes.
  */
 export function BandeEnregistrement({
   depart,
-  abonner,
+  analyseur,
   partant,
   onParti,
   onTerminer,
   onAbandonner,
 }: BandeEnregistrementProps) {
   const toileRef = useRef<HTMLCanvasElement>(null);
-  // Le niveau ne passe PAS par l'état React : il arrive vingt fois par
-  // seconde, et re-rendre la page à cette cadence pour repeindre un canvas
-  // serait payer un arbre entier pour quelques pixels.
-  const niveauRef = useRef(0);
+  // Lu dans la boucle sans la relancer : la sortie ne doit pas recréer
+  // l'aurore, seulement cesser d'écouter.
+  const partantRef = useRef(partant);
+  partantRef.current = partant;
   const [depuis, setDepuis] = useState(0);
   // `document` n'existe pas au prérendu de l'export statique.
   const [monte, setMonte] = useState(false);
@@ -87,18 +91,18 @@ export function BandeEnregistrement({
   useEffect(() => setMonte(true), []);
 
   useEffect(() => {
-    abonner((niveau) => {
-      niveauRef.current = niveau;
-    });
-  }, [abonner]);
-
-  useEffect(() => {
     const toile = toileRef.current;
     if (!toile) return;
     const calme = window.matchMedia("(prefers-reduced-motion: reduce)");
     let vivant = true;
     let image = 0;
     neRef.current = performance.now();
+    let avant = neRef.current;
+
+    const oreille = creerOreille(analyseur);
+    // Le shader si la carte graphique le veut bien ; sinon le halo 2D, par la
+    // MÊME boucle — c'est elle qui compte la sortie et rend la main à la page.
+    const aurore = creerAurore(toile);
 
     // Décélération : rapide au départ, posée à l'arrivée. C'est la courbe
     // d'une chose qui ARRIVE.
@@ -119,11 +123,19 @@ export function BandeEnregistrement({
         ouverture = sortant(Math.min(1, (t - neRef.current) / ENTREE_MS));
       }
 
+      const dt = Math.max(0, (t - avant) / 1000);
+      avant = t;
+      // À la sortie, on n'interroge PLUS l'analyseur : son contexte se ferme
+      // avec le micro, et il ne rendrait que du vide ou du périmé — un éclair
+      // ou un trou noir en pleine extinction. On laisse retomber nous-mêmes.
+      const ecoute = partantRef.current ? oreille.eteindre(dt) : oreille.lire(dt);
+
       // La lueur suit la voix même quand on demande moins de mouvement : sa
       // HAUTEUR est une information, pas un ornement. Ce qu'on immobilise,
-      // c'est la dérive des nappes les unes sur les autres.
+      // c'est la dérive de la matière.
       const temps = calme.matches ? 0 : t / 1000;
-      peindreHalo(toile, palette(), temps, niveauRef.current, ouverture);
+      if (aurore) aurore.peindre(palette(), temps, ecoute, ouverture);
+      else peindreHalo(toile, palette(), temps, Math.min(1, ecoute.elan), ouverture);
 
       if (sortieRef.current && ouverture <= 0.001 && !partiRef.current) {
         partiRef.current = true;
@@ -137,8 +149,9 @@ export function BandeEnregistrement({
     return () => {
       vivant = false;
       cancelAnimationFrame(image);
+      aurore?.detruire();
     };
-  }, [monte, onParti]);
+  }, [monte, onParti, analyseur]);
 
   // Le basculement vers la sortie : on note d'où elle part.
   useEffect(() => {
