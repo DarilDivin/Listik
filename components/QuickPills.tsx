@@ -30,7 +30,7 @@ export const QUICK_ITEMS: {
 const QUICK_PILL_ITEMS = QUICK_ITEMS.filter((item) => item.mode !== "question");
 
 const PILL_SIZE = 52; // ≈ badge (size-9=36px) + padding (p-2×2=16px) de BarreTache au repos.
-const FOCUSED_PILL_WIDTH = 96;
+const FOCUSED_EXTRA_WIDTH = 44;
 const GAP = 14;
 const ELASTIQUE = [0.32, 1.5, 0.44, 1] as const; // --elastique de l'artifact « La fenêtre rapide ».
 
@@ -40,6 +40,13 @@ interface QuickPillsProps {
   onChoose: (mode: Exclude<QuickMode, "neutre">) => void;
   /** Rejoue l'entrée (la goutte qui se sépare) — change à chaque vraie réouverture. */
   entryKey: number;
+  /** Diamètre d'une pastille. Dans la barre rapide, elles tiennent DANS la barre. */
+  size?: number;
+  /** L'espace entre deux pastilles. */
+  gap?: number;
+  /** Le fond des formes. Il doit rester OPAQUE : le filtre gooey seuille l'alpha,
+   *  et une forme translucide y disparaîtrait. */
+  shapeClassName?: string;
 }
 
 /**
@@ -56,15 +63,22 @@ interface QuickPillsProps {
  * l'ensemble les aurait floutées. Au clavier, la pastille devient une capsule
  * libellée : contraste, forme et texte remplacent le ring externe.
  */
-export function QuickPills({ collapsed, onChoose, entryKey }: QuickPillsProps) {
+export function QuickPills({
+  collapsed,
+  onChoose,
+  entryKey,
+  size: PILL = PILL_SIZE,
+  gap: ECART = GAP,
+  shapeClassName = "bg-popover",
+}: QuickPillsProps) {
   const [focusedMode, setFocusedMode] = useState<QuickMode | null>(null);
   const activeFocus = collapsed ? null : focusedMode;
   const widthFor = (mode: QuickMode) =>
-    activeFocus === mode ? FOCUSED_PILL_WIDTH : PILL_SIZE;
+    activeFocus === mode ? PILL + FOCUSED_EXTRA_WIDTH : PILL;
   const leftFor = (index: number) =>
-    QUICK_PILL_ITEMS.slice(0, index).reduce((left, item) => left + widthFor(item.mode) + GAP, 0);
+    QUICK_PILL_ITEMS.slice(0, index).reduce((left, item) => left + widthFor(item.mode) + ECART, 0);
   const expandedWidth = QUICK_PILL_ITEMS.reduce(
-    (width, item, index) => width + widthFor(item.mode) + (index ? GAP : 0),
+    (width, item, index) => width + widthFor(item.mode) + (index ? ECART : 0),
     0,
   );
 
@@ -73,7 +87,7 @@ export function QuickPills({ collapsed, onChoose, entryKey }: QuickPillsProps) {
       className="relative shrink-0"
       animate={{ width: collapsed ? 0 : expandedWidth, opacity: collapsed ? 0 : 1 }}
       transition={{ duration: 0.58, ease: ELASTIQUE }}
-      style={{ height: PILL_SIZE, pointerEvents: collapsed ? "none" : "auto" }}
+      style={{ height: PILL, pointerEvents: collapsed ? "none" : "auto" }}
     >
       <svg width="0" height="0" aria-hidden="true" focusable="false" style={{ position: "absolute" }}>
         <filter id="quick-gooey">
@@ -97,12 +111,12 @@ export function QuickPills({ collapsed, onChoose, entryKey }: QuickPillsProps) {
           {QUICK_PILL_ITEMS.map((item, i) => (
             <motion.div
               key={`${entryKey}-${item.mode}-forme`}
-              className="absolute top-0 rounded-full bg-popover"
-              style={{ height: PILL_SIZE }}
+              className={cn("absolute top-0 rounded-full", shapeClassName)}
+              style={{ height: PILL }}
               initial={{ left: 0, scale: 0.3 }}
               animate={{
                 left: collapsed ? 0 : leftFor(i),
-                width: collapsed ? PILL_SIZE : widthFor(item.mode),
+                width: collapsed ? PILL : widthFor(item.mode),
                 scale: collapsed && i > 0 ? 1 - i * 0.14 : 1,
               }}
               transition={{
@@ -132,11 +146,11 @@ export function QuickPills({ collapsed, onChoose, entryKey }: QuickPillsProps) {
                 "absolute top-0 flex items-center justify-center gap-1.5 rounded-full outline-none",
                 "forced-colors:focus-visible:outline forced-colors:focus-visible:outline-2",
               )}
-              style={{ height: PILL_SIZE, color: "var(--brand)" }}
-              initial={{ left: 0, opacity: 0, width: PILL_SIZE }}
+              style={{ height: PILL, color: "var(--brand)" }}
+              initial={{ left: 0, opacity: 0, width: PILL }}
               animate={{
                 left: collapsed ? 0 : leftFor(i),
-                width: collapsed ? PILL_SIZE : widthFor(item.mode),
+                width: collapsed ? PILL : widthFor(item.mode),
                 opacity: collapsed ? 0 : 1,
                 // « transparent » ne s'interpole pas (avertissement motion) : même valeur, en rgba.
                 backgroundColor: focused ? "var(--brand-soft)" : "rgba(0,0,0,0)",

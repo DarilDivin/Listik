@@ -5,8 +5,9 @@ import { REFLECTION_STYLES, useUIPrefs, type ReflectionStyleId } from "@/compone
 import { ReflectionMark } from "@/components/reflection/ReflectionMark";
 
 /**
- * La bulle de réflexion (mode Question, `app/quick/page.tsx`) — un cercle de
- * 64px. Les douze présences, Fusion comprise, emploient leur illustration
+ * La présence de réflexion (mode Question, `app/quick/page.tsx`). Elle vit
+ * DANS la barre, à la place du bouton d'envoi, le temps que la première
+ * réponse arrive. Les douze présences, Fusion comprise, emploient leur illustration
  * dédiée plutôt que l’ancienne animation des pastilles. Le choix vit dans
  * Réglages → Personnalisation et suit l’accent actif de l’application
  * (docs/ROADMAP-BARRES.md, étape 4).
@@ -16,7 +17,7 @@ import { ReflectionMark } from "@/components/reflection/ReflectionMark";
  * interrompt. À rouvrir si l'usage réel montre que la latence (~12s) le
  * demande.
  */
-export function QuickBubble() {
+export function QuickBubble({ size = 64 }: { size?: number }) {
   const { reflection } = useUIPrefs();
   // La bulle est montée après la question, donc elle relit la préférence au
   // moment précis où elle devient visible. C’est le dernier filet pour une
@@ -30,8 +31,8 @@ export function QuickBubble() {
   }, [reflection]);
 
   return (
-    <div className="grid h-16 w-16 place-items-center">
-      <ReflectionMark preset={reflectionAtStart} animate />
+    <div className="grid shrink-0 place-items-center" style={{ width: size, height: size }}>
+      <ReflectionMark preset={reflectionAtStart} animate size={size} />
     </div>
   );
 }

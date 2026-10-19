@@ -396,23 +396,20 @@ pub async fn toggle_quick_window(app: AppHandle) -> Result<(), String> {
                 .map_err(|e| e.to_string())?;
             window.hide().map_err(|e| e.to_string())?;
         } else {
+            crate::cadre::ancrer(&window);
             window.show().map_err(|e| e.to_string())?;
             window.set_focus().map_err(|e| e.to_string())?;
         }
     } else {
         // Filet de sécurité : la fenêtre est normalement déclarée en config.
-        // Taille A TENIR IDENTIQUE à "quick" dans tauri.conf.json. Le
-        // frontend l'ajuste ensuite aux grandes étapes (barre, bulle,
-        // réponse), mais le filet doit créer une barre compacte et jamais un
-        // calque plein écran qui intercepterait les clics du bureau.
+        // Taille A TENIR IDENTIQUE à "quick" dans tauri.conf.json : la barre
+        // au neutre. La page l'ajuste ensuite à chaque scène (`quick_cadre`).
         WebviewWindowBuilder::new(&app, "quick", WebviewUrl::App("/quick".into()))
             .title("Capture rapide")
-            .inner_size(630.0, 64.0)
-            .center()
+            .inner_size(600.0, 56.0)
             .resizable(false)
             .decorations(false)
-            .transparent(true)
-            .shadow(false)
+            .shadow(true)
             .skip_taskbar(true)
             .always_on_top(true)
             .build()
@@ -446,6 +443,11 @@ pub fn open_quick_in_mode(app: &AppHandle, mode: Option<&str>) -> Result<(), Str
     let window = app
         .get_webview_window("quick")
         .ok_or_else(|| "Fenêtre de capture introuvable".to_string())?;
+    // Déjà ouverte : elle reste où elle est. L'ancre ne se choisit qu'à
+    // l'ouverture — la reprendre en pleine conversation ferait sauter la barre.
+    if !window.is_visible().unwrap_or(false) {
+        crate::cadre::ancrer(&window);
+    }
     window.show().map_err(|e| e.to_string())?;
     window.set_focus().map_err(|e| e.to_string())
 }

@@ -19,6 +19,34 @@ export async function aiAgent(
   text: string,
   history: AiChatMessage[] = [],
 ): Promise<AiAgentTurn> {
+  if (reponseFacticeActive()) return reponseFactice(text);
   const message = await invoke<string>("ai_agent_run", { text, history });
   return { message };
+}
+
+/**
+ * EN DÉVELOPPEMENT SEULEMENT : une réponse factice, pour éprouver la fenêtre
+ * rapide et l'Assistant sans lancer le CLI (une douzaine de secondes et un
+ * vrai coût à chaque essai). S'allume avec
+ * `localStorage.setItem("listik.reponseFactice", "1")`.
+ */
+function reponseFacticeActive(): boolean {
+  if (process.env.NODE_ENV === "production") return false;
+  try {
+    return localStorage.getItem("listik.reponseFactice") === "1";
+  } catch {
+    return false;
+  }
+}
+
+async function reponseFactice(text: string): Promise<AiAgentTurn> {
+  await new Promise((r) => setTimeout(r, 1800));
+  return {
+    message: [
+      `Réponse d’essai à « ${text} ».`,
+      "Voici un paragraphe assez long pour occuper plusieurs lignes dans le panneau de la fenêtre rapide, et vérifier que le texte se lit bien à cette largeur.",
+      "- un premier point de liste ;\n- un second point, un peu plus long que le premier ;\n- un dernier.",
+      "Et une phrase de conclusion.",
+    ].join("\n\n"),
+  };
 }

@@ -65,7 +65,14 @@ tauri-plugin-global-shortcut = "2"
 # suspendu pour toujours. Versions alignees sur celles que tire deja Tauri.
 [target.'cfg(windows)'.dependencies]
 webview2-com = "0.38"
-windows = { version = "0.61", features = ["Win32_System_Com"] }
+windows = { version = "0.61", features = [
+    "Win32_System_Com",
+    # Le cadre natif de la barre rapide (voir cadre/windows.rs).
+    "Win32_Graphics_Dwm",
+    "Win32_UI_WindowsAndMessaging",
+    "Win32_UI_Shell",
+    "Win32_Graphics_Gdi",
+] }
 
 [dev-dependencies]
 # Relire un .docx produit par word.rs ; meme version que celle de docx-rs.

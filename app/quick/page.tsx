@@ -3,13 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { flushSync } from "react-dom";
 import { invoke } from "@tauri-apps/api/core";
-import {
-  cursorPosition,
-  getCurrentWindow,
-  monitorFromPoint,
-  PhysicalPosition,
-  PhysicalSize,
-} from "@tauri-apps/api/window";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import { emit, listen } from "@tauri-apps/api/event";
 import { AnimatePresence, motion } from "motion/react";
 import { AppIcon } from "@/components/ui/app-icon";
@@ -26,68 +20,75 @@ import type { SmartTaskData } from "@/features/todos/useTaskMode";
 import { aiAgent } from "@/features/omnibar/agent";
 import { buildHistory, QUICK_OPEN_ASSISTANT_EVENT, type Turn } from "@/features/assistant/conversation";
 import { QUICK_OPEN_JOURNAL_EVENT } from "@/features/journal/quick";
+import { useIsMac } from "@/lib/keys";
 import { cn } from "@/lib/utils";
 
 type AskPhase = "idle" | "reflexion" | "reponse";
 
-const BAR_WIDTH = 420;
-const ACTIVE_BAR_WIDTH = 520;
-const TASK_MIN_HEIGHT = 52;
-// Cadre natif constant pour les petites scènes. Il absorbe les ombres et les
-// trajectoires de morphing sans devenir une zone invisible encombrante.
-const BAR_TRANSITION_CANVAS = { width: 640, height: 164 };
+/** La largeur unique de la barre et de tout ce qui s'en déplie. */
+const LARGEUR = 600;
+/** La hauteur d'une barre au repos. */
+const HAUTEUR_BARRE = 56;
+/** Le Journal est un panneau d'écriture : une hauteur fixe, généreuse. */
+const HAUTEUR_JOURNAL = 480;
 const TASK_OVERLAY_FALLBACK_HEIGHT = 460;
 const TASK_OVERLAY_MARGIN = 12;
-const RESPONSE_DEFAULT_SIZE = { width: 440, height: 272 };
-const RESPONSE_MIN_SIZE = { width: 400, height: 260 };
-const RESPONSE_MAX_SIZE = { width: 840, height: 640 };
-const JOURNAL_DEFAULT_SIZE = { width: 680, height: 600 };
-const JOURNAL_MIN_SIZE = { width: 480, height: 360 };
-const JOURNAL_MAX_SIZE = { width: 1000, height: 900 };
-// Mouvement posé, sans rebond : la surface est un objet dense, pas une
-// notification. Cette courbe est partagée par toute la scène rapide.
-const MORPH_EASE = [0.22, 0.9, 0.28, 1] as const;
-const MORPH_DURATION = 0.58;
-function clamp(value: number, min: number, max: number) {
-  return Math.min(max, Math.max(min, value));
-}
+/** Le fondu d'entrée d'une scène — la fenêtre, elle, a déjà sa taille. */
+const ENTREE = { duration: 0.2, ease: [0.22, 0.9, 0.28, 1] as const };
 
-/**
- * Barre de capture rapide (style Spotlight) : la fenêtre `quick` est une barre
- * flottante transparente. On l'ouvre via le raccourci global (Alt+Q) ou le
- * tray. Elle se ferme après validation (mode Tâche), sur Échap, ou quand elle
- * perd le focus (clic ailleurs / changement d'application) — SAUF pendant
- * qu'une question est en cours de réflexion ou de réponse, voir plus bas.
- *
- * Les petites scènes partagent une enveloppe native discrète, assez grande
- * pour leurs ombres et leurs mouvements. Les grands panneaux gardent leurs
- * propres dimensions. Ainsi un clic à côté atteint l'application sous-jacente
- * sans que le bord du webview ne coupe une transition.
- *
- * États : la barre Assistant neutre, les deux outils de capture, et — pour
- * une question — deux sous-états supplémentaires : `reflexion`
- * (`QuickBubble`, un cercle qui réutilise le filtre gooey des pastilles) puis
- * `reponse` (`QuickAnswer`, plus étroite que la barre). Une relance depuis
- * `reponse` NE repasse PAS par la bulle — seule la toute première question
- * fait tout le chemin.
- *
- * Pas de bouton d'annuler pendant `reflexion` (décision utilisateur,
- * 2026-09-16) : la latence réelle tourne autour de 12s, contre 1,5s dans
- * l'artifact — volontairement laissé sans échappatoire pour l'instant,
- * « comme un processus de réflexion ». Échap reste le filet global, lui,
- * inchangé (ferme toute la fenêtre, pas juste la question).
- *
- * Ouvrir dans l'Assistant transmet la DERNIÈRE question/réponse par un
- * événement front-à-front (`QUICK_OPEN_ASSISTANT_EVENT`, écouté par
- * `app/(app)/assistant/page.tsx`) — pas toute la conversation : rien ne la
- * persiste aujourd'hui (décision déjà actée dans le roadmap).
- */
 function isOverlayOpen() {
   return !!document.querySelector("[data-radix-popper-content-wrapper]");
 }
 
+/**
+ * Résout une couleur CSS (oklch, color-mix…) en octets sRGB, en la peignant
+ * sur un pixel. `dessous` est peint d'abord : une couleur translucide (le
+ * liseré du thème sombre) se lit alors telle qu'elle apparaît sur le fond.
+ */
+function enOctets(couleur: string, dessous?: string): [number, number, number] {
+  const c = document.createElement("canvas");
+  c.width = c.height = 1;
+  const ctx = c.getContext("2d", { willReadFrequently: true });
+  if (!ctx) return [128, 128, 128];
+  if (dessous) {
+    ctx.fillStyle = dessous;
+    ctx.fillRect(0, 0, 1, 1);
+  }
+  ctx.fillStyle = couleur;
+  ctx.fillRect(0, 0, 1, 1);
+  const d = ctx.getImageData(0, 0, 1, 1).data;
+  return [d[0], d[1], d[2]];
+}
+
+/**
+ * Barre de capture rapide, construite comme Spotlight et les barres de
+ * Windows : la FENÊTRE est la barre. Le système en trace le contour et
+ * l'ombre ; un clic à côté tombe dans l'application d'en dessous.
+ *
+ * La géométrie est tenue par Rust (`src-tauri/src/cadre`) : l'écran et le
+ * point d'ancrage sont choisis à l'ouverture, le haut reste fixe et tout se
+ * déplie VERS LE BAS, à la même largeur. La page ne fait que mesurer sa
+ * scène et l'annoncer (`quick_cadre`) ; le cadre grandit d'un coup — la
+ * scène entre en fondu — et se resserre en s'animant.
+ *
+ * Scènes : la barre neutre (l'Assistant, avec les pastilles Tâche et Journal
+ * DANS la barre), les deux outils de capture, et pour une question : la
+ * réflexion (la présence animée prend la place du bouton d'envoi, dans la
+ * barre) puis la conversation, qui se déplie sous le champ.
+ *
+ * On l'ouvre par le raccourci global ou le tray. Elle se ferme après
+ * validation (mode Tâche), sur Échap, ou quand elle perd le focus — SAUF
+ * pendant une question ou dans le Journal, voir plus bas.
+ *
+ * Pas de bouton d'annuler pendant la réflexion (décision utilisateur,
+ * 2026-09-16) : c'est un processus de réflexion. Échap reste le filet global.
+ *
+ * Ouvrir dans l'Assistant transmet la DERNIÈRE question/réponse par un
+ * événement front-à-front (`QUICK_OPEN_ASSISTANT_EVENT`).
+ */
 export default function QuickPage() {
   useTodosSync();
+  const mac = useIsMac();
   const captureTask = useCaptureTask();
   const { projects } = useProjects();
   const lists = useMemo(
@@ -102,44 +103,27 @@ export default function QuickPage() {
   const [mode, setMode] = useState<QuickMode>("neutre");
   const [neutralText, setNeutralText] = useState("");
   const [mountKey, setMountKey] = useState(0);
-  const [revealEpoch, setRevealEpoch] = useState(0);
   const [askPhase, setAskPhase] = useState<AskPhase>("idle");
   const [turns, setTurns] = useState<Turn[]>([]);
   const [pending, setPending] = useState(false);
-  const [answerSize, setAnswerSize] = useState(RESPONSE_DEFAULT_SIZE);
-  const [journalSize, setJournalSize] = useState(JOURNAL_DEFAULT_SIZE);
   const [taskOverlayHeight, setTaskOverlayHeight] = useState<number | null>(null);
   const [taskOverlayOpen, setTaskOverlayOpen] = useState(false);
-  const [height, setHeight] = useState<number | undefined>(undefined);
+  const [sceneHeight, setSceneHeight] = useState(HAUTEUR_BARRE);
   const pendingRef = useRef(false); // garde de réentrance, voir assistant/page.tsx
   const wasHidden = useRef(true);
   /** Mode imposé à la PROCHAINE ouverture, une seule fois (l'accueil ouvre ainsi la fenêtre en mode Tâche). */
   const nextModeRef = useRef<Exclude<QuickMode, "neutre"> | null>(null);
-  const surfaceRef = useRef<HTMLDivElement>(null);
-  const journalSizeRef = useRef(JOURNAL_DEFAULT_SIZE);
   const taskOverlayPrimed = useRef(false);
-  const nativeSizeRef = useRef(BAR_TRANSITION_CANVAS);
-  const pendingNativeSizeRef = useRef<{ width: number; height: number } | null>(null);
-  const queuedNativeSizeRef = useRef<{ width: number; height: number } | null>(null);
-  const nativeResizeRunningRef = useRef(false);
-
-  const updateJournalSize = useCallback((next: { width: number; height: number }) => {
-    journalSizeRef.current = next;
-    nativeSizeRef.current = next;
-    setJournalSize(next);
-  }, []);
 
   const resetAsk = useCallback(() => {
     setAskPhase("idle");
     setTurns([]);
-    setAnswerSize(RESPONSE_DEFAULT_SIZE);
     pendingRef.current = false;
     setPending(false);
   }, []);
 
   // La fenêtre est conservée cachée entre deux raccourcis. On la remet dans
-  // son état neutre AVANT de la cacher, sinon Motion conserve une réponse ou
-  // une bulle dans le DOM et la fait sortir au prochain affichage.
+  // son état neutre AVANT de la cacher : elle se rouvrira barre, pas panneau.
   const resetQuickSurface = useCallback(() => {
     setMode("neutre");
     setNeutralText("");
@@ -154,8 +138,8 @@ export default function QuickPage() {
 
   useEffect(() => {
     const unlisten = listen("quick:will-hide", () => {
-      // The global shortcut hides the native window directly. Reset before the
-      // next reveal so the new surface never morphs from stale content.
+      // Le raccourci global cache la fenêtre directement. On remet la scène
+      // au neutre avant la prochaine ouverture.
       if (wasHidden.current) return;
 
       wasHidden.current = true;
@@ -170,6 +154,26 @@ export default function QuickPage() {
     };
   }, [resetQuickSurface]);
 
+  // Les couleurs que le SYSTÈME peint lui-même : le fond découvert pendant
+  // un agrandissement, et le liseré de Windows 11. Elles suivent le thème,
+  // l'accent et le mode OLED, tous posés sur <html>.
+  useEffect(() => {
+    const envoyer = () => {
+      const style = getComputedStyle(document.documentElement);
+      const popover = style.getPropertyValue("--popover").trim() || "#fff";
+      const fond = enOctets(popover);
+      const lisere = enOctets(style.getPropertyValue("--border").trim() || "#ccc", popover);
+      invoke("quick_couleurs", { fond, lisere }).catch(() => {});
+    };
+    envoyer();
+    const observateur = new MutationObserver(envoyer);
+    observateur.observe(document.documentElement, {
+      attributes: true,
+      attributeFilter: ["class", "data-accent", "data-oled"],
+    });
+    return () => observateur.disconnect();
+  }, []);
+
   const switchMode = useCallback((next: Exclude<QuickMode, "neutre">) => {
     setMode(next);
     setNeutralText("");
@@ -177,9 +181,6 @@ export default function QuickPage() {
   }, [resetAsk]);
 
   const returnToNeutral = useCallback(() => {
-    // La cible compacte doit être connue avant le rendu du fondu, même si la
-    // scène précédente est un Journal de plusieurs centaines de pixels.
-    setHeight(TASK_MIN_HEIGHT);
     resetQuickSurface();
   }, [resetQuickSurface]);
 
@@ -224,10 +225,6 @@ export default function QuickPage() {
           wasHidden.current = false;
           resetQuickSurface();
           setMountKey((k) => k + 1);
-          // La fenêtre est conservée cachée entre deux ouvertures. Rejouer
-          // l'ajustement de scène lui rend son enveloppe de transition, même
-          // si le mode React est déjà « neutre ».
-          setRevealEpoch((epoch) => epoch + 1);
         }
         // Un mode imposé s'applique à la prise de focus, que la fenêtre sorte
         // d'un état caché ou non : au tout premier affichage après le
@@ -274,8 +271,8 @@ export default function QuickPage() {
     [captureTask, hide],
   );
 
-  // Pose/complète un tour — partagé par la toute première question (qui
-  // vient de la bulle) et les relances (qui restent dans le panneau réponse).
+  // Pose/complète un tour — partagé par la toute première question et les
+  // relances (qui restent dans la conversation).
   const askQuestion = useCallback(
     async (text: string) => {
       const id = crypto.randomUUID();
@@ -305,9 +302,8 @@ export default function QuickPage() {
     [turns],
   );
 
-  // Première question : bulle de réflexion jusqu'à la réponse, PUIS bascule
-  // en panneau réponse — jamais l'inverse (le panneau n'a pas de état
-  // "réflexion" à lui, la bulle le porte déjà).
+  // Première question : la présence de réflexion jusqu'à la réponse, PUIS la
+  // conversation se déplie — jamais l'inverse.
   const handleAskSubmit = useCallback(
     (text: string) => {
       if (pendingRef.current) return;
@@ -346,10 +342,7 @@ export default function QuickPage() {
   }, [hide]);
 
   // Neutre sans mot-clé, validé : « va vers l'assistant » veut dire prendre
-  // tout le chemin Question — bascule en mode Question (pastilles repliées),
-  // puis soumission immédiate. Pas de raccourci qui ouvrirait juste la
-  // fenêtre principale : ce serait plus pauvre que la bulle + réponse que la
-  // fenêtre rapide sait déjà montrer.
+  // tout le chemin Question — réflexion, puis conversation.
   const handleNeutralSubmit = useCallback(() => {
     const text = neutralText.trim();
     if (!text) return;
@@ -357,34 +350,28 @@ export default function QuickPage() {
     handleAskSubmit(text);
   }, [neutralText, switchMode, handleAskSubmit]);
 
-  // Seule la scène qui ENTRE pilote la hauteur compacte. Mesurer le conteneur
-  // partagé pendant un fondu superposé ferait conserver la hauteur du Journal
-  // qui sort, puis provoquerait le saut que l'on cherche à éviter.
-  const measureObserverRef = useRef<ResizeObserver | null>(null);
-
+  // C'est la hauteur NATURELLE de la scène qui fait celle de la fenêtre. On
+  // mesure son CONTENEUR, qui ne change jamais : `popLayout` retire la scène
+  // sortante du flux, si bien qu'il a toujours la hauteur de l'entrante. (Une
+  // référence posée sur la scène elle-même serait écrasée par celle que
+  // `popLayout` y pose pour la mesurer à son tour.)
+  const sceneObserverRef = useRef<ResizeObserver | null>(null);
   const measureScene = useCallback((element: HTMLDivElement | null) => {
+    sceneObserverRef.current?.disconnect();
     if (!element) return;
-    measureObserverRef.current?.disconnect();
     const update = () => {
       const next = Math.ceil(element.getBoundingClientRect().height);
-      // Une coque qui se contracte modifie la largeur de son enfant à chaque
-      // frame. Si sa hauteur reste la même, redemander un rendu React ne fait
-      // qu'ajouter une saccade à une animation qui devrait rester composée.
-      setHeight((current) => (current === next ? current : next));
+      if (next > 0) setSceneHeight((current) => (current === next ? current : next));
     };
     const observer = new ResizeObserver(update);
-    measureObserverRef.current = observer;
+    sceneObserverRef.current = observer;
     observer.observe(element);
     update();
   }, []);
+  useEffect(() => () => sceneObserverRef.current?.disconnect(), []);
 
-  useEffect(() => () => measureObserverRef.current?.disconnect(), []);
-
-  /** Icône de tête cliquable, posée dans la barre/le panneau actif — le seul chemin de retour au neutre. */
-  const returnBadge = (
-    targetMode: Exclude<QuickMode, "neutre">,
-    compact = false,
-  ) => {
+  /** Icône de tête cliquable, posée dans la barre active — le seul chemin de retour au neutre. */
+  const returnBadge = (targetMode: Exclude<QuickMode, "neutre">) => {
     const item = QUICK_ITEMS.find((i) => i.mode === targetMode);
     if (!item) return null;
     return (
@@ -393,130 +380,22 @@ export default function QuickPage() {
         onClick={returnToNeutral}
         title="Revenir — les pastilles ressortent"
         aria-label="Revenir au choix"
-        className={cn(
-          "grid shrink-0 place-items-center text-brand transition focus-visible:outline-none forced-colors:focus-visible:outline forced-colors:focus-visible:outline-2",
-          compact
-            ? "size-6 self-center rounded-md hover:bg-brand-soft focus-visible:bg-brand-soft"
-            : "size-9 self-start rounded-xl bg-brand-soft hover:brightness-95 focus-visible:bg-brand-soft dark:hover:brightness-110",
-        )}
+        className="grid size-6 shrink-0 place-items-center self-center rounded-md text-brand transition hover:bg-brand-soft focus-visible:bg-brand-soft focus-visible:outline-none forced-colors:focus-visible:outline forced-colors:focus-visible:outline-2"
       >
-        <AppIcon icon={item.icon} size={compact ? 16 : 18} />
+        <AppIcon icon={item.icon} size={16} />
       </button>
     );
   };
 
   const collapsed = mode !== "neutre" || neutralText.trim().length > 0;
-  const isBubble = mode === "question" && askPhase === "reflexion";
-  const isReponse = mode === "question" && askPhase === "reponse";
-  const isJournal = mode === "journal";
   const isTask = mode === "tache";
-  const hasHostGutter = mode === "neutre" && !collapsed;
-  const taskHeight = Math.max(Math.ceil(height ?? TASK_MIN_HEIGHT), TASK_MIN_HEIGHT);
-  const taskWindowHeight = Math.max(
-    taskOverlayHeight ?? BAR_TRANSITION_CANVAS.height,
-    taskHeight,
-  );
-  const activeHeight = TASK_MIN_HEIGHT;
-  const shellRadius = isReponse ? 0 : isBubble ? 32 : mode === "neutre" ? 26 : 20;
-  const shellWidth = isBubble
-    ? 64
-    : isReponse
-      ? answerSize.width
-      : isJournal
-        ? journalSize.width
-        : collapsed
-          ? ACTIVE_BAR_WIDTH
-          : BAR_WIDTH;
-  const shellHeight = isBubble
-    ? 64
-    : isReponse
-      ? answerSize.height
-      : isJournal
-        ? journalSize.height
-        : isTask
-          ? taskHeight
-        : collapsed
-          ? activeHeight
-          : height ?? 52;
-  const sceneKey = isBubble ? "reflexion" : isReponse ? "reponse" : mode;
-  const nativeScene = isBubble
-    ? "reflexion"
-    : isReponse
-      ? "reponse"
-      : isJournal
-        ? "journal"
-        : isTask
-          ? "tache"
-        : collapsed
-          ? "active-bar"
-          : "neutre";
-  const canDismissFromBackdrop = !isBubble && !isReponse && !isJournal;
+  const sceneKey = mode === "question" ? `question-${askPhase}` : mode;
 
-  // Une barre globale doit vivre dans une vraie petite fenêtre native, pas
-  // dans un webview transparent de la taille du bureau : ce dernier avale le
-  // premier clic hors surface. On choisit le moniteur sous le pointeur au
-  // moment de l'ouverture (donc aussi sur un second écran), puis on centre la
-  // scène. Les pixels physiques évitent tout décalage avec les écrans à DPI
-  // différents sous Windows.
-  const fitNativeWindow = useCallback(async (next: { width: number; height: number }) => {
-    // Les appels WRY sont asynchrones. Les laisser partir en parallèle fait
-    // parfois appliquer une ancienne géométrie après une nouvelle, surtout
-    // lorsqu'un Journal est refermé puis rouvert rapidement. Une file garde
-    // seulement la dernière intention et sérialise taille + position.
-    queuedNativeSizeRef.current = next;
-    if (nativeResizeRunningRef.current) return;
-
-    nativeResizeRunningRef.current = true;
-    try {
-      while (queuedNativeSizeRef.current) {
-        const target = queuedNativeSizeRef.current;
-        queuedNativeSizeRef.current = null;
-        const win = getCurrentWindow();
-        const pointer = await cursorPosition();
-        const monitor = await monitorFromPoint(pointer.x, pointer.y);
-        const scale = monitor?.scaleFactor ?? (await win.scaleFactor());
-        const size = new PhysicalSize(
-          Math.round(target.width * scale),
-          Math.round(target.height * scale),
-        );
-
-        if (monitor) {
-          const area = monitor.workArea;
-          // Les deux messages doivent atteindre Windows dans le même tour :
-          // `setSize` puis `setPosition` laissait une frame au mauvais centre
-          // quand une grande scène redevenait une barre.
-          await Promise.all([
-            win.setSize(size),
-            win.setPosition(
-              new PhysicalPosition(
-                area.position.x + Math.round((area.size.width - size.width) / 2),
-                area.position.y + Math.round((area.size.height - size.height) / 2),
-              ),
-            ),
-          ]);
-        } else {
-          await win.setSize(size);
-        }
-        nativeSizeRef.current = target;
-      }
-    } catch {
-      // Hors Tauri, les transitions web restent vérifiables dans le DOM.
-    } finally {
-      nativeResizeRunningRef.current = false;
-    }
-  }, []);
-
-  const finishNativeContraction = useCallback(() => {
-    const pending = pendingNativeSizeRef.current;
-    if (!pending) return;
-    pendingNativeSizeRef.current = null;
-    void fitNativeWindow(pending);
-  }, [fitNativeWindow]);
-
-  // Les menus Radix sont portés dans un portail : ils sortent du DOM de la
-  // barre, mais pas du webview natif. La barre nous signale donc l'ouverture
-  // avant le premier rendu du menu : on réserve une zone stable, puis on la
-  // mesure après le repositionnement de Radix.
+  // Les menus de la barre Tâche (date, liste, suggestions) sont portés hors
+  // de la scène par Radix. La barre nous signale leur ouverture : on réserve
+  // d'abord une hauteur (Radix ne place un menu que s'il a la place), puis on
+  // la mesure une fois le menu posé. La fenêtre grandit pour le contenir —
+  // il s'ouvre DANS le panneau, sous le champ, pas en débordement.
   useEffect(() => {
     if (!isTask || !taskOverlayOpen) {
       taskOverlayPrimed.current = false;
@@ -550,7 +429,7 @@ export default function QuickPage() {
       if (popovers.length === 0) return;
 
       const bottom = Math.max(...popovers.map((element) => element.getBoundingClientRect().bottom));
-      const next = Math.max(taskHeight, Math.ceil(bottom + TASK_OVERLAY_MARGIN));
+      const next = Math.ceil(bottom + TASK_OVERLAY_MARGIN);
       setTaskOverlayHeight((current) => (current === next ? current : next));
     };
 
@@ -573,212 +452,129 @@ export default function QuickPage() {
       cancelAnimationFrame(frame);
       if (settleTimer) clearTimeout(settleTimer);
     };
-  }, [isTask, taskHeight, taskOverlayOpen]);
+  }, [isTask, taskOverlayOpen]);
 
-  // À chaque frontière visuelle, on redimensionne la fenêtre une fois. Motion
-  // anime alors le contenu dans ce cadre ; il ne pilote jamais la fenêtre à
-  // chaque frame, ce qui éviterait les saccades du gestionnaire de fenêtres.
+  // La taille de la fenêtre : la scène, ou le menu ouvert s'il descend plus
+  // bas. Rust décide du geste — d'un coup pour grandir, animé pour se
+  // resserrer. Cachée, elle se remet à la taille de la barre sans animer :
+  // une animation invisible pourrait encore courir à la réouverture.
+  const windowHeight = Math.max(sceneHeight, isTask ? (taskOverlayHeight ?? 0) : 0);
   useEffect(() => {
-    const target = nativeScene === "reponse"
-      ? RESPONSE_DEFAULT_SIZE
-      : nativeScene === "journal"
-        ? journalSizeRef.current
-        : BAR_TRANSITION_CANVAS;
-
-    const current = nativeSizeRef.current;
-    const mustGrowFirst = target.width > current.width || target.height > current.height;
-    if (mustGrowFirst) {
-      pendingNativeSizeRef.current = null;
-      void fitNativeWindow(target);
-    } else if (target.width !== current.width || target.height !== current.height) {
-      // Le webview garde la plus grande scène pendant que le shell se replie.
-      // `onAnimationComplete` applique cette taille une fois le morph fini.
-      pendingNativeSizeRef.current = target;
-    }
-    const win = getCurrentWindow();
-    const isResizable = nativeScene === "reponse" || nativeScene === "journal";
-    void Promise.all([
-      win.setResizable(isResizable),
-      win.setSizeConstraints(
-        nativeScene === "reponse"
-          ? {
-              minWidth: RESPONSE_MIN_SIZE.width,
-              minHeight: RESPONSE_MIN_SIZE.height,
-              maxWidth: RESPONSE_MAX_SIZE.width,
-              maxHeight: RESPONSE_MAX_SIZE.height,
-            }
-          : nativeScene === "journal"
-            ? {
-                minWidth: JOURNAL_MIN_SIZE.width,
-                minHeight: JOURNAL_MIN_SIZE.height,
-                maxWidth: JOURNAL_MAX_SIZE.width,
-                maxHeight: JOURNAL_MAX_SIZE.height,
-              }
-            : null,
-      ),
-    ]).catch(() => {});
-  }, [fitNativeWindow, nativeScene, revealEpoch]);
-
-  // La fenêtre Tâche ne suit le document qu'après avoir dépassé l'enveloppe
-  // de transition. Ainsi, une ligne qui se réorganise ne redimensionne pas le
-  // webview sous une animation en cours ; un vrai brouillon long grandit bien.
-  useEffect(() => {
-    if (!isTask) return;
-    void fitNativeWindow({ width: BAR_TRANSITION_CANVAS.width, height: taskWindowHeight });
-  }, [fitNativeWindow, isTask, taskWindowHeight]);
-
-  // Le panneau réponse délègue le redimensionnement à la fenêtre native : on
-  // profite du comportement Windows attendu (bords et coins) et son contenu
-  // suit la taille réelle du webview. Aucun faux handle ne se bloque au bord
-  // d'une petite fenêtre.
-  useEffect(() => {
-    const bounds = isReponse
-      ? { min: RESPONSE_MIN_SIZE, max: RESPONSE_MAX_SIZE, onSize: setAnswerSize }
-      : isJournal
-        ? { min: JOURNAL_MIN_SIZE, max: JOURNAL_MAX_SIZE, onSize: updateJournalSize }
-        : null;
-    if (!bounds) return;
-
-    const syncAnswerSize = () => {
-      const next = {
-        width: clamp(window.innerWidth, bounds.min.width, bounds.max.width),
-        height: clamp(window.innerHeight, bounds.min.height, bounds.max.height),
-      };
-      bounds.onSize(next);
-
-      // WRY applique ces contraintes aux gestes utilisateur. Ce second filet
-      // couvre aussi un éventuel redimensionnement imposé par Windows ou une
-      // autre commande native : le cadre et la surface restent toujours de la
-      // même taille, sans zone transparente résiduelle.
-      if (next.width !== window.innerWidth || next.height !== window.innerHeight) {
-        const win = getCurrentWindow();
-        win
-          .scaleFactor()
-          .then((scale) =>
-            win.setSize(
-              new PhysicalSize(
-                Math.round(next.width * scale),
-                Math.round(next.height * scale),
-              ),
-            ),
-          )
-          .catch(() => {});
-      }
-    };
-    window.addEventListener("resize", syncAnswerSize);
-    return () => window.removeEventListener("resize", syncAnswerSize);
-  }, [isJournal, isReponse, updateJournalSize]);
-
-  const handleBackdropPointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
-    if (
-      canDismissFromBackdrop &&
-      !isOverlayOpen() &&
-      !surfaceRef.current?.contains(event.target as Node)
-    ) {
-      hide();
-    }
-  };
+    invoke("quick_cadre", {
+      largeur: LARGEUR,
+      hauteur: windowHeight,
+      anime: !wasHidden.current,
+    }).catch(() => {});
+  }, [windowHeight]);
 
   return (
     <div
-      onPointerDown={handleBackdropPointerDown}
       className={cn(
-        "flex h-screen w-screen justify-center bg-transparent",
-        taskOverlayHeight === null ? "items-center" : "items-start",
-        hasHostGutter && "p-1.5",
+        "h-screen w-screen overflow-hidden bg-popover text-foreground",
+        // Sur Mac, la fenêtre est transparente et l'ombre du système suit
+        // la forme peinte : la capsule de Spotlight. Sous Windows, c'est le
+        // système qui arrondit les coins de la fenêtre opaque.
+        mac && "rounded-[28px]",
       )}
     >
-      <motion.div
-        ref={surfaceRef}
-        style={{ gap: collapsed ? 0 : 14 }}
-        className="relative flex items-center transition-[gap] duration-[580ms]"
-      >
+      <div ref={measureScene} className="relative w-full">
+        <AnimatePresence initial={false} mode="popLayout">
           <motion.div
-            animate={{ width: shellWidth, height: shellHeight, borderRadius: shellRadius }}
-            transition={{ duration: MORPH_DURATION, ease: MORPH_EASE }}
-            onAnimationComplete={finishNativeContraction}
-            className={cn(
-              "relative shrink-0 overflow-hidden border border-transparent bg-popover",
-              "transition-[border-color,box-shadow] duration-[580ms]",
-              isReponse || isJournal ? "border-border/70 shadow-none" : "shadow-floating",
-            )}
+            key={sceneKey}
+            initial={{ opacity: 0, y: -4 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, transition: { duration: 0.12 } }}
+            transition={ENTREE}
+            className="w-full"
           >
-            <div className="relative h-full w-full">
-              <AnimatePresence initial={false} mode="sync">
-                <motion.div
-                  ref={isJournal || isReponse || isBubble ? undefined : measureScene}
-                  key={sceneKey}
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  exit={{ opacity: 0 }}
-                  transition={{ duration: 0.2, ease: MORPH_EASE }}
-                  className={cn(
-                    "w-full",
-                    isReponse || isJournal
-                      ? "absolute inset-0 h-full"
-                      : "absolute inset-x-0 top-1/2 -translate-y-1/2",
-                  )}
-                >
-                  {mode === "neutre" && (
-                    <BarreAssistant
-                      key={`neutre-${mountKey}`}
-                      value={neutralText}
-                      onValueChange={handleNeutralChange}
-                      onSubmit={handleNeutralSubmit}
-                      placeholder="Écrire, capturer, demander…"
-                      autoFocus
-                      variant="inline"
-                    />
-                  )}
-                  {mode === "tache" && (
-                    <BarreTache
-                      key={`tache-${mountKey}`}
-                      variant="inline"
-                      autoFocus
-                      onSubmit={handleSubmit}
-                      placeholder="Capturer une tâche…"
-                      lists={lists}
-                      leading={returnBadge("tache", true)}
-                      showControls={false}
-                      onOverlayChange={setTaskOverlayOpen}
-                    />
-                  )}
-                  {mode === "journal" && (
-                    <BarreJournal
-                      key={`journal-${mountKey}`}
-                      autoFocus
-                      leading={returnBadge("journal", true)}
-                      onOpenInJournal={handleOpenInJournal}
-                      onClose={hide}
-                    />
-                  )}
-                  {mode === "question" && askPhase === "idle" && (
-                    <BarreAssistant
-                      key={`question-${mountKey}`}
-                      autoFocus
-                      onSubmit={handleAskSubmit}
-                      placeholder="Demander, créer, chercher…"
-                      leading={returnBadge("question", true)}
-                      variant="inline"
-                    />
-                  )}
-                  {isBubble && <QuickBubble />}
-                  {isReponse && (
-                    <QuickAnswer
-                      turns={turns}
-                      pending={pending}
-                      onFollowUp={handleFollowUp}
-                      leading={returnBadge("question", true)}
-                      onOpenInAssistant={handleOpenInAssistant}
-                    />
-                  )}
-                </motion.div>
-              </AnimatePresence>
-            </div>
+            {mode === "neutre" && (
+              <div className="flex h-14 items-center pr-2">
+                <div className="h-full min-w-0 flex-1">
+                  <BarreAssistant
+                    key={`neutre-${mountKey}`}
+                    value={neutralText}
+                    onValueChange={handleNeutralChange}
+                    onSubmit={handleNeutralSubmit}
+                    placeholder="Écrire, capturer, demander…"
+                    autoFocus
+                    variant="inline"
+                  />
+                </div>
+                {/* Les pastilles vivent DANS la barre : une ombre système ne
+                    sait pas entourer des formes flottantes séparées. Elles
+                    se replient dès qu'on écrit, et se refondent l'une dans
+                    l'autre en partant. */}
+                <QuickPills
+                  collapsed={collapsed}
+                  onChoose={switchMode}
+                  entryKey={mountKey}
+                  size={40}
+                  gap={12}
+                  shapeClassName="bg-muted"
+                />
+              </div>
+            )}
+            {mode === "tache" && (
+              <div className="flex min-h-14 items-center">
+                <BarreTache
+                  key={`tache-${mountKey}`}
+                  variant="inline"
+                  autoFocus
+                  onSubmit={handleSubmit}
+                  placeholder="Capturer une tâche…"
+                  lists={lists}
+                  leading={returnBadge("tache")}
+                  showControls={false}
+                  onOverlayChange={setTaskOverlayOpen}
+                />
+              </div>
+            )}
+            {mode === "journal" && (
+              <div style={{ height: HAUTEUR_JOURNAL }}>
+                <BarreJournal
+                  key={`journal-${mountKey}`}
+                  autoFocus
+                  leading={returnBadge("journal")}
+                  onOpenInJournal={handleOpenInJournal}
+                  onClose={hide}
+                />
+              </div>
+            )}
+            {mode === "question" && askPhase === "idle" && (
+              <div className="h-14">
+                <BarreAssistant
+                  key={`question-${mountKey}`}
+                  autoFocus
+                  onSubmit={handleAskSubmit}
+                  placeholder="Demander, créer, chercher…"
+                  leading={returnBadge("question")}
+                  variant="inline"
+                />
+              </div>
+            )}
+            {mode === "question" && askPhase === "reflexion" && (
+              // La question reste lisible là où on l'a tapée ; la présence
+              // prend la place du bouton d'envoi le temps de la réflexion.
+              <div className="flex h-14 items-center gap-2 pr-2.5 pl-3">
+                {returnBadge("question")}
+                <p className="min-w-0 flex-1 truncate text-[0.9375rem] text-muted-foreground">
+                  {turns[0]?.question}
+                </p>
+                <QuickBubble size={36} />
+              </div>
+            )}
+            {mode === "question" && askPhase === "reponse" && (
+              <QuickAnswer
+                turns={turns}
+                pending={pending}
+                onFollowUp={handleFollowUp}
+                leading={returnBadge("question")}
+                onOpenInAssistant={handleOpenInAssistant}
+              />
+            )}
           </motion.div>
-
-          <QuickPills collapsed={collapsed} onChoose={switchMode} entryKey={mountKey} />
-      </motion.div>
+        </AnimatePresence>
+      </div>
     </div>
   );
 }

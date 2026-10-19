@@ -21,17 +21,17 @@
         "label": "quick",
         "title": "Capture rapide",
         "url": "/quick",
-        "width": 630,
-        "height": 64,
+        "width": 600,
+        "height": 56,
         "resizable": false,
         "alwaysOnTop": true,
         "decorations": false,
         "transparent": true,
-        "shadow": false,
+        "shadow": true,
         "skipTaskbar": true,
         "visible": false,
-        "center": true,
         "maximizable": false,
+        "minimizable": false,
         "visibleOnAllWorkspaces": true
       }
     ]

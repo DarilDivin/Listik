@@ -1,6 +1,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod cli_agent;
+mod cadre;
 mod commands;
 mod db;
 mod models;
@@ -115,6 +116,12 @@ fn main() {
             // --- Icône du tray ---
             tray::build(app)?;
 
+            // --- Le cadre natif de la barre rapide (voir cadre/mod.rs) ---
+            app.manage(cadre::Geometrie::default());
+            if let Some(quick) = app.get_webview_window(cadre::QUICK) {
+                cadre::preparer(&quick);
+            }
+
             println!("🚀 Application Listik démarrée !");
 
             // --- Raccourci global de capture rapide ---
@@ -187,6 +194,8 @@ fn main() {
             commands::delete_journal_entry,
             commands::set_journal_entry_tags,
             commands::toggle_quick_window,
+            cadre::quick_cadre,
+            cadre::quick_couleurs,
             commands::hide_quick_window,
             commands::show_main_window,
             commands::open_quick_window,
