@@ -257,8 +257,14 @@ pub fn essai_si_demande(app: &AppHandle) {
         ancrer(&fenetre);
         let _ = montrer(&fenetre);
         for (rang, scene) in SCENES_ESSAI.iter().enumerate() {
-            // La métamorphose réflexion → panneau de réponse, filmée.
-            let video = (*scene == "reponse").then(|| filmer(&dossier, "metamorphose"));
+            // La métamorphose réflexion → panneau de réponse, filmée. L'outil
+            // de capture du Mac met plus d'une seconde à démarrer : on lance
+            // la vidéo d'abord, la scène ensuite.
+            let video = (*scene == "reponse").then(|| {
+                let enfant = filmer(&dossier, "metamorphose");
+                std::thread::sleep(Duration::from_millis(1500));
+                enfant
+            });
             let _ = fenetre.emit("quick:essai-scene", scene);
             // Assez pour qu'une métamorphose (0,58 s) soit finie.
             std::thread::sleep(Duration::from_millis(2500));
@@ -281,14 +287,14 @@ fn capturer(dossier: &str, rang: usize, scene: &str) {
     let _ = (dossier, rang, scene);
 }
 
-/// Une vidéo de 2 s de l'écran, lancée en arrière-plan.
+/// Une vidéo de 4 s de l'écran, lancée en arrière-plan.
 fn filmer(dossier: &str, nom: &str) -> Option<std::process::Child> {
     #[cfg(target_os = "macos")]
     {
         let _ = std::fs::create_dir_all(dossier);
         let chemin = format!("{dossier}/{nom}.mov");
         std::process::Command::new("screencapture")
-            .args(["-x", "-v", "-V", "2", &chemin])
+            .args(["-x", "-v", "-V", "4", &chemin])
             .spawn()
             .ok()
     }

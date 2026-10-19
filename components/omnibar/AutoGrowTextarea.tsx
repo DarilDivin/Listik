@@ -34,6 +34,8 @@ interface AutoGrowTextareaProps {
 
 /** Hauteur d'une ligne de texte (16px, interligne normal). */
 const LINE_HEIGHT = 24;
+/** En dessous, une mesure de hauteur n'a pas de sens (voir `ajusterConversation`). */
+const LARGEUR_MESURABLE = 120;
 
 /**
  * Champ de saisie « surligné » construit sur l'**approche miroir** :
@@ -82,6 +84,13 @@ export function AutoGrowTextarea({
   const ajusterConversation = useCallback(() => {
     const el = conversationRef.current;
     if (!el) return;
+    // Presque sans largeur (il naît dans une forme qui s'ouvre), le texte s'y
+    // replierait sur dix lignes : on ne mesure pas, il garde une ligne. La
+    // vraie mesure viendra quand il aura sa largeur.
+    if (el.clientWidth < LARGEUR_MESURABLE) {
+      el.style.height = `${LINE_HEIGHT}px`;
+      return;
+    }
     el.style.height = "0px";
     const height = Math.min(el.scrollHeight, 144);
     el.style.height = `${Math.max(LINE_HEIGHT, height)}px`;
@@ -107,7 +116,18 @@ export function AutoGrowTextarea({
       ajusterConversation();
     });
     observateur.observe(el);
-    return () => observateur.disconnect();
+    // Le rattrapage : WebKit (le moteur du Mac) peut différer, voire perdre,
+    // un signal de taille quand la mise en page bouge en cascade — c'est le
+    // cas pendant une métamorphose. Une seconde après, on remesure de toute
+    // façon.
+    const rattrapage = setTimeout(() => {
+      largeur = el.clientWidth;
+      ajusterConversation();
+    }, 1000);
+    return () => {
+      observateur.disconnect();
+      clearTimeout(rattrapage);
+    };
   }, [isConversation, ajusterConversation]);
 
   // Détecte le passage multi-ligne d'après la hauteur réelle du miroir.
