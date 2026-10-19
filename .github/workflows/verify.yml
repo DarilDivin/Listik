@@ -82,5 +82,6 @@ jobs:
           path: |
             macos-screenshot.png
             captures-rapide/*.png
+            captures-rapide/*.mov
             src-tauri/target/release/bundle/dmg/*.dmg
           if-no-files-found: ignore
