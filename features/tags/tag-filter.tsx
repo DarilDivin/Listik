@@ -6,9 +6,9 @@ import { createContext, useContext, type ReactNode } from "react";
  * Permet à une pastille de tag, au fond de la liste, de filtrer la vue —
  * le geste « cliquer un tag pour filtrer » de Things.
  *
- * Un contexte plutôt qu'une prop : le rappel devrait sinon traverser six
- * composants (page → SectionBody → style de section → AnimatedTodoList →
- * TodoItem → TodoMetaLine) qui n'en ont aucun usage. `TodoMetaLine` va déjà
+ * Un contexte plutôt qu'une prop : le rappel devrait sinon traverser quatre
+ * composants (page → AnimatedTodoList → TodoItem → TodoMetaLine) qui n'en
+ * ont aucun usage. `TodoMetaLine` va déjà
  * chercher ses données elle-même (projets) : même parti pris.
  *
  * Hors fournisseur, les pastilles restent de simples étiquettes.

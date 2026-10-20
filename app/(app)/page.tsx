@@ -24,7 +24,6 @@ import {
 import { PlannerRail } from "@/components/planner/PlannerRail";
 import { RailSkeleton } from "@/components/planner/RailSkeleton";
 import { ProjectView } from "@/components/planner/ProjectView";
-import { SectionBody } from "@/components/planner/SectionBody";
 import {
   SectionCard,
   type SectionTone,
@@ -60,7 +59,7 @@ import {
 } from "@/features/todos/selection-context";
 import { SelectionBar } from "@/components/todo/SelectionBar";
 import { TodoDetailSheet } from "@/components/todo/TodoDetailSheet";
-import type { TodoListDnd } from "@/components/todo/AnimatedTodoList";
+import { AnimatedTodoList, type TodoListDnd } from "@/components/todo/AnimatedTodoList";
 import { todayLocalISODate, toLocalISODate } from "@/lib/date";
 import type { Priority, Todo, TodoStatus } from "@/features/todos/types";
 
@@ -144,7 +143,7 @@ function readStoredSelection(): PlannerSelection | null {
 const LINGER_MS = 900;
 
 /**
- * Repli/dépli du chrome (hero + filtres) quand une section passe en portail :
+ * Repli/dépli du chrome (hero + filtres) quand le hero n'a pas lieu d'être :
  * la hauteur s'anime (jamais de démontage sec → aucun saut de layout), le
  * contenu s'efface un peu plus vite qu'il ne se replie.
  */
@@ -243,10 +242,6 @@ function PlannerPageContent() {
     }
   }, [selection]);
   const [tagFilter, setTagFilter] = useState<string | null>(null);
-  const [portalKey, setPortalKey] = useState<SectionKey | null>(null);
-  // Le clip (overflow-hidden) ne vit que pendant le repli/dépli du chrome :
-  // au repos déplié, il est retiré pour que la barre de filtres reste sticky.
-  const [chromeClipped, setChromeClipped] = useState(false);
 
   const scrollRef = useRef<HTMLDivElement>(null);
   // Rangée de capture montée dans la branche courante (une seule à la fois).
@@ -416,7 +411,7 @@ function PlannerPageContent() {
     remove: () => withSelection((ids) => void deleteManyTodos(ids)),
   };
 
-  // Échap vide la sélection (avant le portail : deux gestes distincts).
+  // Échap vide la sélection.
   useEffect(() => {
     if (selectedCount === 0) return;
     const onKey = (e: KeyboardEvent) => {
@@ -500,27 +495,11 @@ function PlannerPageContent() {
     if (intent) void updateTodo(todoId, intent);
   };
 
-  const portalSection = portalKey
-    ? viewSections.find((s) => s.key === portalKey) ?? null
-    : null;
+  const renderedSections = viewSections.filter((s) => s.items.length > 0);
+  const isEmpty = renderedSections.length === 0;
 
-  // Une seule liste de sections : en mode portail elle se réduit à la section
-  // ouverte, qui GARDE sa clé React — le même nœud morphe vers le haut pendant
-  // que ses voisines s'effacent (aucun démontage/remontage, aucun trou).
-  const stackSections = viewSections.filter((s) => s.items.length > 0);
-  const renderedSections = portalSection ? [portalSection] : stackSections;
-  const isEmpty = stackSections.length === 0;
-
-  const openPortal = (key: SectionKey) => {
-    setChromeClipped(true);
-    setPortalKey(key);
-    scrollRef.current?.scrollTo({ top: 0, behavior: "smooth" });
-  };
-  const closePortal = () => setPortalKey(null);
-
-  // Changer de sélection ferme le portail et remonte en haut.
+  // Changer de sélection remonte en haut.
   const changeSelection = (next: PlannerSelection) => {
-    setPortalKey(null);
     setSelection(next);
     scrollRef.current?.scrollTo({ top: 0 });
   };
@@ -547,7 +526,7 @@ function PlannerPageContent() {
    *
    * Le raccourci prend la porte la plus rapide. Le widget est à l'écran (vue
    * « Aujourd'hui ») : le curseur s'y pose, au bout de la dernière reprise.
-   * Sinon — un projet, un domaine, une section en portail — la page-jour
+   * Sinon — un projet, un domaine — la page-jour
    * s'ouvre et le curseur s'y pose pareil. Même intention, porte différente :
    * la touche ne reste jamais sans effet.
    */
@@ -609,16 +588,6 @@ function PlannerPageContent() {
   const closingTodo = useRef<Todo | null>(null);
   if (detailTodo) closingTodo.current = detailTodo;
   const sheetTodo = detailTodo ?? closingTodo.current;
-
-  // Échap referme la vue portail.
-  useEffect(() => {
-    if (!portalKey) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setPortalKey(null);
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [portalKey]);
 
   const handleToggle = (id: string) => {
     const todo = todos.find((t) => t.id === id);
@@ -856,12 +825,8 @@ function PlannerPageContent() {
                 <LayoutGroup>
                   <motion.div
                     initial={false}
-                    animate={portalSection || !showHero ? "collapsed" : "open"}
+                    animate={!showHero ? "collapsed" : "open"}
                     variants={chromeVariants}
-                    onAnimationComplete={(definition) => {
-                      if (definition === "open") setChromeClipped(false);
-                    }}
-                    className={chromeClipped ? "overflow-hidden" : undefined}
                   >
                     <div className="pt-8">
                       <HeroDay
@@ -907,24 +872,15 @@ function PlannerPageContent() {
 
                   {/* Rangée de capture, en tête de liste — pas sur l'Historique
                       (surface de lecture : même précédent que le rail qui y
-                      refuse le dépôt). Repliée en portail, comme le chrome. */}
-                  {currentView !== "journal" && (
-                    <motion.div
-                      initial={false}
-                      animate={portalSection ? "collapsed" : "open"}
-                      variants={chromeVariants}
-                      className={chromeClipped ? "overflow-hidden" : undefined}
-                    >
-                      <div className="pb-2 pt-6">{captureNode}</div>
-                    </motion.div>
-                  )}
+                      refuse le dépôt). */}
+                  {currentView !== "journal" && <div className="pb-2 pt-6">{captureNode}</div>}
 
                   <motion.div
                     initial={false}
                     animate={{
                       // L'Historique n'a pas de capture au-dessus : il garde
                       // son aération propre.
-                      paddingTop: portalSection ? 32 : currentView === "journal" ? 24 : 4,
+                      paddingTop: currentView === "journal" ? 24 : 4,
                     }}
                     transition={spring.smooth}
                     className="pb-10"
@@ -937,30 +893,20 @@ function PlannerPageContent() {
                           count={section.items.length}
                           tone={section.tone}
                           delay={i * 0.05}
-                          sectionKey={section.key}
-                          portalActive={section.key === portalKey}
-                          onEnterPortal={() => openPortal(section.key)}
-                          onExitPortal={closePortal}
                         >
-                          {section.items.length > 0 ? (
-                            <SectionBody
-                              style="list"
-                              todos={section.items}
-                              onToggle={handleToggle}
-                              onDelete={deleteTodo}
-                              onUpdate={updateTodo}
-                              overdue={section.overdue}
-                              showDate={!section.dateImplied}
-                              dnd={dndForSection(section.key, section.items)}
-                            />
-                          ) : (
-                            // La dernière tâche vient de quitter la section en portail.
-                            <EmptyHint>Plus rien dans cette section.</EmptyHint>
-                          )}
+                          <AnimatedTodoList
+                            todos={section.items}
+                            onToggle={handleToggle}
+                            onDelete={deleteTodo}
+                            onUpdate={updateTodo}
+                            overdue={section.overdue}
+                            showDate={!section.dateImplied}
+                            dnd={dndForSection(section.key, section.items)}
+                          />
                         </SectionCard>
                       ))}
 
-                      {!portalSection && isEmpty && (
+                      {isEmpty && (
                         // Sous un filtre, la vue n'est pas vide : elle n'a
                         // rien avec ce tag. Le filtre se retire juste au-dessus.
                         tagFilter ? (
@@ -985,9 +931,8 @@ function PlannerPageContent() {
                   {/* Journal (Phase Q) : fil du jour ANCRÉ au bas du flux
                       (mt-auto dans la colonne min-h-full) — les tâches
                       descendent du hero, le journal remonte du bas, le vide
-                      entre les deux devient de la composition. Masqué en
-                      portail comme le reste du chrome. */}
-                  {currentView === "today" && !portalSection && (
+                      entre les deux devient de la composition. */}
+                  {currentView === "today" && (
                     <div className="mt-auto pb-10">
                       <JournalWidget ref={journalRef} />
                     </div>
