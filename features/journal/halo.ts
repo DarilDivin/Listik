@@ -145,81 +145,14 @@ export function ajuster(canvas: HTMLCanvasElement, echelle = 1) {
 }
 
 /**
- * Trois nappes, chacune avec sa propre ondulation et son propre retard.
- * C'est la superposition qui fait la profondeur : une seule nappe donne un
- * bourrelet, pas une lueur.
+ * Trois nappes superposées : c'est la superposition qui fait la profondeur,
+ * une seule nappe donne un bourrelet, pas une lueur.
  */
 const NAPPES = [
   { k: 1.6, v: 0.55, h: 1.0, o: 0.55, teinte: "a" },
   { k: 2.7, v: -0.38, h: 0.72, o: 0.42, teinte: "b" },
   { k: 4.3, v: 0.81, h: 0.48, o: 0.34, teinte: "a" },
 ] as const;
-
-/**
- * Le halo de l'ENREGISTREMENT : une lueur couchée au bord BAS de l'app, qui
- * monte avec la voix.
- *
- * Pleine largeur et collée au châssis, pas posée dans la colonne de texte :
- * c'est ce qui la fait appartenir à l'application plutôt qu'au document. Tant
- * qu'on parle, c'est le bas de l'écran qui s'allume ; la page, elle, reste ce
- * qu'elle est et on peut continuer d'y écrire.
- *
- * `t` est un temps en secondes — il fait dériver les nappes les unes par
- * rapport aux autres. `niveau` (0 à 1) commande la HAUTEUR et non l'opacité :
- * un halo qui ne ferait que s'éclaircir ne dirait rien du volume, il
- * clignoterait.
- */
-export function peindreHalo(
-  canvas: HTMLCanvasElement,
-  pal: Palette,
-  t: number,
-  niveau: number,
-  ouverture = 1,
-): void {
-  // La moitié de la résolution : c'est du flou, et ça couvre toute la largeur
-  // de la fenêtre soixante fois par seconde.
-  const mesure = ajuster(canvas, 0.5);
-  if (!mesure) return;
-  const { ctx, w, h } = mesure;
-  ctx.clearRect(0, 0, w, h);
-  // Le flou suit la hauteur : le même nombre de pixels sur une bande de 70 px
-  // et sur une lueur de 200 en ferait un liseré net d'un côté, une purée de
-  // l'autre.
-  const flou = Math.max(12, Math.min(48, h * 0.22));
-  ctx.save();
-  if (typeof ctx.filter === "string") ctx.filter = `blur(${flou}px)`;
-  ctx.globalCompositeOperation = pal.melange;
-
-  for (const [rang, nappe] of NAPPES.entries()) {
-    const couleur = nappe.teinte === "a" ? pal.a : pal.b;
-    // Chaque nappe monte avec un peu de RETARD sur la précédente. C'est ce
-    // qui donne de la profondeur à la lueur quand elle apparaît : trois plans
-    // qui se lèvent ensemble seraient un bloc, trois plans décalés sont de
-    // l'épaisseur. Le retard s'annule une fois l'ouverture faite.
-    const retard = rang * 0.12;
-    const o = Math.max(0, Math.min(1, (ouverture - retard) / (1 - retard)));
-    if (o <= 0) continue;
-    const crete = h * (0.22 + 0.62 * niveau) * nappe.h * o;
-    ctx.beginPath();
-    // On déborde de part et d'autre : sans ça le flou laisse voir les deux
-    // bords verticaux de la nappe, et la lueur a des côtés.
-    ctx.moveTo(-flou, h + flou);
-    const pas = Math.max(6, w / 48);
-    for (let x = -flou; x <= w + flou; x += pas) {
-      const onde = Math.sin((x / w) * Math.PI * nappe.k + t * nappe.v * 2.2);
-      ctx.lineTo(x, h - crete * (0.55 + 0.45 * onde));
-    }
-    ctx.lineTo(w + flou, h + flou);
-    ctx.closePath();
-    const d = ctx.createLinearGradient(0, h - crete * 1.5, 0, h);
-    d.addColorStop(0, rgba(couleur, 0));
-    d.addColorStop(0.55, rgba(couleur, pal.force * nappe.o * 0.75 * o));
-    d.addColorStop(1, rgba(couleur, pal.force * nappe.o * o));
-    ctx.fillStyle = d;
-    ctx.fill();
-  }
-  ctx.restore();
-}
 
 /**
  * La bande d'une note GARDÉE : la même matière, étirée sur la durée.

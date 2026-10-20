@@ -43,14 +43,11 @@ export interface Enregistrement {
   /** Arrête et JETTE : le micro se ferme, rien n'est rendu. */
   annuler: () => void;
   /**
-   * L'oreille de l'ANIMATION, distincte de celle qui ramasse les crêtes. La
-   * lueur la lit à chaque image, à son propre rythme et avec ses propres
-   * réglages (spectre lissé, voir `ecoute.ts`) ; partager l'analyseur des
-   * crêtes aurait lié ce qu'on garde à ce qu'on montre.
-   *
-   * Muette dès l'arrêt : son contexte se ferme avec le micro.
+   * Le flux du micro, pour la lueur (`voice-glow`) : elle l'écoute avec son
+   * propre analyseur, à son rythme, sans rien changer à ce qu'on enregistre
+   * ni aux crêtes. Muet dès l'arrêt : ses pistes se ferment avec le micro.
    */
-  analyseur: AnalyserNode;
+  flux: MediaStream;
 }
 
 /**
@@ -140,14 +137,6 @@ export async function enregistrer(
   source.connect(analyseur);
   const tampon = new Uint8Array(analyseur.fftSize);
 
-  // La seconde oreille, branchée elle aussi APRÈS le `start()`. 2048 points :
-  // à 48 kHz, des cases de 23 Hz — assez fines pour séparer la fondamentale
-  // d'une voix grave de ses premiers formants.
-  const oreille = contexte.createAnalyser();
-  oreille.fftSize = 2048;
-  oreille.smoothingTimeConstant = 0.6;
-  source.connect(oreille);
-
   const mesures: number[] = [];
   const battement = setInterval(() => {
     analyseur.getByteTimeDomainData(tampon);
@@ -170,7 +159,7 @@ export async function enregistrer(
   };
 
   return {
-    analyseur: oreille,
+    flux,
     arreter: () =>
       new Promise<NoteEnregistree>((resolve, reject) => {
         // La durée se lit AVANT d'attendre `onstop` : l'événement arrive

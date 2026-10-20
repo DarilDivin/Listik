@@ -165,9 +165,9 @@ function JournalPageContent() {
   const [sortie, setSortie] = useState(false);
   const sessionRef = useRef<Enregistrement | null>(null);
   const departRef = useRef(0);
-  // L'oreille de la lueur. Un état et pas la session lue au rendu : la bande
-  // doit se remonter sur la bonne quand on enchaîne deux enregistrements.
-  const [analyseur, setAnalyseur] = useState<AnalyserNode | null>(null);
+  // Le flux du micro, pour la lueur. Un état et pas la session lue au rendu :
+  // la bande doit se remonter sur le bon quand on enchaîne deux enregistrements.
+  const [flux, setFlux] = useState<MediaStream | null>(null);
 
   // Le jour où l'enregistrement a COMMENCÉ. On peut tourner les pages en
   // parlant : la note appartient au jour qu'on avait sous les yeux quand on a
@@ -180,7 +180,7 @@ function JournalPageContent() {
     setCherche(false);
     try {
       sessionRef.current = await ouvrirLeMicro();
-      setAnalyseur(sessionRef.current.analyseur);
+      setFlux(sessionRef.current.flux);
       departRef.current = performance.now();
       jourRef.current = day;
       setSortie(false);
@@ -315,7 +315,7 @@ function JournalPageContent() {
       {enregistre && !cherche && (
         <BandeEnregistrement
           depart={departRef.current}
-          analyseur={analyseur}
+          flux={flux}
           partant={sortie}
           onParti={partie}
           onTerminer={() => void terminer()}

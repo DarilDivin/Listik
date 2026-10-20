@@ -1146,36 +1146,20 @@ html[data-plateforme="mac"] body.quick-window [data-sonner-toast] {
   margin-top: 0.15em;
 }
 
-/* Pendant qu'on parle, c'est le BAS DE L'APP qui s'allume — pas une rangée
-   ajoutée au document. Une lueur couchée sur toute la largeur, au bord de la
-   fenêtre, comme si elle appartenait au châssis : la différence entre « le
-   document contient un enregistreur » et « l'application écoute ».
-   La page ne bouge pas, et on peut continuer d'y écrire. */
+/* Pendant qu'on parle, une pastille flotte au bas de la page, et la voix
+   l'éclaire DE L'INTÉRIEUR (voir `BandeEnregistrement`). Elle passe
+   par-dessus le contenu — l'idiome du dock et de la capture rapide — et ne
+   prend que sa propre place : la page ne bouge pas, et on peut continuer
+   d'y écrire. */
 .journal-ecoute {
   position: fixed;
-  inset: auto 0 0 0;
-  /* Assez haut pour que la lueur ait où enfler, et rien de plus : elle
-     n'occupe pas l'écran, elle le borde. */
-  height: 13rem;
   z-index: 40;
-  /* RIEN n'intercepte ici : on doit pouvoir écrire dans la page pendant que
-     ça enregistre. Seules les commandes reprennent le clic. */
-  pointer-events: none;
-}
-.journal-ecoute-lueur {
-  position: absolute;
-  inset: 0;
-  display: block;
-  width: 100%;
-  height: 100%;
-}
-/* Les commandes flottent au-dessus de la lueur : l'idiome des surfaces qui
-   passent par-dessus le contenu (dock, capture rapide), parce qu'elles
-   doivent rester lisibles sur une couleur qui bouge. */
-.journal-ecoute-commandes {
-  position: absolute;
   bottom: 1.25rem;
   left: 50%;
+  /* Elle monte du bas, en ralentissant à l'arrivée. */
+  animation: journal-ecoute-venue 400ms cubic-bezier(0.05, 0.7, 0.1, 1) both;
+}
+.journal-ecoute-pastille {
   display: flex;
   align-items: center;
   gap: 0.6rem;
@@ -1185,12 +1169,6 @@ html[data-plateforme="mac"] body.quick-window [data-sonner-toast] {
   box-shadow:
     0 1px 2px oklch(0 0 0 / 10%),
     0 8px 24px -10px oklch(0 0 0 / 26%);
-  pointer-events: auto;
-  /* Elle vient du BAS, comme la lueur : une seule origine pour un seul
-     événement. Et APRÈS elle — le halo est le héros, la pilule sa
-     conséquence. Les 120 ms de retard laissent la lumière se déclarer avant
-     que les commandes se présentent. */
-  animation: journal-ecoute-venue 400ms cubic-bezier(0.05, 0.7, 0.1, 1) 120ms both;
 }
 @keyframes journal-ecoute-venue {
   from {
@@ -1202,9 +1180,9 @@ html[data-plateforme="mac"] body.quick-window [data-sonner-toast] {
     transform: translate(-50%, 0) scale(1);
   }
 }
-/* À la sortie elle part la PREMIÈRE, et plus vite qu'elle n'est venue : on se
-   soucie de ce qui arrive, pas de ce qui s'en va. */
-.journal-ecoute-commandes[data-partant] {
+/* Elle part plus vite qu'elle n'est venue : on se soucie de ce qui arrive,
+   pas de ce qui s'en va. */
+.journal-ecoute[data-partant] {
   animation: journal-ecoute-depart 240ms cubic-bezier(0.3, 0, 1, 1) both;
 }
 @keyframes journal-ecoute-depart {
@@ -1218,12 +1196,12 @@ html[data-plateforme="mac"] body.quick-window [data-sonner-toast] {
   }
 }
 @media (prefers-reduced-motion: reduce) {
-  .journal-ecoute-commandes,
-  .journal-ecoute-commandes[data-partant] {
+  .journal-ecoute,
+  .journal-ecoute[data-partant] {
     animation: none;
     transform: translate(-50%, 0);
   }
-  .journal-ecoute-commandes[data-partant] {
+  .journal-ecoute[data-partant] {
     opacity: 0;
   }
 }
