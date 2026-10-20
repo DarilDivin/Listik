@@ -1,9 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { AiBrain01Icon, Notebook01Icon, Task01Icon } from "@hugeicons/core-free-icons";
 import type { IconSvgElement } from "@hugeicons/react";
-import { motion } from "motion/react";
+import { AnimatePresence, motion } from "motion/react";
 import { AppIcon } from "@/components/ui/app-icon";
 import { cn } from "@/lib/utils";
 
@@ -33,6 +33,10 @@ const PILL_SIZE = 52; // ≈ badge (size-9=36px) + padding (p-2×2=16px) de Barr
 const FOCUSED_EXTRA_WIDTH = 44;
 const GAP = 14;
 const ELASTIQUE = [0.32, 1.5, 0.44, 1] as const; // --elastique de l'artifact « La fenêtre rapide ».
+/** Le focus clavier : une réponse IMMÉDIATE, posée, sans rebond. L'élastique
+ *  de 0,58 s sied à une goutte qui se sépare, pas à un Tab — avec lui, la
+ *  pastille arrivait après le regard et rebondissait. */
+const FOCUS = { duration: 0.22, ease: [0.22, 1, 0.36, 1] as const };
 
 interface QuickPillsProps {
   /** Repliées (absorbées dans la barre choisie) tant qu'un mode est actif. */
@@ -40,7 +44,7 @@ interface QuickPillsProps {
   onChoose: (mode: Exclude<QuickMode, "neutre">) => void;
   /** Rejoue l'entrée (la goutte qui se sépare) — change à chaque vraie réouverture. */
   entryKey: number;
-  /** Diamètre d'une pastille. Dans la barre rapide, elles tiennent DANS la barre. */
+  /** Diamètre d'une pastille. */
   size?: number;
   /** L'espace entre deux pastilles. */
   gap?: number;
@@ -60,8 +64,12 @@ interface QuickPillsProps {
  * Deux couches superposées, comme dans l'artifact : les FORMES passent par
  * le filtre gooey (qui fond les silhouettes proches pendant la transition),
  * les ICÔNES (vrais boutons, cliquables) restent nettes par-dessus. Filtrer
- * l'ensemble les aurait floutées. Au clavier, la pastille devient une capsule
- * libellée : contraste, forme et texte remplacent le ring externe.
+ * l'ensemble les aurait floutées.
+ *
+ * Au CLAVIER, la pastille focalisée devient une capsule libellée : contraste,
+ * forme et texte remplacent le ring externe. Elle s'allonge vers la droite,
+ * dans le vide, sans déplacer la barre ; le libellé naît à droite de l'icône,
+ * qui ne bouge pas. À la souris, un simple survol.
  */
 export function QuickPills({
   collapsed,
@@ -77,18 +85,35 @@ export function QuickPills({
     activeFocus === mode ? PILL + FOCUSED_EXTRA_WIDTH : PILL;
   const leftFor = (index: number) =>
     QUICK_PILL_ITEMS.slice(0, index).reduce((left, item) => left + widthFor(item.mode) + ECART, 0);
-  const expandedWidth = QUICK_PILL_ITEMS.reduce(
-    (width, item, index) => width + widthFor(item.mode) + (index ? ECART : 0),
-    0,
-  );
+  /** La largeur AU REPOS : celle que la rangée occupe dans la mise en page. */
+  const restWidth = QUICK_PILL_ITEMS.length * PILL + (QUICK_PILL_ITEMS.length - 1) * ECART;
+  /** La place qu'il faut aux couches, allongement au focus compris. */
+  const fullWidth = restWidth + FOCUSED_EXTRA_WIDTH;
+
+  // Le geste qui a changé l'état décide de l'animation : se replier ou
+  // ressortir, c'est la goutte (élastique, en cascade) ; un focus, c'est la
+  // réponse courte, d'un seul tenant. On le sait en comparant au rendu
+  // précédent.
+  const replieAvant = useRef(collapsed);
+  const parFocus = replieAvant.current === collapsed;
+  replieAvant.current = collapsed;
+  const transition = (i: number) =>
+    parFocus
+      ? FOCUS
+      : {
+          duration: 0.58,
+          ease: ELASTIQUE,
+          delay: collapsed ? (QUICK_PILL_ITEMS.length - 1 - i) * 0.05 : i * 0.05,
+        };
 
   return (
     <motion.div
       className="relative shrink-0"
-      // Une forme cliquable de la toile de la barre rapide (voir
-      // src-tauri/src/cadre) : hors des formes, les clics la traversent.
-      data-forme
-      animate={{ width: collapsed ? 0 : expandedWidth, opacity: collapsed ? 0 : 1 }}
+      // La rangée ne change de largeur QUE pour se replier ou ressortir. La
+      // pastille qui s'allonge au focus déborde à droite, dans le vide :
+      // élargir la rangée déplaçait tout le groupe, barre comprise, puisqu'il
+      // est centré — la barre glissait à chaque Tab.
+      animate={{ width: collapsed ? 0 : restWidth, opacity: collapsed ? 0 : 1 }}
       transition={{ duration: 0.58, ease: ELASTIQUE }}
       style={{ height: PILL, pointerEvents: collapsed ? "none" : "auto" }}
     >
@@ -107,9 +132,9 @@ export function QuickPills({
         </filter>
       </svg>
 
-      {/* Le masque ne couvre que les formes. Les boutons restent hors de ce
-          clip : leur ring clavier peut donc dépasser sans être sectionné. */}
-      <div aria-hidden className="absolute inset-0 overflow-hidden">
+      {/* Le masque ne couvre que les formes, en laissant la place de
+          l'allongement. Les boutons restent hors de ce clip. */}
+      <div aria-hidden className="absolute inset-y-0 left-0 overflow-hidden" style={{ width: fullWidth }}>
         <div className="absolute inset-0" style={{ filter: "url(#quick-gooey)" }}>
           {QUICK_PILL_ITEMS.map((item, i) => (
             <motion.div
@@ -122,18 +147,14 @@ export function QuickPills({
                 width: collapsed ? PILL : widthFor(item.mode),
                 scale: collapsed && i > 0 ? 1 - i * 0.14 : 1,
               }}
-              transition={{
-                duration: 0.58,
-                ease: ELASTIQUE,
-                delay: collapsed ? (QUICK_PILL_ITEMS.length - 1 - i) * 0.05 : i * 0.05,
-              }}
+              transition={transition(i)}
             />
           ))}
         </div>
       </div>
 
       {/* Icônes : nettes, cliquables, jamais filtrées. */}
-      <div className="absolute inset-0">
+      <div className="absolute inset-y-0 left-0" style={{ width: fullWidth }}>
         {QUICK_PILL_ITEMS.map((item, i) => {
           const focused = activeFocus === item.mode;
           return (
@@ -142,11 +163,23 @@ export function QuickPills({
               type="button"
               aria-label={item.label}
               tabIndex={collapsed ? -1 : 0}
+              // Chaque pastille est une forme cliquable de la toile de la
+              // barre rapide (voir src-tauri/src/cadre), à sa taille du
+              // moment. Repliée, elle est invisible : elle ne doit plus
+              // retenir la souris.
+              data-forme={collapsed ? undefined : ""}
+              data-focus={focused ? "" : undefined}
               onClick={() => onChoose(item.mode)}
-              onFocus={() => setFocusedMode(item.mode)}
+              // Le CLAVIER seulement : un clic donne aussi le focus, et la
+              // pastille s'allongeait sous la souris juste avant de changer
+              // de mode — un sursaut pour rien.
+              onFocus={(e) => {
+                if (e.currentTarget.matches(":focus-visible")) setFocusedMode(item.mode);
+              }}
               onBlur={() => setFocusedMode(null)}
               className={cn(
-                "absolute top-0 flex items-center justify-center gap-1.5 rounded-full outline-none",
+                "absolute top-0 flex items-center justify-start overflow-hidden rounded-full outline-none",
+                "bg-transparent transition-colors duration-200 hover:bg-foreground/[0.05] data-[focus]:bg-brand-soft",
                 "forced-colors:focus-visible:outline forced-colors:focus-visible:outline-2",
               )}
               style={{ height: PILL, color: "var(--brand)" }}
@@ -155,23 +188,30 @@ export function QuickPills({
                 left: collapsed ? 0 : leftFor(i),
                 width: collapsed ? PILL : widthFor(item.mode),
                 opacity: collapsed ? 0 : 1,
-                // « transparent » ne s'interpole pas (avertissement motion) : même valeur, en rgba.
-                backgroundColor: focused ? "var(--brand-soft)" : "rgba(0,0,0,0)",
               }}
-              transition={{
-                duration: 0.58,
-                ease: ELASTIQUE,
-                delay: collapsed ? (QUICK_PILL_ITEMS.length - 1 - i) * 0.05 : i * 0.05,
-              }}
+              transition={transition(i)}
             >
-              <span className="relative grid size-[21px] shrink-0 place-items-center">
+              {/* L'icône garde sa place, au centre du rond : elle ne glisse pas
+                  quand la pastille s'allonge. */}
+              <span className="grid shrink-0 place-items-center" style={{ width: PILL, height: PILL }}>
                 <AppIcon icon={item.icon} size={21} strokeWidth={1.9} />
               </span>
-              {focused && (
-                <span className="text-[10px] font-semibold tracking-[0.08em] text-foreground uppercase">
-                  {item.label}
-                </span>
-              )}
+              <AnimatePresence initial={false}>
+                {focused && (
+                  <motion.span
+                    key="libelle"
+                    // Il entre quand la place est presque faite, et sort
+                    // aussitôt : un libellé tranché par le bord qui se
+                    // referme se lirait comme un défaut.
+                    initial={{ opacity: 0, x: -4 }}
+                    animate={{ opacity: 1, x: 0, transition: { ...FOCUS, delay: 0.08 } }}
+                    exit={{ opacity: 0, transition: { duration: 0.1 } }}
+                    className="-ml-2.5 pr-4 text-[10px] font-semibold whitespace-nowrap tracking-[0.08em] text-foreground uppercase"
+                  >
+                    {item.label}
+                  </motion.span>
+                )}
+              </AnimatePresence>
             </motion.button>
           );
         })}
