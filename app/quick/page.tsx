@@ -197,6 +197,7 @@ export default function QuickPage() {
 
   const hide = useCallback(() => {
     wasHidden.current = true;
+    essaiRef.current = false;
     setOuverte(false);
     flushSync(resetQuickSurface);
     invoke("hide_quick_window").catch(() => {});
@@ -266,6 +267,9 @@ export default function QuickPage() {
   const reveler = useCallback(() => {
     if (!wasHidden.current) return;
     wasHidden.current = false;
+    // Une vraie ouverture : l'essai automatique, s'il a eu lieu, est fini.
+    // Resté levé, ce drapeau empêchait la barre de se fermer au clic à côté.
+    essaiRef.current = false;
     setOuverte(true);
     resetQuickSurface();
     setMountKey((k) => k + 1);
