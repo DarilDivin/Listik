@@ -239,7 +239,7 @@ export function SearchOverlay({ open, onOpenChange: setOpen }: SearchOverlayProp
                               <span
                                 key={i}
                                 className={cn(
-                                  m.trouve && "font-medium text-brand",
+                                  m.trouve && "font-medium text-brand-text",
                                 )}
                               >
                                 {m.texte}

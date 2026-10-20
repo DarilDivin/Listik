@@ -64,8 +64,12 @@ export interface TeintesVoix {
 export function teintesVoix(accent: Rgb, sombre: boolean): TeintesVoix {
   const [L0, C0, h] = versOklch(accent);
   const deg = Math.PI / 180;
-  const L = sombre ? Math.max(0.68, L0) : Math.min(0.62, L0);
-  const C = Math.max(0.11, C0 * 1.2);
+  // L'accent « Encre » n'a pas de teinte : sa lumière reste neutre — de
+  // l'argent en sombre, un lavis d'encre sur le papier. Lui imposer la
+  // chroma des autres la teindrait au hasard de sa teinte résiduelle.
+  const neutre = C0 < 0.04;
+  const L = sombre ? Math.max(0.68, L0) : Math.min(0.62, Math.max(0.45, L0));
+  const C = neutre ? 0.012 : Math.max(0.11, C0 * 1.2);
   // Sur le papier, l'éventail se resserre de moitié : à clarté moyenne, les
   // voisines d'un ambre tirent vers le jaune, et un jaune foncé, c'est du
   // kaki — essayé, la lueur prenait des reflets olive.

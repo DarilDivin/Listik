@@ -346,7 +346,7 @@ function GestureStep({
     return (
       <div>
         <motion.span
-          className="grid size-14 place-items-center rounded-2xl bg-brand-soft text-brand"
+          className="grid size-14 place-items-center rounded-2xl bg-brand-soft text-brand-text"
           initial={{ scale: 0.6, opacity: 0 }}
           animate={{ scale: 1, opacity: 1 }}
           transition={spring.bouncy}
@@ -364,7 +364,7 @@ function GestureStep({
           transition={{ ...spring.smooth, delay: 0.12 }}
         >
           <span className="min-w-0 text-[15px] font-medium text-foreground">{captured.text}</span>
-          <span className="inline-flex items-center gap-1.5 rounded-full bg-brand-soft px-3 py-1 text-xs font-medium text-brand">
+          <span className="inline-flex items-center gap-1.5 rounded-full bg-brand-soft px-3 py-1 text-xs font-medium text-brand-text">
             <AppIcon icon={icon} size={14} />
             {captured.destination.label}
           </span>

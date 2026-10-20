@@ -100,7 +100,7 @@ function SettingsNavigation({ active, onChange }: { active: SectionId; onChange:
   return <nav aria-label="Rubriques des réglages" className="lg:sticky lg:top-8"><div className="flex flex-wrap gap-0.5 lg:flex-col">
     {SECTIONS.map((section) => { const selected = active === section.id; return <button key={section.id} type="button" onClick={() => onChange(section.id)} aria-current={selected ? "page" : undefined} aria-controls={`${section.id}-panel`} className={cn("relative isolate flex h-8 items-center gap-2.5 rounded-lg px-2.5 text-left text-sm outline-none transition-colors duration-150 focus-visible:ring-2 focus-visible:ring-ring/50", selected ? "font-medium text-foreground" : "text-muted-foreground hover:text-foreground")}>
       {selected && <motion.span layoutId="settings-nav-pill" aria-hidden className="absolute inset-0 -z-10 rounded-lg bg-foreground/[0.055]" transition={spring.snappy} />}
-      <AppIcon icon={section.icon} size={16} className={selected ? "text-brand" : undefined} />{section.label}
+      <AppIcon icon={section.icon} size={16} className={selected ? "text-brand-text" : undefined} />{section.label}
     </button>; })}
   </div></nav>;
 }

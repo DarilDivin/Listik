@@ -36,10 +36,14 @@
   --color-primary-foreground: var(--primary-foreground);
   --color-primary: var(--primary);
   /* Accent « brand » : choisi par l'utilisateur (Réglages → Personnalisation),
-     appliqué via [data-accent] sur <html>. `brand-soft` = lavis du même accent. */
+     appliqué via [data-accent] sur <html>. Quatre rôles, voir les blocs
+     [data-accent] plus bas : `brand` (l'aplat), `brand-foreground` (ce qui
+     s'écrit dessus), `brand-text` (l'accent comme couleur de texte),
+     `brand-soft` (le lavis). */
   --color-brand: var(--brand);
   --color-brand-soft: var(--brand-soft);
   --color-brand-foreground: var(--brand-foreground);
+  --color-brand-text: var(--brand-text);
   --color-popover-foreground: var(--popover-foreground);
   --color-popover: var(--popover);
   --color-card-foreground: var(--card-foreground);
@@ -74,7 +78,7 @@
  * réservé aux éléments qui doivent visuellement flotter au-dessus du
  * contenu (dock de navigation, fenêtre de capture rapide).
  * L'accent (--brand) n'est PAS fixé ici : il vient des blocs [data-accent]
- * plus bas (teal par défaut). Les priorités (rouge/émeraude) restent gérées
+ * plus bas (pétrole par défaut). Les priorités (rouge/émeraude) restent gérées
  * côté composants.
  */
 :root {
@@ -153,73 +157,118 @@
 }
 
 /* ──────────────────────────────────────────────────────────────────────────
- * Accents premium — sélectionnés dans Réglages → Personnalisation
- * (`data-accent` sur <html>, persisté en localStorage par UIPrefsProvider).
- * Chaque preset définit --brand / --brand-foreground en clair, et une version
- * plus lumineuse en sombre. --brand-soft dérive automatiquement (color-mix).
- * Défaut (sans attribut) : sarcelle.
+ * Les accents : six ENCRES — celle de la plume du logo, dont la goutte prend
+ * la couleur choisie. Réglages → Personnalisation (`data-accent` sur <html>,
+ * persisté en localStorage par UIPrefsProvider). Défaut : pétrole.
+ *
+ * Chaque accent ne choisit que sa TEINTE. Tout le reste suit des règles,
+ * vérifiées par `lib/accents.test.ts` à chaque modification :
+ *
+ *   --brand             l'APLAT — coche, bouton, barre, point, anneau.
+ *                       Le plus fidèle possible à la teinte, et au moins 3:1
+ *                       contre le fond (le minimum d'un élément d'interface).
+ *   --brand-foreground  ce qui s'écrit SUR l'aplat : 4,5:1 au moins (texte).
+ *                       Blanc sur les encres profondes, encre sur l'ambre —
+ *                       une couleur claire par nature, qu'on ne fonce pas
+ *                       sans la changer en marron.
+ *   --brand-text        l'accent comme COULEUR DE TEXTE (« MARDI », icônes
+ *                       actives…) : 4,5:1 au moins sur le fond, la carte et
+ *                       le lavis. En clair, un cran plus profond que l'aplat.
+ *   --brand-soft        le lavis, dérivé de l'aplat (plus haut).
+ *
+ * Même poids pour toutes : en clair, les encres ont la même profondeur ; en
+ * sombre, le même éclat (APCA 58 sur le fond). Changer d'accent change la
+ * couleur de l'app, pas son volume. Toutes tiennent dans sRGB : un écran de
+ * Mac (P3) et un écran de PC affichent la même couleur.
+ *
+ * Les teintes évitent celles qui ont un SENS : le rouge (en retard, urgent,
+ * supprimer) et l'émeraude (priorité basse, étiquettes). D'où ni corail, ni
+ * vert. « Encre » est l'exception neutre : l'encre et le papier du logo.
+ *
+ * Les blocs visent aussi un élément INTÉRIEUR qui porte `data-accent` (les
+ * pastilles du sélecteur montrent chacune leur encre, d'où `.dark [data-…]`).
  * ────────────────────────────────────────────────────────────────────────── */
 :root,
-[data-accent="teal"] {
-  --brand: oklch(0.56 0.1 195);
-  --brand-foreground: oklch(0.985 0.008 195);
+[data-accent="petrole"] {
+  --brand: oklch(0.549 0.088 212);
+  --brand-foreground: oklch(0.985 0.006 212);
+  --brand-text: oklch(0.504 0.081 212);
 }
 .dark,
-.dark[data-accent="teal"] {
-  --brand: oklch(0.72 0.11 190);
-  --brand-foreground: oklch(0.17 0.02 200);
+.dark[data-accent="petrole"],
+.dark [data-accent="petrole"] {
+  --brand: oklch(0.74 0.119 212);
+  --brand-foreground: oklch(0.22 0.03 212);
+  --brand-text: oklch(0.74 0.119 212);
 }
 
-[data-accent="indigo"] {
-  --brand: oklch(0.55 0.16 272);
-  --brand-foreground: oklch(0.985 0.006 272);
+[data-accent="bleu"] {
+  --brand: oklch(0.563 0.15 262);
+  --brand-foreground: oklch(0.985 0.006 262);
+  --brand-text: oklch(0.521 0.15 262);
 }
-.dark[data-accent="indigo"] {
-  --brand: oklch(0.7 0.14 275);
-  --brand-foreground: oklch(0.18 0.03 272);
-}
-
-[data-accent="violet"] {
-  --brand: oklch(0.56 0.19 300);
-  --brand-foreground: oklch(0.985 0.006 300);
-}
-.dark[data-accent="violet"] {
-  --brand: oklch(0.72 0.16 302);
-  --brand-foreground: oklch(0.19 0.04 300);
+.dark[data-accent="bleu"],
+.dark [data-accent="bleu"] {
+  --brand: oklch(0.757 0.127 262);
+  --brand-foreground: oklch(0.22 0.03 262);
+  --brand-text: oklch(0.757 0.127 262);
 }
 
-[data-accent="coral"] {
-  --brand: oklch(0.63 0.15 32);
-  --brand-foreground: oklch(0.99 0.006 32);
+[data-accent="violette"] {
+  --brand: oklch(0.574 0.15 303);
+  --brand-foreground: oklch(0.985 0.006 303);
+  --brand-text: oklch(0.531 0.15 303);
 }
-.dark[data-accent="coral"] {
-  --brand: oklch(0.73 0.14 34);
-  --brand-foreground: oklch(0.2 0.04 32);
-}
-
-[data-accent="amber"] {
-  --brand: oklch(0.66 0.125 75);
-  --brand-foreground: oklch(0.99 0.008 85);
-}
-.dark[data-accent="amber"] {
-  --brand: oklch(0.78 0.13 80);
-  --brand-foreground: oklch(0.22 0.05 80);
+.dark[data-accent="violette"],
+.dark [data-accent="violette"] {
+  --brand: oklch(0.769 0.148 303);
+  --brand-foreground: oklch(0.22 0.03 303);
+  --brand-text: oklch(0.769 0.148 303);
 }
 
-[data-accent="rose"] {
-  --brand: oklch(0.6 0.18 356);
-  --brand-foreground: oklch(0.99 0.006 356);
+[data-accent="framboise"] {
+  --brand: oklch(0.574 0.15 355);
+  --brand-foreground: oklch(0.985 0.006 355);
+  --brand-text: oklch(0.53 0.15 355);
 }
-.dark[data-accent="rose"] {
-  --brand: oklch(0.72 0.15 358);
-  --brand-foreground: oklch(0.2 0.05 356);
+.dark[data-accent="framboise"],
+.dark [data-accent="framboise"] {
+  --brand: oklch(0.769 0.143 355);
+  --brand-foreground: oklch(0.22 0.03 355);
+  --brand-text: oklch(0.769 0.143 355);
+}
+
+[data-accent="ambre"] {
+  --brand: oklch(0.644 0.13 75);
+  --brand-foreground: oklch(0.22 0.03 75);
+  --brand-text: oklch(0.522 0.121 75);
+}
+.dark[data-accent="ambre"],
+.dark [data-accent="ambre"] {
+  --brand: oklch(0.755 0.13 75);
+  --brand-foreground: oklch(0.22 0.03 75);
+  --brand-text: oklch(0.755 0.13 75);
+}
+
+/* L'encre elle-même : l'app en noir et papier, comme le logo. Elle échappe
+   à la règle du même éclat — c'est la plus forte, par définition. */
+[data-accent="encre"] {
+  --brand: oklch(0.27 0.014 60);
+  --brand-foreground: oklch(0.985 0.004 85);
+  --brand-text: oklch(0.27 0.014 60);
+}
+.dark[data-accent="encre"],
+.dark [data-accent="encre"] {
+  --brand: oklch(0.93 0.008 80);
+  --brand-foreground: oklch(0.22 0.01 60);
+  --brand-text: oklch(0.93 0.008 80);
 }
 
 /* ──────────────────────────────────────────────────────────────────────────
  * « Noir pur » (OLED, phase N) — préférence ORTHOGONALE au thème next-themes
  * (posée via `data-oled` sur <html> par `UIPrefsProvider`, comme `data-accent`),
  * pas une 3e valeur de thème : n'a d'effet que combinée à `.dark`, donc hérite
- * gratuitement de `--brand`/`--brand-foreground` déjà posés par
+ * gratuitement des `--brand*` déjà posés par
  * `.dark[data-accent="X"]` sur le même élément — aucun bloc à dupliquer par
  * accent. Ne redéfinit QUE les surfaces (fond quasi noir + profondeurs assez
  * sombres pour rester « OLED ») ; texte/accent/graphiques restent ceux de
@@ -389,7 +438,7 @@ html[data-plateforme="mac"] body.quick-window [data-sonner-toast] {
 .journal-li { margin: 0.15em 0; }
 .journal-li-nested { list-style: none; }
 .journal-a {
-  color: var(--color-brand);
+  color: var(--color-brand-text);
   text-decoration: underline;
   text-underline-offset: 2px;
 }
@@ -619,7 +668,7 @@ html[data-plateforme="mac"] body.quick-window [data-sonner-toast] {
   margin: 0.2em 0;
 }
 .note-markdown a {
-  color: var(--color-brand);
+  color: var(--color-brand-text);
   text-decoration: underline;
   text-underline-offset: 2px;
 }
@@ -1059,7 +1108,7 @@ html[data-plateforme="mac"] body.quick-window [data-sonner-toast] {
      d'autre forme qui dise « écouter » sans mot. */
   border-radius: 999px;
   background-color: var(--color-brand-soft);
-  color: var(--color-brand);
+  color: var(--color-brand-text);
   outline: none;
   cursor: pointer;
   transition:

@@ -239,7 +239,7 @@ function EmptyAssistant({ onSelectSuggestion }: { onSelectSuggestion: (text: str
               initial={{ scale: 0.7, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               transition={{ ...spring.bouncy, delay: 0.08 }}
-              className="grid size-14 place-items-center rounded-2xl bg-brand-soft text-brand"
+              className="grid size-14 place-items-center rounded-2xl bg-brand-soft text-brand-text"
             >
               <AppIcon icon={AiBrain01Icon} size={26} />
             </motion.div>

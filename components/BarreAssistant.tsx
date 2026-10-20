@@ -111,7 +111,7 @@ export default function BarreAssistant({
       {leading ?? (
         <span
           className={cn(
-            "grid shrink-0 place-items-center text-brand",
+            "grid shrink-0 place-items-center text-brand-text",
             inline
               ? "size-6 self-center rounded-md"
               : "size-9 self-start rounded-xl bg-brand-soft",

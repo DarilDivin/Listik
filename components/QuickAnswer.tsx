@@ -86,7 +86,7 @@ export function QuickAnswer({
         <div className="min-w-0">
           <p className="text-sm font-medium leading-none text-foreground">Assistant</p>
           <p className="mt-1 flex items-center gap-1 text-[11px] leading-none text-muted-foreground">
-            <AppIcon icon={AiBrain01Icon} size={13} className="text-brand" />
+            <AppIcon icon={AiBrain01Icon} size={13} className="text-brand-text" />
             Conversation rapide
           </p>
         </div>

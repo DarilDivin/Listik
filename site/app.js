@@ -27,15 +27,14 @@ themeToggle.addEventListener("click", () => {
 prefersDark.addEventListener("change", syncTheme);
 syncTheme();
 
-/* Couleur de la goutte : la page s'ouvre en encre ; le visiteur peut essayer les six accents de l'app.
+/* Couleur de la goutte : la page s'ouvre en encre — le premier des six accents de l'app — ; le visiteur peut essayer les cinq autres.
    Les valeurs suivent le thème, comme dans l'app (versions claires et sombres). */
 const accents = {
-  teal: ["#008687", "#39bab4"],
-  indigo: ["#5366ce", "#8696f5"],
-  violet: ["#8851d1", "#b88af7"],
-  coral: ["#d4614c", "#f2846b"],
-  amber: ["#be8628", "#e3ad4b"],
-  rose: ["#ce4684", "#ed79a4"],
+  petrole: ["#1d7f8c", "#2fbed2"],
+  bleu: ["#4271c5", "#83aff9"],
+  violette: ["#8b5fba", "#c79bfa"],
+  framboise: ["#b94c7c", "#fa8bb7"],
+  ambre: ["#bb8036", "#dfa359"],
 };
 let currentAccent = "";
 

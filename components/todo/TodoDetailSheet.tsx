@@ -131,7 +131,7 @@ function Tok({
         "token-affordance text-left outline-none focus-visible:ring-2 focus-visible:ring-ring",
         muted
           ? "bg-foreground/[0.06] text-muted-foreground hover:bg-foreground/[0.1]"
-          : "token-affordance-accent text-brand",
+          : "token-affordance-accent text-brand-text",
         className,
       )}
       {...props}
@@ -378,7 +378,7 @@ function RecurrenceEditor({
             onClick={() => setFrequency(f.value)}
             className={cn(
               "flex w-full items-center justify-between rounded-md px-2.5 py-1.5 text-sm outline-none transition-colors hover:bg-accent focus-visible:bg-accent",
-              f.value === todo.recurrence && "font-medium text-brand",
+              f.value === todo.recurrence && "font-medium text-brand-text",
             )}
           >
             {f.label}
@@ -532,7 +532,7 @@ function RecurrenceEditor({
                 onClick={() => onUpdate({ recur_mode: o.v })}
                 className={cn(
                   "flex w-full items-center justify-between rounded-md px-2.5 py-1.5 text-sm outline-none transition-colors hover:bg-accent focus-visible:bg-accent",
-                  todo.recur_mode === o.v && "font-medium text-brand",
+                  todo.recur_mode === o.v && "font-medium text-brand-text",
                 )}
               >
                 {o.l}

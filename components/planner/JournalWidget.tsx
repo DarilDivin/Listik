@@ -75,7 +75,7 @@ export const JournalWidget = forwardRef<JournalWidgetHandle>(
           <h3
             className={cn(
               "flex items-center gap-1.5 text-[13px] font-semibold text-muted-foreground",
-              "transition-colors duration-300 group-focus-within/journal:text-brand",
+              "transition-colors duration-300 group-focus-within/journal:text-brand-text",
             )}
           >
             <NotebookPen size={13} className="text-muted-foreground/70" />

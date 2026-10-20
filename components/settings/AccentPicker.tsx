@@ -9,21 +9,16 @@ import { cn } from "@/lib/utils";
 
 const VALUES: readonly AccentId[] = ACCENTS.map((a) => a.id);
 
-/** Pastilles d'aperçu (indépendantes du thème pour rester lisibles). */
-const SWATCH: Record<AccentId, string> = {
-  teal: "oklch(0.62 0.11 195)",
-  indigo: "oklch(0.58 0.16 272)",
-  violet: "oklch(0.6 0.19 300)",
-  coral: "oklch(0.66 0.15 32)",
-  amber: "oklch(0.7 0.13 78)",
-  rose: "oklch(0.64 0.18 356)",
-};
-
 /**
  * Sélecteur d'accent : rangée de pastilles rondes. `size="sm"` pour une ligne
  * de réglage, où le contrôle se range à droite du libellé. La sélection pose un
  * anneau qui GLISSE d'une pastille à l'autre (layoutId) et une coche qui
  * « pop ». Persisté via UIPrefs (localStorage), appliqué instantanément.
+ *
+ * Chaque pastille porte son propre `data-accent` : elle lit donc les MÊMES
+ * couleurs que l'app (globals.css), dans le thème courant — y compris la
+ * couleur de la coche, blanche ou encre selon l'accent. Pas de copie à part
+ * qui finirait par diverger.
  */
 export function AccentPicker({ size = "default" }: { size?: "sm" | "default" }) {
   const small = size === "sm";
@@ -50,15 +45,17 @@ export function AccentPicker({ size = "default" }: { size?: "sm" | "default" }) 
             aria-label={`Accent ${label}`}
             {...getItemProps(id, i)}
             title={label}
-            className={cn("relative grid place-items-center rounded-full", small ? "size-5" : "size-8")}
-            style={{ background: SWATCH[id] }}
+            data-accent={id}
+            className={cn("relative grid place-items-center rounded-full bg-brand", small ? "size-5" : "size-8")}
           >
             {active && (
               <motion.span
                 layoutId="accent-ring"
                 aria-hidden
-                className={cn("absolute rounded-full", small ? "-inset-[4px] border-[1.5px]" : "-inset-[5px] border-2")}
-                style={{ borderColor: SWATCH[id] }}
+                className={cn(
+                  "absolute rounded-full border-brand",
+                  small ? "-inset-[4px] border-[1.5px]" : "-inset-[5px] border-2",
+                )}
                 transition={spring.snappy}
               />
             )}
@@ -71,7 +68,7 @@ export function AccentPicker({ size = "default" }: { size?: "sm" | "default" }) 
                   transition={spring.bouncy}
                   className="grid place-items-center"
                 >
-                  <Check size={small ? 11 : 14} strokeWidth={3.2} className="text-white" />
+                  <Check size={small ? 11 : 14} strokeWidth={3.2} className="text-brand-foreground" />
                 </motion.span>
               )}
             </AnimatePresence>

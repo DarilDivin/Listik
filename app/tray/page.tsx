@@ -272,7 +272,7 @@ export default function TrayPanel() {
             onClick={() => void capture(item.mode)}
             className="group flex flex-col items-center gap-1.5 rounded-xl px-2 pt-2.5 pb-2 text-xs text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
           >
-            <span className="flex size-8 items-center justify-center rounded-full bg-brand-soft text-brand">
+            <span className="flex size-8 items-center justify-center rounded-full bg-brand-soft text-brand-text">
               <AppIcon icon={item.icon} size={17} />
             </span>
             {item.label}

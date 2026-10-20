@@ -118,7 +118,7 @@ export function FloatingDock({ onOpenSearch, docked = false }: FloatingDockProps
                     "relative z-10 grid place-items-center transition-colors",
                     itemSize,
                     active
-                      ? "text-brand"
+                      ? "text-brand-text"
                       : "text-muted-foreground hover:text-foreground",
                   )}
                 >

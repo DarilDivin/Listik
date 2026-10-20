@@ -93,7 +93,7 @@ export function HeroDay({ date, done, total, overdue }: HeroDayProps) {
         transition={spring.smooth}
         className="min-w-0 flex-1"
       >
-        <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-brand">
+        <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-brand-text">
           {weekday}
         </p>
         <h1 className="mt-2 text-[2.6rem] font-bold leading-[1.02] tracking-[-0.025em] text-foreground">

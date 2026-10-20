@@ -325,7 +325,7 @@ function JournalPageContent() {
       {/* Le SEUL filet de la page : il sépare le chrome du texte. */}
       <div className="flex items-start justify-between gap-4 border-b border-border/60 pb-5 pt-8">
         <div className="min-w-0">
-          <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-brand">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-brand-text">
             {jourSemaine}
           </p>
           <div className="mt-1.5 flex items-baseline gap-2.5">
@@ -415,7 +415,7 @@ function JournalPageContent() {
                 data-actif={enregistre || undefined}
                 disabled={sortie}
                 onClick={() => (enregistre ? abandonner() : void commencer())}
-                className="data-[actif]:bg-brand-soft data-[actif]:text-brand"
+                className="data-[actif]:bg-brand-soft data-[actif]:text-brand-text"
               >
                 <AppIcon icon={Mic01Icon} />
               </Button>
@@ -441,7 +441,7 @@ function JournalPageContent() {
                 aria-label="Chercher dans le journal"
                 data-actif={cherche || undefined}
                 onClick={() => setCherche((c) => !c)}
-                className="data-[actif]:bg-brand-soft data-[actif]:text-brand"
+                className="data-[actif]:bg-brand-soft data-[actif]:text-brand-text"
               >
                 <AppIcon icon={Search01Icon} />
               </Button>
@@ -546,7 +546,7 @@ function JournalPageContent() {
                       onClick={() => setDay(entry.target_day)}
                       className="flex w-full items-center gap-2.5 rounded-lg px-1 py-1.5 text-left transition-colors hover:bg-foreground/[0.03]"
                     >
-                      <span className="shrink-0 text-[11px] font-medium text-brand">
+                      <span className="shrink-0 text-[11px] font-medium text-brand-text">
                         {format(parseLocalISODate(entry.target_day), "d MMM", {
                           locale: fr,
                         })}

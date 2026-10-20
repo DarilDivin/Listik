@@ -182,7 +182,7 @@ export function QuickPills({
                 "bg-transparent transition-colors duration-200 hover:bg-foreground/[0.05] data-[focus]:bg-brand-soft",
                 "forced-colors:focus-visible:outline forced-colors:focus-visible:outline-2",
               )}
-              style={{ height: PILL, color: "var(--brand)" }}
+              style={{ height: PILL, color: "var(--brand-text)" }}
               initial={{ left: 0, opacity: 0, width: PILL }}
               animate={{
                 left: collapsed ? 0 : leftFor(i),

@@ -47,16 +47,42 @@ un blanc-seing pour d'autres usages.
 
 ### 2.2 Accent utilisateur
 
-- `--brand` : la couleur d'accent active. `--brand-foreground` : texte posé
-  dessus. `--brand-soft` : lavis dérivé automatiquement
-  (`color-mix(in oklch, var(--brand) 11%, transparent)`, 16 % en sombre).
-- 6 presets calibrés light/dark : `teal` (défaut), `indigo`, `violet`,
-  `coral`, `amber`, `rose` — blocs `[data-accent="…"]` dans `globals.css`.
+Six **encres** — celle de la plume du logo, dont la goutte prend l'accent :
+`encre` (neutre : l'encre et le papier du logo), `petrole` (défaut), `bleu`,
+`violette`, `framboise`, `ambre` — blocs `[data-accent="…"]` dans
+`globals.css`. Chaque accent ne choisit que sa **teinte** ; le reste suit des
+règles, vérifiées par `lib/accents.test.ts` :
+
+| Token | Rôle | Règle |
+|---|---|---|
+| `--brand` | L'**aplat** : coche, bouton, barre, point, anneau, goutte du logo | ≥ 3:1 contre le fond et la carte |
+| `--brand-foreground` | Ce qui s'écrit sur l'aplat | ≥ 4,5:1 sur l'aplat — blanc sur les encres profondes, encre sur l'ambre |
+| `--brand-text` | L'accent comme **couleur de texte** (`text-brand-text`) | ≥ 4,5:1 sur le fond, la carte **et** le lavis |
+| `--brand-soft` | Lavis, dérivé de l'aplat (11 % ; 16 % en sombre) | — |
+
+- **Texte en accent → toujours `text-brand-text`**, jamais `text-brand` : en
+  clair, l'aplat de l'ambre (doré) ne se lit pas en texte ; son texte est un
+  bronze.
+- **Même poids pour toutes** : en clair, même profondeur de texte ; en sombre,
+  même éclat (APCA ≈ 58 sur le fond). Changer d'accent ne change pas le
+  « volume » de l'app. `encre` est l'exception (la plus forte, par définition).
+- **Toutes dans sRGB** : un écran de Mac (P3) et un écran de PC affichent la
+  même couleur.
+- **Pas de teinte qui a un sens** : rien à moins de 28° du rouge (retard,
+  urgent, supprimer) ni de l'émeraude (priorité basse, étiquettes). D'où ni
+  corail ni vert.
+- Les règles viennent de la norme WCAG 2 (4,5:1 texte, 3:1 élément
+  d'interface) ; APCA ne sert qu'à égaliser l'éclat en sombre.
 - Sélection : `UIPrefsProvider` (`components/ui-prefs.tsx`) pose
   `data-accent` sur `<html>` et persiste dans `localStorage` (`listik.accent`).
-- **Ajouter un accent** : ① bloc light + bloc `.dark[data-accent=…]` dans
-  `globals.css` ; ② entrée dans `ACCENTS` (`ui-prefs.tsx`) ; ③ pastille dans
-  `SWATCH` (`components/settings/AccentPicker.tsx`).
+  Les anciens noms (`teal`, `indigo`, `violet`, `rose`, `coral`, `amber`) sont
+  traduits vers l'encre la plus proche (`ANCIENS_ACCENTS`).
+- Les pastilles du sélecteur (`AccentPicker`) portent chacune leur
+  `data-accent` : elles lisent les mêmes tokens que l'app, dans le thème
+  courant (d'où les sélecteurs `.dark [data-accent=…]`).
+- **Ajouter un accent** : ① bloc clair + bloc sombre dans `globals.css`
+  (valeurs calculées pour passer les règles) ; ② entrée dans `ACCENTS`
+  (`ui-prefs.tsx`) ; ③ `pnpm test` — le test dit ce qui ne passe pas.
 - Usages canoniques de l'accent : progression (anneau, jauges), états actifs
   (pastilles de nav, chips, coche des tâches), sélections (note active, bulle
   de question, `::selection`), célébrations (lueur 100 %), halos de page
@@ -104,10 +130,10 @@ avec l'ombre du système (`shadow: true`), qui lui donne sous Windows 11 les
 coins arrondis, le liseré et l'ombre des panneaux natifs (son, réseau). Pas de
 CSS d'ombre ni de marge transparente. Dedans, la règle commune : contenu à
 plat, groupes séparés par des hairlines `border-border/60`, pastilles
-`bg-brand-soft text-brand` pour les trois modes de capture.
+`bg-brand-soft text-brand-text` pour les trois modes de capture.
 
 Pour les petites pastilles d'icône (hero de l'Assistant, modes de capture du
-panneau du tray), utiliser `bg-brand-soft text-brand` — un aplat teinté, pas
+panneau du tray), utiliser `bg-brand-soft text-brand-text` — un aplat teinté, pas
 une carte. Jamais pour un état vide (voir §4.7).
 
 ### 2.6 Typographie
@@ -216,7 +242,7 @@ utilisateur.
   `--brand-soft` glissante, lift au survol. Le contenu réserve `pl-20`.
 - **Sidebar** (`components/AppSidebar.tsx`) : shadcn Sidebar `collapsible="icon"`
   (Ctrl+B), ancrée `absolute` sous la TitleBar, fond canvas sans bordure,
-  items `rounded-xl`, actif = pastille `--brand-soft` + texte/icône `--brand`.
+  items `rounded-xl`, actif = pastille `--brand-soft` + texte/icône `--brand-text`.
 - Bascule dans `app/(app)/layout.tsx` via `useUIPrefs().nav`.
 
 ### 4.3 Surfaces
@@ -245,7 +271,7 @@ utilisateur.
 - Réglages : `SettingsGroup` (hairlines `divide-y`, pas de fond) +
   `SettingsRow` (pastille d'icône **mate** : `bg-{couleur}-500/8
   text-{couleur}-600 dark:text-{couleur}-400` — standard validé ; la ligne
-  Accent utilise `bg-brand-soft text-brand`).
+  Accent utilise `bg-brand-soft text-brand-text`).
 - Segmented controls : conteneur `bg-foreground/[0.05] p-[3px] rounded-xl`,
   pouce `bg-card` + ombre de contact (layoutId). Variantes « verre » pour
   Réglages : `ThemeSetting`, `NavSetting`.
@@ -254,7 +280,7 @@ utilisateur.
 
 Tooltip (tout bouton-icône), ContextMenu (clic droit sur une tâche),
 AlertDialog (suppressions définitives), Empty (états vides, media en
-`bg-brand-soft text-brand`), Skeleton (chargements, en dégradé d'opacité),
+`bg-brand-soft text-brand-text`), Skeleton (chargements, en dégradé d'opacité),
 Switch, Badge, ScrollArea, Kbd, Input/Textarea, Spinner (boutons en attente,
 `data-icon="inline-start"`). Le `TooltipProvider` global vit dans
 `app/layout.tsx`.
@@ -345,13 +371,13 @@ Exception : l'accueil de l'Assistant n'est pas un état vide de liste mais un
 
 `useUIPrefs()` → `{ accent, setAccent, nav, setNav }`. Stockage
 `localStorage` (`listik.accent`, `listik.nav`) — frontend uniquement, aucun
-aller-retour Rust. Appliqué dès le montage ; défauts : `teal` + `dock`.
+aller-retour Rust. Appliqué dès le montage ; défauts : `petrole` + `dock`.
 
 ## 6. Checklist nouvelle surface
 
 1. Canvas `bg-background`, contenu posé directement dessus — grouper avec
    `border-t`/`divide-y border-border/60`, jamais avec une carte élevée.
-2. Couleur vive ? → `--brand` / `--brand-soft` uniquement.
+2. Couleur vive ? → `--brand` (aplat) / `--brand-text` (texte) / `--brand-soft` uniquement.
 3. Chiffre qui change ? → `AnimatedNumber` + `font-mono tabular-nums`.
 4. Groupe d'options ? → `Segmented` : compact, à la taille de son contenu,
    pouce à plat (`bg-card` + ombre de contact), ressort `snappy`. Jamais de

@@ -10,17 +10,36 @@ import {
 } from "react";
 import { emit, listen } from "@tauri-apps/api/event";
 
-/** Accents premium disponibles (classes `[data-accent]` dans globals.css). */
+/**
+ * Les accents : six encres (blocs `[data-accent]` dans globals.css, où sont
+ * aussi leurs règles). L'encre neutre d'abord, puis les couleurs dans l'ordre
+ * du cercle chromatique : la rangée de pastilles se lit comme un dégradé.
+ */
 export const ACCENTS = [
-  { id: "teal", label: "Sarcelle" },
-  { id: "indigo", label: "Indigo" },
-  { id: "violet", label: "Violet" },
-  { id: "coral", label: "Corail" },
-  { id: "amber", label: "Ambre" },
-  { id: "rose", label: "Rose" },
+  { id: "encre", label: "Encre" },
+  { id: "petrole", label: "Pétrole" },
+  { id: "bleu", label: "Bleu" },
+  { id: "violette", label: "Violette" },
+  { id: "framboise", label: "Framboise" },
+  { id: "ambre", label: "Ambre" },
 ] as const;
 
 export type AccentId = (typeof ACCENTS)[number]["id"];
+
+/**
+ * Les accents d'avant (oct. 2026), encore enregistrés chez ceux qui en
+ * avaient choisi un : chacun retrouve l'encre la plus proche plutôt que de
+ * retomber en silence sur le défaut. Le corail n'a plus d'équivalent — trop
+ * proche du rouge « en retard » —, la framboise est sa voisine.
+ */
+const ANCIENS_ACCENTS: Record<string, AccentId> = {
+  teal: "petrole",
+  indigo: "bleu",
+  violet: "violette",
+  rose: "framboise",
+  coral: "framboise",
+  amber: "ambre",
+};
 export type NavStyle = "dock" | "sidebar";
 
 /** Les groupes du Planificateur (sections de la vue du jour, etc.). */
@@ -54,7 +73,7 @@ const ACCENT_KEY = "listik.accent";
 const NAV_KEY = "listik.nav";
 const OLED_KEY = "listik.oled";
 const PULSE_KEY = "listik.pulse";
-const DEFAULT_ACCENT: AccentId = "teal";
+const DEFAULT_ACCENT: AccentId = "petrole";
 const DEFAULT_NAV: NavStyle = "dock";
 // L'anneau reste le défaut : il est la signature de la page et du dock, et
 // changer ce qu'un utilisateur voit déjà n'est pas au programme d'un réglage
@@ -79,9 +98,8 @@ function publishQuickPrefs(preferences: SharedQuickPrefs) {
 }
 
 function storedQuickPrefs(): SharedQuickPrefs {
-  const accent = localStorage.getItem(ACCENT_KEY);
   return {
-    accent: isAccent(accent) ? accent : DEFAULT_ACCENT,
+    accent: lireAccent(localStorage.getItem(ACCENT_KEY)) ?? DEFAULT_ACCENT,
     oled: localStorage.getItem(OLED_KEY) === "1",
   };
 }
@@ -102,8 +120,14 @@ interface UIPrefs {
 
 const UIPrefsContext = createContext<UIPrefs | null>(null);
 
-function isAccent(value: string | null): value is AccentId {
+function isAccent(value: string | null | undefined): value is AccentId {
   return ACCENTS.some((a) => a.id === value);
+}
+
+/** L'accent enregistré, traduit s'il date d'avant les encres. */
+function lireAccent(value: string | null | undefined): AccentId | null {
+  if (isAccent(value)) return value;
+  return (value && ANCIENS_ACCENTS[value]) || null;
 }
 
 function isPulse(value: string | null): value is PulseStyleId {
@@ -124,8 +148,13 @@ export function UIPrefsProvider({ children }: { children: ReactNode }) {
 
   // Lecture au montage (client uniquement — évite tout mismatch SSG).
   useEffect(() => {
-    const storedAccent = localStorage.getItem(ACCENT_KEY);
-    if (isAccent(storedAccent)) setAccentState(storedAccent);
+    const rawAccent = localStorage.getItem(ACCENT_KEY);
+    const storedAccent = lireAccent(rawAccent);
+    if (storedAccent) {
+      setAccentState(storedAccent);
+      // Un ancien nom est réécrit une fois pour toutes.
+      if (storedAccent !== rawAccent) localStorage.setItem(ACCENT_KEY, storedAccent);
+    }
     const storedNav = localStorage.getItem(NAV_KEY);
     if (storedNav === "dock" || storedNav === "sidebar") setNavState(storedNav);
     setOledState(localStorage.getItem(OLED_KEY) === "1");
@@ -147,7 +176,8 @@ export function UIPrefsProvider({ children }: { children: ReactNode }) {
 
     const setup = async () => {
       stopSync = await listen<SharedQuickPrefs>(QUICK_PREFS_SYNC, ({ payload }) => {
-        if (payload.accent && isAccent(payload.accent)) setAccentState(payload.accent);
+        const accent = lireAccent(payload.accent);
+        if (accent) setAccentState(accent);
         if (typeof payload.oled === "boolean") setOledState(payload.oled);
       });
       if (secondaryWindow) {

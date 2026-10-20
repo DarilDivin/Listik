@@ -45,7 +45,7 @@ function Pace({ done, total, dayProgress }: DayPulseProps) {
     <span
       className={cn(
         "text-xs font-medium",
-        p.brand ? "text-brand" : "text-muted-foreground",
+        p.brand ? "text-brand-text" : "text-muted-foreground",
       )}
     >
       {p.text}

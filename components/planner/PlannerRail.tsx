@@ -114,7 +114,7 @@ function RailRow({
         indent
           ? "pl-7 pr-2.5 max-md:pl-0 group-data-[collapsible=icon]:pl-0"
           : "px-2.5",
-        active ? "text-brand" : "text-muted-foreground hover:text-foreground",
+        active ? "text-brand-text" : "text-muted-foreground hover:text-foreground",
         // Cible de dépôt survolée : anneau accent — lisible même sur la
         // rangée active (qui a déjà le fond brand-soft).
         isOver && "bg-brand-soft ring-1 ring-brand",
@@ -354,7 +354,7 @@ export function PlannerRail({
                       <span
                         className={cn(
                           "text-[11px] tabular-nums",
-                          active ? "text-brand/70" : "text-muted-foreground/50",
+                          active ? "text-brand-text/70" : "text-muted-foreground/50",
                         )}
                       >
                         <AnimatedNumber value={count} />

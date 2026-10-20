@@ -133,7 +133,7 @@ export function TagControl({
               >
                 <Hash size={13} className="shrink-0 text-muted-foreground" />
                 <span className="flex-1 truncate text-left">{tag.name}</span>
-                {checked && <Check className="size-3.5 text-brand" />}
+                {checked && <Check className="size-3.5 text-brand-text" />}
               </button>
             );
           })}

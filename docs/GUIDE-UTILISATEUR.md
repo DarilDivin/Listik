@@ -220,7 +220,7 @@ Assistant) :
 
 ## 5. Réglages
 
-- **Couleur d'accent** — 6 teintes (Sarcelle, Indigo, Violet, Corail, Ambre, Rose), teint la
+- **Couleur d'accent** — 6 encres (Encre, Pétrole, Bleu, Violette, Framboise, Ambre), teint la
   progression, les sélections et les états actifs partout dans l'app.
 - **Navigation** — Dock flottant d'icônes, ou barre latérale repliable (`Ctrl+B` pour la
   replier/déplier).

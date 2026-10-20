@@ -568,7 +568,7 @@ export default function QuickPage() {
         title="Revenir — les pastilles ressortent"
         aria-label="Revenir au choix"
         className={cn(
-          "grid shrink-0 place-items-center text-brand transition focus-visible:outline-none forced-colors:focus-visible:outline forced-colors:focus-visible:outline-2",
+          "grid shrink-0 place-items-center text-brand-text transition focus-visible:outline-none forced-colors:focus-visible:outline forced-colors:focus-visible:outline-2",
           compact
             ? "size-6 self-center rounded-md hover:bg-brand-soft focus-visible:bg-brand-soft"
             : "size-9 self-start rounded-xl bg-brand-soft hover:brightness-95 focus-visible:bg-brand-soft dark:hover:brightness-110",

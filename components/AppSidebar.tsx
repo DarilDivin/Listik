@@ -147,7 +147,7 @@ export function AppSidebar({ onOpenSearch }: AppSidebarProps) {
                         asChild
                         isActive={active}
                         tooltip={tooltipFor(href, label)}
-                        className="relative z-10 rounded-xl bg-transparent hover:bg-accent/70 active:bg-transparent data-[active=true]:bg-transparent data-[active=true]:text-brand"
+                        className="relative z-10 rounded-xl bg-transparent hover:bg-accent/70 active:bg-transparent data-[active=true]:bg-transparent data-[active=true]:text-brand-text"
                       >
                         <Link href={href}>
                           {isPlanner ? (
@@ -160,7 +160,7 @@ export function AppSidebar({ onOpenSearch }: AppSidebarProps) {
                             <AppIcon
                               icon={icon}
                               className={
-                                active ? "text-brand" : "text-muted-foreground"
+                                active ? "text-brand-text" : "text-muted-foreground"
                               }
                             />
                           )}
@@ -203,7 +203,7 @@ export function AppSidebar({ onOpenSearch }: AppSidebarProps) {
                         className={cn(
                           "relative z-10 grid size-9 place-items-center rounded-xl transition-colors",
                           active
-                            ? "text-brand"
+                            ? "text-brand-text"
                             : "text-muted-foreground hover:text-foreground",
                         )}
                       >

@@ -439,7 +439,7 @@ export default function BarreTache({
                   }}
                   className={cn(
                     "rounded-md px-2 py-1.5 text-left text-sm transition-colors hover:bg-accent",
-                    task.recurrence === option.value && "text-brand",
+                    task.recurrence === option.value && "text-brand-text",
                   )}
                 >
                   {option.label}
@@ -474,7 +474,7 @@ export default function BarreTache({
                   }}
                   className={cn(
                     "flex items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm transition-colors hover:bg-accent",
-                    task.priority === option.value && "text-brand",
+                    task.priority === option.value && "text-brand-text",
                   )}
                 >
                   {option.color ? (
@@ -510,7 +510,7 @@ export default function BarreTache({
                   }}
                   className={cn(
                     "truncate rounded-md px-2 py-1.5 text-left text-sm transition-colors hover:bg-accent",
-                    task.list?.toLowerCase() === name.toLowerCase() && "text-brand",
+                    task.list?.toLowerCase() === name.toLowerCase() && "text-brand-text",
                   )}
                 >
                   {name}
