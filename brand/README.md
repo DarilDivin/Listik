@@ -16,7 +16,7 @@ Les icônes de l’application (`src-tauri/icons/`), le favicon de l’app (`app
 
 ## Couleurs
 
-Listik n’a pas de couleur de marque. Dans l’app, la couleur appartient à l’utilisateur (six accents dans les Réglages). Le logo reste donc monochrome.
+Listik n’a pas de couleur de marque. Dans l’app, la couleur appartient à l’utilisateur (six encres dans les Réglages, dont « Encre », l’encre même du logo). Le logo reste donc monochrome.
 
 | Rôle | Valeur |
 |---|---|
@@ -25,7 +25,7 @@ Listik n’a pas de couleur de marque. Dans l’app, la couleur appartient à l�
 | Ivoire (logo sur fond sombre) | `#f4f1e8` |
 | Plaque de l’icône | dégradé vertical `#252c2a` → `#151a19` |
 
-Seule exception, dans l’app : la goutte peut prendre l’accent choisi (`--brand`). Le teal n’est qu’un des six accents, jamais une couleur de marque.
+Seule exception, dans l’app : la goutte peut prendre l’accent choisi (`--brand`). Le pétrole, accent par défaut, n’est qu’une des six encres, jamais une couleur de marque.
 
 ## Typographie
 
