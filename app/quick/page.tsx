@@ -38,6 +38,10 @@ const RESPONSE_MAX_HEIGHT = 560;
 /** Ce que la poignée ne laisse pas réduire davantage. */
 const RESPONSE_MIN = { width: 380, height: 240 };
 const JOURNAL_DEFAULT = { width: 680, height: 600 };
+/** La bulle de réflexion : une capsule à la hauteur de l'orbe, et à la
+ *  largeur de son contenu (mesurée par la bulle elle-même). Cette largeur-ci
+ *  ne sert qu'au tout premier rendu, avant la mesure. */
+const BULLE = { width: 200, height: 64 };
 const JOURNAL_MIN = { width: 480, height: 360 };
 /** Les tailles choisies à la poignée, gardées d'une ouverture à l'autre. */
 const CLE_TAILLE_REPONSE = "listik.rapide.taille-reponse";
@@ -142,6 +146,8 @@ export default function QuickPage() {
   const [turns, setTurns] = useState<Turn[]>([]);
   const [pending, setPending] = useState(false);
   const [answerHeight, setAnswerHeight] = useState(RESPONSE_MIN_HEIGHT);
+  /** La largeur de la bulle de réflexion : celle de l'orbe et de sa phrase. */
+  const [largeurBulle, setLargeurBulle] = useState(BULLE.width);
   // Les tailles choisies à la poignée. Celle de la réponse est `null` tant
   // qu'on n'y a pas touché : le panneau suit alors la conversation.
   const [tailleReponse, setTailleReponse] = useState<Taille | null>(null);
@@ -593,7 +599,7 @@ export default function QuickPage() {
     height: Math.min(tailleJournal.height, espace.height),
   };
   const shellWidth = isBubble
-    ? 64
+    ? largeurBulle
     : isReponse
       ? reponse.width
       : isJournal
@@ -602,7 +608,7 @@ export default function QuickPage() {
           ? ACTIVE_BAR_WIDTH
           : BAR_WIDTH;
   const shellHeight = isBubble
-    ? 64
+    ? BULLE.height
     : isReponse
       ? reponse.height
       : isJournal
@@ -696,7 +702,7 @@ export default function QuickPage() {
                       variant="inline"
                     />
                   )}
-                  {isBubble && <QuickBubble />}
+                  {isBubble && <QuickBubble onLargeur={setLargeurBulle} />}
                   {isReponse && (
                     <QuickAnswer
                       turns={turns}

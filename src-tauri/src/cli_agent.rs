@@ -148,6 +148,19 @@ impl ToolExecutor for EchoExecutor {
 /// Exécuteur MCP branché sur la base réelle. Les arguments JSON-Schema des
 /// outils sont intentionnellement lâches (champs optionnels) : le LLM donne ce
 /// qu'il sait, le reste garde ses défauts.
+/// L'événement qui dit ce que fait l'IA (voir `DbExecutor::annoncer_activite`).
+pub const ACTIVITE_EVENT: &str = "assistant:activite";
+
+/// Ce que fait l'IA quand elle appelle cet outil : elle LIT (« cherche ») ou
+/// elle MODIFIE tes données (« agit »).
+pub fn activite(outil: &str) -> &'static str {
+    if outil.starts_with("list_") || outil.starts_with("search_") || outil.starts_with("get_") {
+        "cherche"
+    } else {
+        "agit"
+    }
+}
+
 pub struct DbExecutor {
     pool: sqlx::SqlitePool,
     /// Présent en production pour diffuser `todos:changed`/`journal:changed`.
@@ -163,6 +176,20 @@ impl DbExecutor {
         if let Some(app) = &self.app {
             use tauri::Emitter;
             let _ = app.emit(event, ());
+        }
+    }
+
+    /// Dit aux pages ce que fait l'IA, au moment où elle le fait : c'est ce
+    /// qui anime l'orbe de réflexion. Sans ce signal, l'animation ne
+    /// pourrait que deviner — et un « je cherche » affiché au hasard serait
+    /// un décor qui ment.
+    fn annoncer_activite(&self, outil: &str) {
+        if let Some(app) = &self.app {
+            use tauri::Emitter;
+            let _ = app.emit(
+                ACTIVITE_EVENT,
+                serde_json::json!({ "etat": activite(outil), "outil": outil }),
+            );
         }
     }
 
@@ -296,6 +323,7 @@ impl ToolExecutor for DbExecutor {
         use crate::models::{CreateJournalEntry, UpdateTodo};
 
         Box::pin(async move {
+            self.annoncer_activite(tool);
             match tool {
                 "list_todos" => {
                     let todos = match arguments.get("date").and_then(Value::as_str) {
@@ -1342,6 +1370,16 @@ impl AgentProvider for OpenCodeProvider {
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn l_activite_dit_si_l_ia_lit_ou_agit() {
+        assert_eq!(activite("list_todos"), "cherche");
+        assert_eq!(activite("list_journal"), "cherche");
+        assert_eq!(activite("create_todo"), "agit");
+        assert_eq!(activite("update_todo"), "agit");
+        assert_eq!(activite("toggle_todo"), "agit");
+        assert_eq!(activite("create_journal_entry"), "agit");
+    }
     #[test]
     fn parse_marked_path_ignore_le_bruit_du_shell() {
         let sortie = "Bienvenue !\n__LISTIK_PATH__/opt/homebrew/bin:/usr/bin__LISTIK_PATH__\nfin";
