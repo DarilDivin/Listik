@@ -22,7 +22,6 @@ import { SettingsGroup } from "@/components/settings/SettingsGroup";
 import { SettingsRow } from "@/components/settings/SettingsRow";
 import { NavSetting } from "@/components/settings/NavSetting";
 import { PulseSetting } from "@/components/settings/PulseSetting";
-import { ReflectionSetting } from "@/components/settings/ReflectionSetting";
 import { ShortcutsSetting } from "@/components/settings/ShortcutsSetting";
 import { useSettings } from "@/hooks/useSettings";
 import { exitTween, spring } from "@/lib/motion";
@@ -129,9 +128,6 @@ function RhythmSection({ settings, update }: { settings: { daily_digest_enabled:
 </SettingsSection>; }
 
 function QuickSection() { return <SettingsSection id="quick" title="Fenêtre rapide" description="La capture sans quitter ce que vous faites, et ses raccourcis.">
-  <SettingsGroup title="Bulle de réflexion">
-    <SettingsRow stacked label="Pendant que l’Assistant réfléchit" description="Seule la bulle choisie s’anime, pour que la page reste calme."><ReflectionSetting /></SettingsRow>
-  </SettingsGroup>
   <div><h3 className="mb-4 text-sm font-medium text-foreground">Raccourcis clavier</h3><ShortcutsSetting /></div>
 </SettingsSection>; }
 
