@@ -18,16 +18,20 @@ function Switch({
       data-size={size}
       className={cn(
         // Fin et à plat : un rail de 28 × 16 qui prend l'accent une fois
-        // activé, un pouce blanc sans relief. Pas de pilule large ni de reflet.
+        // activé, un pouce sans relief. Pas de pilule large ni de reflet.
         "peer group/switch inline-flex shrink-0 items-center rounded-full p-0.5 transition-colors duration-200 outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-50 data-[size=default]:h-4 data-[size=default]:w-7 data-[size=sm]:h-3.5 data-[size=sm]:w-6 data-[state=checked]:bg-brand data-[state=unchecked]:bg-foreground/25",
         className
       )}
       {...props}
     >
+      {/* Activé, le pouce est posé SUR l'accent : il prend la couleur de ce
+          qui s'écrit dessus (`--brand-foreground`). Un blanc fixe disparaît
+          sur les accents clairs — l'encre en sombre, l'ambre — et tombe sous
+          3:1 sur toutes les encres lumineuses du thème sombre. */}
       <SwitchPrimitive.Thumb
         data-slot="switch-thumb"
         className={cn(
-          "pointer-events-none block rounded-full bg-white transition-transform duration-200 ease-[cubic-bezier(0.16,1,0.3,1)] group-data-[size=default]/switch:size-3 group-data-[size=sm]/switch:size-2.5 data-[state=checked]:translate-x-full data-[state=unchecked]:translate-x-0"
+          "pointer-events-none block rounded-full bg-white transition-[translate,background-color] duration-200 ease-[cubic-bezier(0.16,1,0.3,1)] group-data-[size=default]/switch:size-3 group-data-[size=sm]/switch:size-2.5 data-[state=checked]:translate-x-full data-[state=checked]:bg-brand-foreground data-[state=unchecked]:translate-x-0"
         )}
       />
     </SwitchPrimitive.Root>
