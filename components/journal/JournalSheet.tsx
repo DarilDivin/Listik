@@ -23,6 +23,7 @@ import {
   $isRangeSelection,
   $isRootNode,
   $parseSerializedNode,
+  CLEAR_HISTORY_COMMAND,
   COMMAND_PRIORITY_LOW,
   DRAGOVER_COMMAND,
   DROP_COMMAND,
@@ -187,6 +188,10 @@ function ChargementPlugin({
       },
       { tag: TAG_PROGRAMME },
     );
+    // Un chargement n'est pas un geste à annuler : sans ça, Ctrl+Z ramènerait
+    // la feuille d'avant le rechargement, et la sauvegarde suivante l'écrirait
+    // par-dessus le texte plus récent.
+    editor.dispatchCommand(CLEAR_HISTORY_COMMAND, undefined);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [signature, editor]);
 
