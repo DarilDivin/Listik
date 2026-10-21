@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { format } from "date-fns";
 import { useJournal } from "@/hooks/useJournal";
 import { todayLocalISODate } from "@/lib/date";
-import { entreesASupprimer, estVide, type Segment } from "./feuille";
+import { contenuAvant, entreesASupprimer, estVide, type Segment } from "./feuille";
 import type { Reprise } from "@/components/journal/JournalSheet";
 
 /**
@@ -118,6 +118,14 @@ export function useFeuille(day: string, withUpcoming = true) {
   const entriesRef = useRef(entries);
   entriesRef.current = entries;
 
+  // Tout ce que ce hook a vu passer, jours confondus. La feuille du widget et
+  // de la barre rapide change de jour à minuit sans se recharger si l'on y
+  // écrit : ses moments d'hier doivent rester enregistrables.
+  const memoireRef = useRef(new Map<string, { jour: string; content: string }>());
+  for (const e of entries) {
+    memoireRef.current.set(e.id, { jour: e.target_day, content: e.content });
+  }
+
   /**
    * La feuille a changé : on écrit ce qui a bougé, reprise par reprise.
    *
@@ -152,14 +160,18 @@ export function useFeuille(day: string, withUpcoming = true) {
           continue;
         }
         vues.add(s.entryId);
-        const avant = connues.find((e) => e.id === s.entryId);
+        const avant = contenuAvant(s.entryId, connues, memoireRef.current, day);
         if (avant === undefined) continue;
         if (estVide(s.markdown)) {
           await track(deleteEntry(s.entryId));
           continue;
         }
-        if (s.markdown !== avant.content) {
-          await track(updateEntry(s.entryId, { content: s.markdown }));
+        if (s.markdown !== avant) {
+          const ecrit = await track(updateEntry(s.entryId, { content: s.markdown }));
+          if (ecrit) {
+            const jour = memoireRef.current.get(s.entryId)?.jour ?? day;
+            memoireRef.current.set(s.entryId, { jour, content: s.markdown });
+          }
         }
       }
 
