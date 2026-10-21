@@ -780,13 +780,32 @@ fn verifier_piece_sauvee(id: &str, fichier: Option<&str>) -> Result<(), String> 
     Ok(())
 }
 
-/// Extension d'un nom de fichier, réduite à des lettres et chiffres (sinon `bin`).
+/// Extension d'un nom de fichier, réduite à des lettres et chiffres (sinon `None`).
 fn extension_sure(nom: &str) -> Option<String> {
     std::path::Path::new(nom)
         .extension()
         .and_then(|ext| ext.to_str())
         .filter(|ext| !ext.is_empty() && ext.len() <= 10 && ext.chars().all(|c| c.is_ascii_alphanumeric()))
         .map(str::to_ascii_lowercase)
+}
+
+/// La pièce d'une sauvegarde est-elle de celles que Listik range ?
+///
+/// Un ajout normal passe par `db::nature` ; une restauration doit passer par
+/// la même porte. Sinon une sauvegarde fabriquée glisse un programme dans le
+/// dossier des pièces, sous un nom de PDF, et « Ouvrir » le lance. Le fichier,
+/// le nom affiché et la nature notée doivent tous trois dire la même chose —
+/// c'est toujours le cas d'une sauvegarde écrite par Listik.
+///
+/// Rend l'extension (en minuscules) sous laquelle copier le fichier.
+fn controler_piece_restauree(kind: &str, nom_origine: &str, fichier: &str) -> Result<String, String> {
+    let nature_fichier = db::nature(fichier);
+    let nature_nom = db::nature(nom_origine);
+    match (nature_fichier, nature_nom) {
+        (Some(a), Some(b)) if a == kind && b == kind => {}
+        _ => return Err(format!("pièce refusée dans la sauvegarde : « {nom_origine} » ({fichier})")),
+    }
+    extension_sure(fichier).ok_or_else(|| format!("pièce refusée dans la sauvegarde : {fichier}"))
 }
 
 /// Tout ce que l'application détient.
@@ -977,8 +996,14 @@ pub async fn restore_backup(
     }
     for piece in &backup.pieces {
         if let Some(file) = &piece.fichier {
+            controler_piece_restauree(&piece.fiche.kind, &piece.fiche.nom_origine, file)?;
             let source = source_pieces.join(file);
-            if !source.is_file() {
+            // `symlink_metadata` ne suit PAS les liens : un lien placé dans le
+            // dossier de la sauvegarde ferait sinon copier n'importe quel fichier de la machine.
+            let est_fichier = std::fs::symlink_metadata(&source)
+                .map(|m| m.file_type().is_file())
+                .unwrap_or(false);
+            if !est_fichier {
                 return Err(format!("pièce jointe introuvable dans la sauvegarde : {file}"));
             }
         }
@@ -993,9 +1018,7 @@ pub async fn restore_backup(
     let mut imported_pieces = Vec::new();
     for piece in &backup.pieces {
         let Some(file) = &piece.fichier else { continue };
-        let ext = extension_sure(file)
-            .or_else(|| extension_sure(&piece.fiche.nom_origine))
-            .unwrap_or_else(|| "bin".to_string());
+        let ext = controler_piece_restauree(&piece.fiche.kind, &piece.fiche.nom_origine, file)?;
         let target_file = format!("{}.{}", piece.fiche.id, ext);
         std::fs::copy(source_pieces.join(file), staging.join(&target_file))
             .map_err(|e| format!("copie de pièce impossible : {e}"))?;
@@ -1434,6 +1457,26 @@ mod tests {
         assert_eq!(extension_sure("photo.PNG").as_deref(), Some("png"));
         assert_eq!(extension_sure("x.b/at"), None);
         assert_eq!(extension_sure("sans-extension"), None);
+    }
+
+    #[test]
+    fn une_sauvegarde_ne_restaure_que_les_pieces_que_listik_range() {
+        use super::controler_piece_restauree as ok;
+        // Ce qu'écrit Listik : accepté, extension rendue en minuscules.
+        assert_eq!(ok("image", "Photo.JPG", "Photo.JPG").as_deref(), Ok("jpg"));
+        assert_eq!(ok("pdf", "bail.pdf", "bail (2).pdf").as_deref(), Ok("pdf"));
+        assert_eq!(ok("voix", "note-vocale-2026-10-21-09h30.webm", "note-vocale-2026-10-21-09h30.webm").as_deref(), Ok("webm"));
+        assert_eq!(ok("document", "budget.xlsx", "budget.xlsx").as_deref(), Ok("xlsx"));
+        // Un programme, même déguisé : refusé.
+        assert!(ok("document", "facture.pdf", "facture.exe").is_err());
+        assert!(ok("document", "x.bat", "x.bat").is_err());
+        assert!(ok("document", "page.html", "page.html").is_err());
+        // Un nom affiché qui ment sur le type : refusé.
+        assert!(ok("document", "facture.pdf", "facture.docx").is_err());
+        // Une nature notée qui ne correspond pas au fichier : refusée.
+        assert!(ok("image", "bail.pdf", "bail.pdf").is_err());
+        // Sans extension : refusé.
+        assert!(ok("document", "sans-extension", "sans-extension").is_err());
     }
 
     use super::*;
