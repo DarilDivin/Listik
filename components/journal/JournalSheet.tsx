@@ -281,6 +281,10 @@ function SauvegardePlugin({
 }) {
   const [editor] = useLexicalComposerContext();
   const minuteur = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // La dernière version, sans se réabonner : l'hôte en passe une nouvelle à
+  // chaque rendu, et se réabonner effaçait le minuteur en attente.
+  const onSegmentsRef = useRef(onSegments);
+  onSegmentsRef.current = onSegments;
 
   useEffect(() => {
     const pousser = () => {
@@ -290,10 +294,13 @@ function SauvegardePlugin({
       // plus bas pourquoi ça a fait doubler des reprises.
       minuteur.current = null;
       const racine = editor.getEditorState().toJSON().root.children;
-      onSegments(decouperEnSegments(racine));
+      onSegmentsRef.current(decouperEnSegments(racine));
     };
 
-    const stop = editor.registerUpdateListener(({ dirtyElements, dirtyLeaves }) => {
+    const stop = editor.registerUpdateListener(({ tags, dirtyElements, dirtyLeaves }) => {
+      // Poser la feuille n'est pas écrire : l'enregistrer pousserait vers la
+      // base un contenu qui peut déjà être périmé.
+      if (tags.has(TAG_PROGRAMME)) return;
       if (dirtyElements.size === 0 && dirtyLeaves.size === 0) return;
       if (minuteur.current) clearTimeout(minuteur.current);
       minuteur.current = setTimeout(pousser, 700);
@@ -321,9 +328,14 @@ function SauvegardePlugin({
     return () => {
       stop();
       dom?.removeEventListener("blur", surBlur);
-      if (minuteur.current) clearTimeout(minuteur.current);
+      // Fermer la barre rapide ou quitter la page ne doit pas perdre les
+      // dernières frappes : ce qui attendait part maintenant.
+      if (minuteur.current) {
+        clearTimeout(minuteur.current);
+        pousser();
+      }
     };
-  }, [editor, onSegments]);
+  }, [editor]);
 
   return null;
 }
@@ -681,7 +693,8 @@ export const JournalSheet = forwardRef<JournalSheetHandle, JournalSheetProps>(
   const insererRef = useRef<((pieceId: string) => void) | null>(null);
   const lirePorteesRef = useRef<(() => Portees) | null>(null);
   const afficheesRef = useRef<Set<string>>(new Set());
-  // Même stabilité que `onSegments` : le plugin de sauvegarde se réabonne quand elle change.
+  // Le plugin de sauvegarde garde la dernière version de cette fonction dans un
+  // ref : elle peut changer à chaque rendu sans qu'il se réabonne.
   const pousserSegments = useCallback(
     (segments: Segment[]) => onSegments(segments, afficheesRef.current),
     [onSegments],
