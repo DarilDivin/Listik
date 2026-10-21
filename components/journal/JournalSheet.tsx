@@ -357,18 +357,24 @@ function IdentitePlugin({
 
   useEffect(() => {
     if (!aStamper) return;
-    // Écrite ici : la feuille la montre, elle peut donc aussi l'effacer.
-    afficheesRef.current.add(aStamper.id);
     let cle: string | null = null;
-    editor.update(() => {
-      const vierge = $getRoot()
-        .getChildren()
-        .find((n): n is RepereNode => $isRepereNode(n) && n.getEntryId() === "");
-      if (!vierge) return;
-      vierge.setIdentite(aStamper.id, aStamper.heure);
-      cle = vierge.getKey();
-    });
+    editor.update(
+      () => {
+        const vierge = $getRoot()
+          .getChildren()
+          .find((n): n is RepereNode => $isRepereNode(n) && n.getEntryId() === "");
+        if (!vierge) return;
+        vierge.setIdentite(aStamper.id, aStamper.heure);
+        cle = vierge.getKey();
+      },
+      { tag: TAG_PROGRAMME },
+    );
     if (cle === null) return;
+    // Écrite ici : la feuille la montre, elle peut donc aussi l'effacer. Mais
+    // seulement une fois le repère vraiment estampillé : une entrée annoncée
+    // « affichée » alors qu'aucun repère ne l'a reçue serait effacée par la
+    // sauvegarde suivante (voir `entreesASupprimer`), texte compris.
+    afficheesRef.current.add(aStamper.id);
     // LE moment : une marque d'accent affleure dans la gouttière et s'efface.
     // C'est le seul mouvement de la page, et il ne dit qu'une chose : gardé.
     const dom = editor.getElementByKey(cle);
