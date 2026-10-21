@@ -2,9 +2,10 @@
 
 import { useCallback } from "react";
 import { useTodoMutations } from "@/features/todos/useTodoMutations";
+import { payloadDeCapture } from "@/features/todos/capture";
 import { useProjects } from "@/hooks/useProjects";
 import { useTags } from "@/hooks/useTags";
-import { todayLocalISODate, toLocalISODate } from "@/lib/date";
+import { todayLocalISODate } from "@/lib/date";
 import type { SmartTaskData } from "@/features/todos/useTaskMode";
 
 /**
@@ -21,8 +22,6 @@ export function useCaptureTask() {
 
   return useCallback(
     async (data: SmartTaskData) => {
-      const due = data.dueDate ? toLocalISODate(data.dueDate) : null;
-
       let projectId: string | null = null;
       if (data.list) {
         const name = data.list.trim();
@@ -30,14 +29,12 @@ export function useCaptureTask() {
         projectId = existing ? existing.id : (await createProject({ name })).id;
       }
 
-      const todo = await createTodo({
-        text: data.text,
-        note: data.note ?? null,
-        priority: data.priority ?? "normal",
-        scheduled_for: due ?? todayLocalISODate(),
-        due_date: null,
-        project_id: projectId,
-      });
+      const todo = await createTodo(
+        payloadDeCapture(data, projectId, {
+          // La barre rapide planifie aujourd'hui une tâche sans date.
+          whenUndated: { scheduled_for: todayLocalISODate() },
+        }),
+      );
 
       if (data.tags?.length) {
         const ids = await resolveTagNames(data.tags);

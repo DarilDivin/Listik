@@ -4,6 +4,7 @@ import { toast } from "sonner";
 import { todosApi } from "@/features/todos/api";
 import { useTodoMutations } from "@/features/todos/useTodoMutations";
 import { aiParseTask } from "@/features/todos/aiParse";
+import { payloadDeCapture } from "@/features/todos/capture";
 import { useTodosSync } from "@/features/todos/useTodosSync";
 import { sortTodos } from "@/features/todos/sort";
 import { useProjects } from "@/hooks/useProjects";
@@ -11,7 +12,7 @@ import { useTags } from "@/hooks/useTags";
 import type { CreateTodoInput, Priority, TodoStatus } from "@/features/todos/types";
 import type { SmartTaskData } from "@/features/todos/useTaskMode";
 import { SWR_KEYS } from "@/lib/swr-config";
-import { todayLocalISODate, toLocalISODate } from "@/lib/date";
+import { todayLocalISODate } from "@/lib/date";
 
 export const usePlannerTodos = () => {
   useTodosSync();
@@ -63,8 +64,6 @@ export const usePlannerTodos = () => {
       container?: Partial<CreateTodoInput>;
     },
   ) => {
-    const dueDate = taskData.dueDate ? toLocalISODate(taskData.dueDate) : null;
-
     let projectId: string | null = null;
     if (taskData.list) {
       const name = taskData.list.trim();
@@ -74,32 +73,7 @@ export const usePlannerTodos = () => {
       projectId = existing ? existing.id : (await createProject({ name })).id;
     }
 
-    const payload: CreateTodoInput = {
-      text: taskData.text,
-      note: taskData.note ?? null,
-      priority: taskData.priority ?? "normal",
-      // Une date saisie est un « quand je m'y mets » (planification) — jamais
-      // une échéance. Celle-ci ne se pose que dans le panneau de détail.
-      scheduled_for: dueDate,
-      due_date: null,
-      // Répétition écrite en clair (« chaque lundi ») : le modèle ne retient
-      // pas le jour, c'est `scheduled_for` qui le fixe.
-      ...(taskData.recurrence && taskData.recurrence !== "none"
-        ? {
-            recurrence: taskData.recurrence,
-            // Jours nommés : « chaque lundi et jeudi ». Sans eux, la règle
-            // hebdomadaire reste ancrée sur `scheduled_for`.
-            ...(taskData.recurWeekdays
-              ? { recur_weekdays: taskData.recurWeekdays }
-              : {}),
-          }
-        : {}),
-      ...(dueDate ? {} : options?.whenUndated),
-      ...options?.container,
-      // Un `#projet` explicitement tapé prime sur le conteneur ouvert (et exclut
-      // le rattachement direct à un domaine : les deux ne coexistent pas).
-      ...(projectId ? { project_id: projectId, area_id: null } : {}),
-    };
+    const payload = payloadDeCapture(taskData, projectId, options);
     const result = await createTodo(payload);
 
     // Les tags se posent APRÈS la création : `set_todo_tags` reste le seul
