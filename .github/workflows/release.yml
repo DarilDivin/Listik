@@ -63,6 +63,20 @@ jobs:
             echo
             echo 'NOTES_EOF'
           } >> "$GITHUB_OUTPUT"
+      # Une version part chez tous les utilisateurs par la mise à jour
+      # automatique : elle ne se construit pas sur un commit que les tests
+      # refusent. Mêmes contrôles que `verify.yml`, sur la machine même qui
+      # construit (le code macOS ne se vérifie que sur un Mac).
+      - name: Tests
+        run: pnpm check
+      # Les tests Rust compilent `tauri::generate_context!`, qui lit le site
+      # construit (`out/`) : il faut donc le construire avant, comme
+      # `verify.yml`. tauri-action le reconstruira ensuite ; c'est voulu.
+      - name: Build the frontend for the Rust tests
+        run: pnpm build
+      - name: Rust tests
+        run: cargo test
+        working-directory: src-tauri
       - uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
