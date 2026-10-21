@@ -212,6 +212,47 @@ export function entreesASupprimer(
   return connues.filter((e) => affichees.has(e.id) && !vues.has(e.id)).map((e) => e.id);
 }
 
+/**
+ * La feuille peut-elle se recharger maintenant ?
+ *
+ * On ne refuse que si quelqu'un ÉCRIT vraiment dedans : curseur dans
+ * l'éditeur, fenêtre au premier plan, et au moins une frappe depuis le dernier
+ * chargement. Le curseur reste dans l'éditeur quand la fenêtre passe en
+ * arrière-plan — refuser alors laissait la feuille périmée, et sa prochaine
+ * sauvegarde effaçait ce qu'une autre fenêtre avait écrit.
+ */
+export function peutRecharger(etat: {
+  dejaPosee: boolean;
+  curseurDedans: boolean;
+  fenetreActive: boolean;
+  tapeDepuisPose: boolean;
+}): boolean {
+  if (!etat.dejaPosee) return true;
+  if (!etat.curseurDedans || !etat.fenetreActive) return true;
+  return !etat.tapeDepuisPose;
+}
+
+/**
+ * Le contenu en base d'une entrée de la feuille : celui du jour courant, ou,
+ * pour un moment d'un AUTRE jour (la feuille a passé minuit sans se
+ * recharger), le dernier connu.
+ *
+ * Une entrée du jour courant absente de `connues` a été supprimée ailleurs :
+ * on la laisse (`undefined`), sinon chaque sauvegarde tenterait de mettre à
+ * jour une ligne disparue et afficherait une erreur.
+ */
+export function contenuAvant(
+  id: string,
+  connues: readonly { id: string; content: string }[],
+  memoire: ReadonlyMap<string, { jour: string; content: string }>,
+  jour: string,
+): string | undefined {
+  const duJour = connues.find((e) => e.id === id);
+  if (duJour) return duJour.content;
+  const vue = memoire.get(id);
+  return vue && vue.jour !== jour ? vue.content : undefined;
+}
+
 export function estVide(markdown: string): boolean {
   return markdown.replace(/\d+\.|[-*+>#`\s]/g, "") === "";
 }

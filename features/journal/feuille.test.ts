@@ -6,6 +6,8 @@ import {
   markdownDepuisNoeuds,
   noeudsDepuisMarkdown,
   entreesASupprimer,
+  peutRecharger,
+  contenuAvant,
 } from "./feuille";
 
 /** Un repère sérialisé, tel qu'il vit dans le document. */
@@ -192,5 +194,93 @@ describe("entreesASupprimer", () => {
 
   it("une feuille encore vide n'efface rien", () => {
     expect(entreesASupprimer(connues, new Set(), new Set())).toEqual([]);
+  });
+});
+
+describe("peutRecharger", () => {
+  it("une feuille jamais posée se charge, même avec le curseur dedans et une frappe", () => {
+    expect(
+      peutRecharger({
+        dejaPosee: false,
+        curseurDedans: true,
+        fenetreActive: true,
+        tapeDepuisPose: true,
+      }),
+    ).toBe(true);
+  });
+
+  it("le curseur est ailleurs : on recharge", () => {
+    expect(
+      peutRecharger({
+        dejaPosee: true,
+        curseurDedans: false,
+        fenetreActive: true,
+        tapeDepuisPose: true,
+      }),
+    ).toBe(true);
+  });
+
+  it("la fenêtre est en arrière-plan : on recharge, même curseur dedans et frappe faite", () => {
+    // Le curseur reste dans l'éditeur quand on passe dans une autre fenêtre —
+    // c'est le cas qui laissait la feuille périmée.
+    expect(
+      peutRecharger({
+        dejaPosee: true,
+        curseurDedans: true,
+        fenetreActive: false,
+        tapeDepuisPose: true,
+      }),
+    ).toBe(true);
+  });
+
+  it("curseur posé, fenêtre active, mais rien tapé : on recharge", () => {
+    expect(
+      peutRecharger({
+        dejaPosee: true,
+        curseurDedans: true,
+        fenetreActive: true,
+        tapeDepuisPose: false,
+      }),
+    ).toBe(true);
+  });
+
+  it("curseur dedans, fenêtre active, frappe faite : on ne touche à rien", () => {
+    expect(
+      peutRecharger({
+        dejaPosee: true,
+        curseurDedans: true,
+        fenetreActive: true,
+        tapeDepuisPose: true,
+      }),
+    ).toBe(false);
+  });
+});
+
+describe("contenuAvant", () => {
+  const JOUR = "2026-10-22";
+
+  it("une entrée du jour : son contenu", () => {
+    const connues = [{ id: "a", content: "du jour" }];
+    expect(contenuAvant("a", connues, new Map(), JOUR)).toBe("du jour");
+  });
+
+  it("absente du jour, vue la veille : le contenu en mémoire (moment d'avant minuit)", () => {
+    const memoire = new Map([["a", { jour: "2026-10-21", content: "d'hier" }]]);
+    expect(contenuAvant("a", [], memoire, JOUR)).toBe("d'hier");
+  });
+
+  it("absente du jour, vue le même jour : undefined (supprimée ailleurs)", () => {
+    const memoire = new Map([["a", { jour: JOUR, content: "disparue" }]]);
+    expect(contenuAvant("a", [], memoire, JOUR)).toBeUndefined();
+  });
+
+  it("absente partout : undefined", () => {
+    expect(contenuAvant("a", [{ id: "b", content: "autre" }], new Map(), JOUR)).toBeUndefined();
+  });
+
+  it("présente dans les deux : le contenu du jour l'emporte", () => {
+    const connues = [{ id: "a", content: "du jour" }];
+    const memoire = new Map([["a", { jour: "2026-10-21", content: "d'hier" }]]);
+    expect(contenuAvant("a", connues, memoire, JOUR)).toBe("du jour");
   });
 });

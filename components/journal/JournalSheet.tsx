@@ -43,9 +43,17 @@ import {
   decouperEnSegments,
   NOEUDS,
   noeudsDepuisMarkdown,
+  peutRecharger,
   type Segment,
 } from "@/features/journal/feuille";
 import { cn } from "@/lib/utils";
+
+/**
+ * Étiquette des mises à jour faites PAR LE PROGRAMME (poser la feuille,
+ * estampiller un repère) : ce ne sont pas des frappes. La sauvegarde et la
+ * détection de frappe les ignorent.
+ */
+const TAG_PROGRAMME = "journal-programme";
 
 /** Une reprise à poser dans la feuille. */
 export interface Reprise {
@@ -110,8 +118,11 @@ function $poserFeuille(reprises: Reprise[]): void {
  * Charge la feuille, et la RECHARGE quand la page la réécrit d'ailleurs (on
  * change de jour, la capture rapide a prolongé une reprise).
  *
- * Jamais pendant qu'on écrit dedans : ce serait remplacer le texte sous le
- * curseur. La feuille en cours de frappe fait foi, et la sauvegarde la portera.
+ * Elle ne refuse que si quelqu'un ÉCRIT vraiment dedans (curseur dans
+ * l'éditeur, fenêtre au premier plan, une frappe depuis le dernier chargement) :
+ * remplacer le texte sous le curseur est le seul cas à éviter, la feuille en
+ * cours de frappe fait alors foi et la sauvegarde la portera. Voir
+ * `peutRecharger`.
  */
 function ChargementPlugin({
   reprises,
@@ -122,7 +133,20 @@ function ChargementPlugin({
 }) {
   const [editor] = useLexicalComposerContext();
   const pose = useRef<string | null>(null);
+  // Vrai dès qu'une vraie frappe a eu lieu depuis la dernière pose. Les mises à
+  // jour du programme (`TAG_PROGRAMME`) n'en sont pas : sans cette distinction,
+  // poser la feuille se prendrait elle-même pour quelqu'un qui écrit.
+  const tapeRef = useRef(false);
   const signature = empreinte(reprises);
+
+  useEffect(
+    () =>
+      editor.registerUpdateListener(({ tags, dirtyElements, dirtyLeaves }) => {
+        if (tags.has(TAG_PROGRAMME)) return;
+        if (dirtyElements.size > 0 || dirtyLeaves.size > 0) tapeRef.current = true;
+      }),
+    [editor],
+  );
 
   useEffect(() => {
     if (pose.current === signature) return;
@@ -135,15 +159,34 @@ function ChargementPlugin({
     //
     // Un changement de JOUR ne passe pas par ici : la page monte la feuille
     // avec `key={day}`, elle est donc entièrement remontée.
-    const ecrit = dom !== null && dom.contains(document.activeElement);
-    if (ecrit && pose.current !== null) return;
+    //
+    // Le curseur seul ne dit pas qu'on écrit : il reste dans l'éditeur quand la
+    // FENÊTRE passe en arrière-plan (on écrit alors ailleurs, ex. Alt+Q), et on
+    // peut aussi poser le curseur sans rien taper. On ne refuse donc que si la
+    // fenêtre est au premier plan ET qu'une frappe a eu lieu depuis la pose.
+    const curseurDedans = dom !== null && dom.contains(document.activeElement);
+    const ok = peutRecharger({
+      dejaPosee: pose.current !== null,
+      curseurDedans,
+      fenetreActive: document.hasFocus(),
+      tapeDepuisPose: tapeRef.current,
+    });
+    if (!ok) return;
     pose.current = signature;
+    tapeRef.current = false;
     // Ce que la feuille montre désormais : seules ces entrées-là pourront être
     // effacées par une sauvegarde (voir `entreesASupprimer`).
     afficheesRef.current = new Set(reprises.map((r) => r.id).filter((id) => id !== ""));
     // Pas de `discrete: true` : on est dans un effet, et il forcerait un
     // `flushSync` pendant que React rend — l'avertissement était réel.
-    editor.update(() => $poserFeuille(reprises));
+    editor.update(
+      () => {
+        $poserFeuille(reprises);
+        // Le curseur était là : on le remet au bout, où l'on reprend d'écrire.
+        if (curseurDedans) $getRoot().selectEnd();
+      },
+      { tag: TAG_PROGRAMME },
+    );
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [signature, editor]);
 
