@@ -213,44 +213,40 @@ export function entreesASupprimer(
 }
 
 /**
+ * Ce que la feuille transmet avec ses segments, à chaque sauvegarde.
+ *
+ * `affichees` : les entrées qu'elle a posées — les seules qu'une sauvegarde
+ * peut effacer (voir `entreesASupprimer`). `bases` : pour chacune, le texte
+ * qu'elle MONTRE (chargé, ou écrit par elle en dernier). La sauvegarde le
+ * met à jour après chaque écriture ; Rust s'en sert pour ne jamais effacer ce
+ * qu'une autre fenêtre a écrit (`db::poser_reprise`).
+ */
+export interface EtatFeuille {
+  affichees: ReadonlySet<string>;
+  bases: Map<string, string>;
+}
+
+/**
  * La feuille peut-elle se recharger maintenant ?
  *
- * On ne refuse que si quelqu'un ÉCRIT vraiment dedans : curseur dans
- * l'éditeur, fenêtre au premier plan, et au moins une frappe depuis le dernier
- * chargement. Le curseur reste dans l'éditeur quand la fenêtre passe en
- * arrière-plan — refuser alors laissait la feuille périmée, et sa prochaine
- * sauvegarde effaçait ce qu'une autre fenêtre avait écrit.
+ * Ce n'est plus une question de sécurité — l'écriture est arbitrée par Rust,
+ * une feuille périmée n'efface rien —, mais d'affichage : on ne remplace pas
+ * le texte sous les doigts de quelqu'un qui écrit (curseur dans l'éditeur,
+ * fenêtre au premier plan selon le SYSTÈME, une frappe depuis le dernier
+ * chargement), ni pendant qu'un enregistrement attend ou part : on
+ * remplacerait des frappes pas encore écrites par un texte qui ne les a pas.
  */
 export function peutRecharger(etat: {
   dejaPosee: boolean;
   curseurDedans: boolean;
   fenetreActive: boolean;
   tapeDepuisPose: boolean;
+  enregistrementEnCours: boolean;
 }): boolean {
   if (!etat.dejaPosee) return true;
+  if (etat.enregistrementEnCours) return false;
   if (!etat.curseurDedans || !etat.fenetreActive) return true;
   return !etat.tapeDepuisPose;
-}
-
-/**
- * Le contenu en base d'une entrée de la feuille : celui du jour courant, ou,
- * pour un moment d'un AUTRE jour (la feuille a passé minuit sans se
- * recharger), le dernier connu.
- *
- * Une entrée du jour courant absente de `connues` a été supprimée ailleurs :
- * on la laisse (`undefined`), sinon chaque sauvegarde tenterait de mettre à
- * jour une ligne disparue et afficherait une erreur.
- */
-export function contenuAvant(
-  id: string,
-  connues: readonly { id: string; content: string }[],
-  memoire: ReadonlyMap<string, { jour: string; content: string }>,
-  jour: string,
-): string | undefined {
-  const duJour = connues.find((e) => e.id === id);
-  if (duJour) return duJour.content;
-  const vue = memoire.get(id);
-  return vue && vue.jour !== jour ? vue.content : undefined;
 }
 
 export function estVide(markdown: string): boolean {

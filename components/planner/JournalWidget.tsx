@@ -3,7 +3,7 @@
 import { forwardRef, useImperativeHandle, useRef } from "react";
 import Link from "next/link";
 import { NotebookPen } from "lucide-react";
-import { JournalSheet } from "@/components/journal/JournalSheet";
+import { JournalSheet, type JournalSheetHandle } from "@/components/journal/JournalSheet";
 import { useFeuille } from "@/features/journal/useFeuille";
 import { useShortcut } from "@/lib/keys";
 import { cn } from "@/lib/utils";
@@ -34,27 +34,21 @@ export const JournalWidget = forwardRef<JournalWidgetHandle>(
   function JournalWidget(_props, ref) {
     const today = todayLocalISODate();
     // Pas de « À venir » ici : le widget ne montre que le jour courant.
-    const { reprises, aStamper, enregistrer } = useFeuille(today, false);
+    const { reprises, aStamper, aFondre, enregistrer, saving } = useFeuille(today, false);
+    const feuilleRef = useRef<JournalSheetHandle>(null);
     const racineRef = useRef<HTMLDivElement>(null);
     const raccourci = useShortcut("J");
 
     useImperativeHandle(ref, () => ({
       open: () => {
-        const zone = racineRef.current?.querySelector<HTMLElement>(
-          '[contenteditable="true"]',
-        );
-        if (!zone) return;
-        zone.focus();
         // Au BOUT de la journée : Ctrl+J veut dire « écrire maintenant », pas
         // « relire ». Sans ça le curseur tomberait au tout début, sur le
         // premier mot du matin.
-        const s = window.getSelection();
-        const r = document.createRange();
-        r.selectNodeContents(zone);
-        r.collapse(false);
-        s?.removeAllRanges();
-        s?.addRange(r);
-        zone.scrollTop = zone.scrollHeight;
+        feuilleRef.current?.focusFin();
+        const zone = racineRef.current?.querySelector<HTMLElement>(
+          '[contenteditable="true"]',
+        );
+        if (zone) zone.scrollTop = zone.scrollHeight;
       },
     }));
 
@@ -99,10 +93,13 @@ export const JournalWidget = forwardRef<JournalWidgetHandle>(
 
         <div className="px-3">
           <JournalSheet
+            ref={feuilleRef}
             variant="widget"
             reprises={reprises}
             aStamper={aStamper}
-            onSegments={(segments, affichees) => void enregistrer(segments, affichees)}
+            aFondre={aFondre}
+            occupe={saving === "saving"}
+            onSegments={(segments, etat) => void enregistrer(segments, etat)}
             invite={
               <p className="text-[0.9375rem] leading-[1.78] text-muted-foreground/60">
                 Écrire…

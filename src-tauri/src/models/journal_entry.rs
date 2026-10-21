@@ -22,6 +22,23 @@ pub struct JournalEntry {
     pub tags: Vec<super::Tag>,
 }
 
+/// Ce que la base a fait d'un moment envoyé par une feuille du journal (voir
+/// `db::poser_reprise`).
+///
+/// `issue` : `inchangee` (rien à écrire), `ecrite` (la base n'avait pas
+/// bougé), `recollee` (une autre fenêtre avait ajouté du texte au bout : il est
+/// gardé), `conflit` (la base avait changé autrement : le texte de la feuille
+/// est écrit, l'autre version gardée à part, dans un moment voisin) ou
+/// `recreee` (le moment avait disparu : le texte de la feuille l'a recréé, sous
+/// un autre identifiant).
+#[derive(Debug, Clone, Serialize, TS)]
+#[ts(export, export_to = "../../features/journal/generated/")]
+pub struct ReprisePosee {
+    pub issue: String,
+    /// Le moment tel qu'il est maintenant en base.
+    pub entree: JournalEntry,
+}
+
 /// Une pièce jointe du journal — une photo aujourd'hui, un document ou une
 /// note vocale ensuite.
 ///

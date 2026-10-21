@@ -191,6 +191,8 @@ fn main() {
             passage::exporter_word,
             commands::update_journal_entry,
             commands::delete_journal_entry,
+            commands::save_journal_entry,
+            commands::delete_journal_entry_if_unchanged,
             commands::set_journal_entry_tags,
             commands::toggle_quick_window,
             cadre::quick_formes,

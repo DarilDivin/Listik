@@ -12,7 +12,7 @@ pub use ai::{AiChatMessage, AiParsedTask};
 pub use area::{Area, CreateArea, UpdateArea};
 pub use journal_entry::{
     CreateJournalEntry, JournalDayCount, JournalEntry, JournalExport, JournalHit, JournalPiece,
-    UpdateJournalEntry,
+    ReprisePosee, UpdateJournalEntry,
 };
 pub use project::{CreateProject, Project, ProjectStatus, UpdateProject};
 pub use settings::{Settings, UpdateSettings};

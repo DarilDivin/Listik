@@ -3,6 +3,7 @@ import { journalApi } from "./api";
 import type {
   CreateJournalEntryInput,
   JournalEntry,
+  ReprisePosee,
   UpdateJournalEntryInput,
 } from "./types";
 
@@ -57,6 +58,31 @@ export function useJournalMutations() {
     }
   };
 
+  /** Écrire un moment depuis une feuille, arbitré par Rust (voir `journalApi.poser`). */
+  const saveEntry = async (
+    id: string,
+    jour: string,
+    base: string,
+    contenu: string,
+  ): Promise<ReprisePosee> => {
+    try {
+      return await journalApi.poser(id, jour, base, contenu);
+    } catch (error) {
+      toast.error("Erreur lors de l'enregistrement du journal");
+      throw error;
+    }
+  };
+
+  /** Retirer un moment vidé, sauf s'il a reçu du texte ailleurs. */
+  const deleteIfUnchanged = async (id: string, base: string): Promise<boolean> => {
+    try {
+      return await journalApi.retirer(id, base);
+    } catch (error) {
+      toast.error("Erreur lors de la suppression du bloc");
+      throw error;
+    }
+  };
+
   const deleteEntry = async (id: string): Promise<void> => {
     try {
       await journalApi.remove(id);
@@ -66,5 +92,5 @@ export function useJournalMutations() {
     }
   };
 
-  return { createEntry, appendEntry, updateEntry, deleteEntry };
+  return { createEntry, appendEntry, updateEntry, deleteEntry, saveEntry, deleteIfUnchanged };
 }

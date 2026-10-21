@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { format } from "date-fns";
 import { useJournal } from "@/hooks/useJournal";
 import { todayLocalISODate } from "@/lib/date";
-import { contenuAvant, entreesASupprimer, estVide, type Segment } from "./feuille";
+import { entreesASupprimer, estVide, type EtatFeuille, type Segment } from "./feuille";
 import type { Reprise } from "@/components/journal/JournalSheet";
 
 /**
@@ -27,7 +27,7 @@ export type Saving = "idle" | "saving" | "saved";
  * payer sur l'ancien widget.
  */
 export function useFeuille(day: string, withUpcoming = true) {
-  const { entries, upcoming, loading, appendEntry, updateEntry, deleteEntry } =
+  const { entries, upcoming, loading, appendEntry, saveEntry, deleteIfUnchanged } =
     useJournal(day, withUpcoming);
 
   const [saving, setSaving] = useState<Saving>("idle");
@@ -118,24 +118,37 @@ export function useFeuille(day: string, withUpcoming = true) {
   const entriesRef = useRef(entries);
   entriesRef.current = entries;
 
-  // Tout ce que ce hook a vu passer, jours confondus. La feuille du widget et
-  // de la barre rapide change de jour à minuit sans se recharger si l'on y
-  // écrit : ses moments d'hier doivent rester enregistrables.
-  const memoireRef = useRef(new Map<string, { jour: string; content: string }>());
-  for (const e of entries) {
-    memoireRef.current.set(e.id, { jour: e.target_day, content: e.content });
-  }
+  // Le jour de chaque moment vu passer, jours confondus : la feuille du widget
+  // et de la barre rapide peut garder des moments d'avant minuit, et un moment
+  // disparu se recrée dans SON jour.
+  const joursRef = useRef(new Map<string, string>());
+  for (const e of entries) joursRef.current.set(e.id, e.target_day);
+
+  // Un moment disparu puis recréé change d'identifiant ; la feuille, elle,
+  // garde l'ancien sur son repère jusqu'au prochain chargement.
+  const remplacesRef = useRef(new Map<string, string>());
+
+  // Le texte d'un repère vierge a été fondu par Rust dans un moment encore
+  // ouvert : la feuille doit retirer ce repère (voir `JournalSheet`, `aFondre`).
+  const [aFondre, setAFondre] = useState(0);
 
   /**
    * La feuille a changé : on écrit ce qui a bougé, reprise par reprise.
    *
-   * Une reprise vidée s'en va — c'est le seul geste de suppression, et il ne
-   * demande rien de plus que d'effacer son texte. Un repère disparu (Retour
-   * arrière sur la frontière) fait de même : sa ligne part, son texte ayant
-   * déjà rejoint celle d'avant.
+   * La feuille peut être PÉRIMÉE — elle ne se recharge pas sous les doigts de
+   * quelqu'un qui écrit, et une autre fenêtre a pu écrire entre-temps. On
+   * n'écrit donc jamais « le texte de la feuille » à l'aveugle : on envoie
+   * aussi sa base (ce qu'elle a chargé ou écrit en dernier pour ce moment), et
+   * Rust arbitre contre ce que la base contient vraiment (`db::poser_reprise`).
+   * Un moment auquel la feuille n'a pas touché n'est jamais envoyé.
+   *
+   * Une reprise vidée s'en va — c'est le seul geste de suppression. Un repère
+   * disparu (Retour arrière sur la frontière) fait de même : sa ligne part,
+   * son texte ayant déjà rejoint celle d'avant. Dans les deux cas, Rust garde
+   * le moment s'il a reçu ailleurs du texte que la feuille n'a jamais vu.
    */
   const enregistrer = useCallback(
-    async (segments: Segment[], affichees: ReadonlySet<string>) => {
+    async (segments: Segment[], { affichees, bases }: EtatFeuille) => {
       const connues = entriesRef.current;
       const vues = new Set<string>();
 
@@ -146,41 +159,55 @@ export function useFeuille(day: string, withUpcoming = true) {
           if (!cree) continue;
           // RUST ARBITRE, et il peut dire non. S'il a jugé la session d'avant
           // encore ouverte, il a fondu le texte dedans et rend CETTE
-          // entrée-là : il n'y a pas de moment nouveau à marquer.
-          //
-          // L'estampiller quand même posait deux repères portant la même
-          // heure, jusqu'au prochain rechargement. Les deux surfaces peuvent
-          // diverger — la page mesure sur la copie qu'elle a des entrées, et
-          // la capture rapide a pu écrire depuis.
+          // entrée-là : il n'y a pas de moment nouveau à marquer. La feuille
+          // retire alors son repère vierge, pour dire la même chose que la
+          // base — sans ça, chaque sauvegarde suivante renvoyait ce texte à
+          // fondre, et il se répétait.
           if (connues.some((e) => e.id === cree.id)) {
+            const avant = bases.get(cree.id);
+            bases.set(cree.id, avant ? `${avant}\n\n${s.markdown}` : s.markdown);
             setHeureVierge(null);
+            setAFondre((n) => n + 1);
             continue;
           }
+          bases.set(cree.id, s.markdown);
           setAStamper({ id: cree.id, heure: heureDe(cree.written_at) });
           continue;
         }
+        const id = remplacesRef.current.get(s.entryId) ?? s.entryId;
         vues.add(s.entryId);
-        const avant = contenuAvant(s.entryId, connues, memoireRef.current, day);
-        if (avant === undefined) continue;
+        vues.add(id);
+        const base = bases.get(s.entryId);
+        // Jamais posé par cette feuille : rien à quoi comparer.
+        if (base === undefined) continue;
+        // La feuille n'a pas touché à ce moment : ce que la base contient
+        // (peut-être plus récent) fait foi.
+        if (s.markdown === base) continue;
         if (estVide(s.markdown)) {
-          await track(deleteEntry(s.entryId));
+          const parti = await track(deleteIfUnchanged(id, base));
+          if (parti !== null) bases.set(s.entryId, s.markdown);
           continue;
         }
-        if (s.markdown !== avant) {
-          const ecrit = await track(updateEntry(s.entryId, { content: s.markdown }));
-          if (ecrit) {
-            const jour = memoireRef.current.get(s.entryId)?.jour ?? day;
-            memoireRef.current.set(s.entryId, { jour, content: s.markdown });
-          }
+        const jour = joursRef.current.get(id) ?? day;
+        const posee = await track(saveEntry(id, jour, base, s.markdown));
+        if (!posee) continue;
+        // La base de la feuille, c'est ce qu'elle MONTRE : si Rust a recollé
+        // un ajout venu d'ailleurs, il le recollera encore à la prochaine
+        // frappe, tant que la feuille ne l'a pas rechargé.
+        bases.set(s.entryId, s.markdown);
+        if (posee.entree.id !== id) {
+          remplacesRef.current.set(s.entryId, posee.entree.id);
+          joursRef.current.set(posee.entree.id, posee.entree.target_day);
         }
       }
 
       // Seulement ce que la feuille a affiché : voir `entreesASupprimer`.
       for (const id of entreesASupprimer(connues, vues, affichees)) {
-        await track(deleteEntry(id));
+        const base = bases.get(id) ?? connues.find((e) => e.id === id)?.content ?? "";
+        await track(deleteIfUnchanged(id, base));
       }
     },
-    [day, track, appendEntry, updateEntry, deleteEntry],
+    [day, track, appendEntry, saveEntry, deleteIfUnchanged],
   );
 
   return {
@@ -189,6 +216,7 @@ export function useFeuille(day: string, withUpcoming = true) {
     loading,
     reprises,
     aStamper,
+    aFondre,
     enregistrer,
     saving,
     isToday,

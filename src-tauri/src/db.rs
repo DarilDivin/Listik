@@ -1,6 +1,6 @@
 use crate::models::{
     Area, CreateArea, CreateJournalEntry, CreateProject, CreateSubTask, CreateTag,
-    CreateTodo, JournalDayCount, JournalEntry, JournalExport, JournalHit, JournalPiece, Project, Recurrence, Settings, SubTask, Tag,
+    CreateTodo, JournalDayCount, JournalEntry, JournalExport, JournalHit, JournalPiece, Project, Recurrence, ReprisePosee, Settings, SubTask, Tag,
     Todo, TodoStatus,
     UpdateArea, UpdateJournalEntry, UpdateProject, UpdateSettings, UpdateSubTask,
     UpdateTag, UpdateTodo,
@@ -1888,6 +1888,337 @@ pub async fn delete_journal_entry(pool: &SqlitePool, id: &str) -> Result<(), sql
         .execute(pool)
         .await?;
     Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// Écrire depuis une feuille : la base arbitre
+// ---------------------------------------------------------------------------
+//
+// Une feuille du journal (la page, le widget, la barre rapide) peut montrer un
+// texte PÉRIMÉ : elle ne se recharge pas sous les doigts de quelqu'un qui
+// écrit, et une autre fenêtre a pu écrire entre-temps. Si elle écrivait
+// simplement son texte, elle effacerait le reste — c'est arrivé : une ligne
+// ajoutée depuis Alt+Q disparaissait à la frappe suivante dans la page.
+//
+// La feuille envoie donc aussi sa BASE (le texte qu'elle avait chargé, ou
+// écrit en dernier, pour ce moment), et c'est ici, dans une transaction, qu'on
+// compare avec ce que la base contient VRAIMENT. Rien ne repose plus sur le
+// moment où la feuille se recharge.
+
+/// Ce qu'il faut faire d'un moment envoyé par une feuille (voir `poser_reprise`).
+#[derive(Debug, PartialEq, Eq)]
+pub enum DecisionReprise {
+    /// Rien à écrire.
+    Rien,
+    /// Écrire ce texte (celui de la feuille, éventuellement recollé).
+    Ecrire { texte: String, issue: &'static str },
+    /// La base a changé autrement que par un ajout au bout : écrire le texte de
+    /// la feuille, et garder l'autre version dans un moment voisin. Jamais de
+    /// perte, au prix d'un doublon partiel que l'utilisateur triera.
+    EcrireEtGarder { texte: String, autre: String },
+    /// Le moment n'existe plus en base, mais la feuille y a écrit : le recréer.
+    Recreer,
+}
+
+/// Recoller deux morceaux de markdown, séparés par une ligne vide.
+fn recoller(debut: &str, suite: &str) -> String {
+    let suite = suite.trim_start();
+    match (debut.is_empty(), suite.is_empty()) {
+        (_, true) => debut.to_string(),
+        (true, false) => suite.to_string(),
+        (false, false) => format!("{}\n\n{}", debut.trim_end_matches(['\n', '\r']), suite),
+    }
+}
+
+/// La décision, pure : `actuel` est le texte en base (`None` si le moment a
+/// disparu), `base` ce que la feuille avait chargé, `contenu` ce qu'elle
+/// montre maintenant.
+pub fn decider_reprise(actuel: Option<&str>, base: &str, contenu: &str) -> DecisionReprise {
+    let Some(actuel) = actuel else {
+        // Disparu : on ne recrée que si la feuille y a vraiment écrit.
+        return if contenu.trim().is_empty() || contenu == base {
+            DecisionReprise::Rien
+        } else {
+            DecisionReprise::Recreer
+        };
+    };
+    if contenu == actuel {
+        return DecisionReprise::Rien;
+    }
+    // Personne d'autre n'a écrit : le texte de la feuille fait foi.
+    if actuel == base {
+        return DecisionReprise::Ecrire { texte: contenu.to_string(), issue: "ecrite" };
+    }
+    // La feuille n'a pas touché à ce moment ; une autre fenêtre, si. On garde
+    // ce que la base contient — la feuille le montrera à son prochain chargement.
+    if contenu == base {
+        return DecisionReprise::Rien;
+    }
+    // Les deux ont écrit. Le cas courant : l'un des deux (ou les deux) a
+    // AJOUTÉ des paragraphes au bout du même moment — la capture rapide fond
+    // son texte dans le moment ouvert. On garde chaque ajout ; quand les deux
+    // ont ajouté, dans l'ordre où ils sont arrivés en base.
+    let texte = match (ajout_par_paragraphes(actuel, base), ajout_par_paragraphes(contenu, base)) {
+        (Some(_), Some(ajout_ici)) => recoller(actuel, ajout_ici),
+        (Some(ajout_ailleurs), None) => recoller(contenu, ajout_ailleurs),
+        (None, Some(ajout_ici)) => recoller(actuel, ajout_ici),
+        (None, None) => {
+            return DecisionReprise::EcrireEtGarder { texte: contenu.to_string(), autre: actuel.to_string() };
+        }
+    };
+    DecisionReprise::Ecrire { texte, issue: "recollee" }
+}
+
+/// Ce que `texte` ajoute à `base`, s'il ne fait qu'ajouter des paragraphes au
+/// bout. « A' » ne prolonge pas « A » : c'est une retouche, pas un ajout.
+fn ajout_par_paragraphes<'a>(texte: &'a str, base: &str) -> Option<&'a str> {
+    let reste = texte.strip_prefix(base)?;
+    (reste.is_empty() || reste.starts_with('\n')).then_some(reste)
+}
+
+/// Écrit un moment envoyé par une feuille, en arbitrant contre ce que la base
+/// contient vraiment (voir `decider_reprise`). `jour` sert si le moment doit
+/// être recréé.
+pub async fn poser_reprise(
+    pool: &SqlitePool,
+    id: &str,
+    jour: &str,
+    base: &str,
+    contenu: &str,
+) -> Result<ReprisePosee, sqlx::Error> {
+    let now = now_iso();
+    let mut tx = pool.begin().await?;
+    let actuel: Option<(String, String)> =
+        sqlx::query_as("SELECT content, target_day FROM journal_entries WHERE id = ?")
+            .bind(id)
+            .fetch_optional(&mut *tx)
+            .await?;
+
+    let decision = decider_reprise(actuel.as_ref().map(|(c, _)| c.as_str()), base, contenu);
+    let (issue, cible) = match decision {
+        DecisionReprise::Rien => ("inchangee", id.to_string()),
+        DecisionReprise::Ecrire { texte, issue } => {
+            sqlx::query("UPDATE journal_entries SET content = ?, updated_at = ? WHERE id = ?")
+                .bind(&texte)
+                .bind(&now)
+                .bind(id)
+                .execute(&mut *tx)
+                .await?;
+            (issue, id.to_string())
+        }
+        DecisionReprise::EcrireEtGarder { texte, autre } => {
+            sqlx::query("UPDATE journal_entries SET content = ?, updated_at = ? WHERE id = ?")
+                .bind(&texte)
+                .bind(&now)
+                .bind(id)
+                .execute(&mut *tx)
+                .await?;
+            let jour_de_l_autre = actuel.as_ref().map(|(_, j)| j.as_str()).unwrap_or(jour);
+            sqlx::query(
+                "INSERT INTO journal_entries (id, target_day, written_at, content, created_at, updated_at) \
+                 VALUES (?, ?, ?, ?, ?, ?)",
+            )
+            .bind(Uuid::new_v4().to_string())
+            .bind(jour_de_l_autre)
+            .bind(&now)
+            .bind(&autre)
+            .bind(&now)
+            .bind(&now)
+            .execute(&mut *tx)
+            .await?;
+            ("conflit", id.to_string())
+        }
+        DecisionReprise::Recreer => {
+            let nouvel_id = Uuid::new_v4().to_string();
+            sqlx::query(
+                "INSERT INTO journal_entries (id, target_day, written_at, content, created_at, updated_at) \
+                 VALUES (?, ?, ?, ?, ?, ?)",
+            )
+            .bind(&nouvel_id)
+            .bind(jour)
+            .bind(&now)
+            .bind(contenu)
+            .bind(&now)
+            .bind(&now)
+            .execute(&mut *tx)
+            .await?;
+            ("recreee", nouvel_id)
+        }
+    };
+    tx.commit().await?;
+
+    let entree = get_journal_entry(pool, &cible).await?.ok_or(sqlx::Error::RowNotFound)?;
+    Ok(ReprisePosee { issue: issue.to_string(), entree })
+}
+
+/// Supprime un moment vidé ou retiré dans une feuille — sauf si la base a
+/// reçu du texte que la feuille n'a jamais vu. Rend `true` si le moment n'est
+/// plus en base.
+pub async fn retirer_reprise(pool: &SqlitePool, id: &str, base: &str) -> Result<bool, sqlx::Error> {
+    let mut tx = pool.begin().await?;
+    let actuel: Option<String> = sqlx::query_scalar("SELECT content FROM journal_entries WHERE id = ?")
+        .bind(id)
+        .fetch_optional(&mut *tx)
+        .await?;
+    let Some(actuel) = actuel else {
+        return Ok(true);
+    };
+    if actuel != base && !actuel.trim().is_empty() {
+        // Une autre fenêtre y a écrit depuis : on ne jette pas son texte.
+        return Ok(false);
+    }
+    sqlx::query("DELETE FROM journal_entry_tags WHERE entry_id = ?")
+        .bind(id)
+        .execute(&mut *tx)
+        .await?;
+    sqlx::query("DELETE FROM journal_entries WHERE id = ?")
+        .bind(id)
+        .execute(&mut *tx)
+        .await?;
+    tx.commit().await?;
+    Ok(true)
+}
+
+#[cfg(test)]
+mod reprise_tests {
+    use super::{
+        append_journal_entry, create_journal_entry, decider_reprise, get_journal_entry,
+        list_journal_entries_for_day, poser_reprise, retirer_reprise, DecisionReprise,
+    };
+    use crate::models::CreateJournalEntry;
+    use sqlx::sqlite::SqlitePoolOptions;
+
+    async fn pool() -> sqlx::SqlitePool {
+        let pool = SqlitePoolOptions::new().max_connections(1).connect("sqlite::memory:").await.unwrap();
+        sqlx::migrate!("./migrations").run(&pool).await.unwrap();
+        pool
+    }
+
+    fn ecrire(texte: &str, issue: &'static str) -> DecisionReprise {
+        DecisionReprise::Ecrire { texte: texte.to_string(), issue }
+    }
+
+    #[test]
+    fn personne_d_autre_n_a_ecrit_le_texte_de_la_feuille_fait_foi() {
+        assert_eq!(decider_reprise(Some("A"), "A", "A\n\nC"), ecrire("A\n\nC", "ecrite"));
+    }
+
+    #[test]
+    fn rien_a_ecrire_quand_la_feuille_montre_deja_la_base() {
+        assert_eq!(decider_reprise(Some("A\n\nC"), "A", "A\n\nC"), DecisionReprise::Rien);
+    }
+
+    #[test]
+    fn une_feuille_qui_n_a_pas_touche_au_moment_n_efface_pas_l_ajout_d_ailleurs() {
+        // La barre rapide a ajouté B ; la page, périmée, n'a rien tapé ici.
+        assert_eq!(decider_reprise(Some("A\n\nB"), "A", "A"), DecisionReprise::Rien);
+    }
+
+    #[test]
+    fn deux_ajouts_au_bout_sont_gardes_dans_l_ordre_d_arrivee() {
+        // Le cas qui perdait B : la page périmée ajoute C.
+        assert_eq!(decider_reprise(Some("A\n\nB"), "A", "A\n\nC"), ecrire("A\n\nB\n\nC", "recollee"));
+    }
+
+    #[test]
+    fn un_ajout_d_ailleurs_survit_a_une_retouche_ici() {
+        // La page a corrigé A en A' ; la barre rapide avait ajouté B.
+        assert_eq!(decider_reprise(Some("A\n\nB"), "A", "A'"), ecrire("A'\n\nB", "recollee"));
+    }
+
+    #[test]
+    fn un_ajout_ici_survit_a_une_retouche_ailleurs() {
+        // Une autre fenêtre a réécrit A en X ; la page a ajouté C.
+        assert_eq!(decider_reprise(Some("X"), "A", "A\n\nC"), ecrire("X\n\nC", "recollee"));
+    }
+
+    #[test]
+    fn une_vraie_divergence_ecrit_la_feuille_et_garde_l_autre_version() {
+        // Les deux ont retouché le même texte : rien ne se recolle.
+        assert_eq!(
+            decider_reprise(Some("X"), "A", "Y"),
+            DecisionReprise::EcrireEtGarder { texte: "Y".into(), autre: "X".into() },
+        );
+    }
+
+    #[test]
+    fn un_moment_disparu_n_est_recree_que_si_la_feuille_y_a_ecrit() {
+        assert_eq!(decider_reprise(None, "A", "A\n\nC"), DecisionReprise::Recreer);
+        assert_eq!(decider_reprise(None, "A", "A"), DecisionReprise::Rien);
+        assert_eq!(decider_reprise(None, "A", "  "), DecisionReprise::Rien);
+    }
+
+    #[tokio::test]
+    async fn la_page_perimee_garde_la_ligne_ajoutee_par_la_barre_rapide() {
+        let pool = pool().await;
+        let jour = "2026-10-21";
+        // La page écrit A (un moment ouvert)…
+        let a = append_journal_entry(&pool, jour, "A").await.unwrap();
+        // … la barre rapide ajoute B au même moment…
+        let fusion = append_journal_entry(&pool, jour, "B").await.unwrap();
+        assert_eq!(fusion.id, a.id);
+        assert_eq!(fusion.content, "A\n\nB");
+        // … et la page, qui n'a vu que A, envoie A + C.
+        let r = poser_reprise(&pool, &a.id, jour, "A", "A\n\nC").await.unwrap();
+        assert_eq!(r.issue, "recollee");
+        assert_eq!(r.entree.content, "A\n\nB\n\nC");
+    }
+
+    #[tokio::test]
+    async fn un_moment_supprime_ailleurs_est_recree_avec_le_texte_de_la_feuille() {
+        let pool = pool().await;
+        let jour = "2026-10-21";
+        let a = create_journal_entry(
+            &pool,
+            CreateJournalEntry { target_day: jour.into(), content: "A".into(), written_at: None },
+        )
+        .await
+        .unwrap();
+        assert!(retirer_reprise(&pool, &a.id, "A").await.unwrap());
+        let r = poser_reprise(&pool, &a.id, jour, "A", "A\n\nC").await.unwrap();
+        assert_eq!(r.issue, "recreee");
+        assert_ne!(r.entree.id, a.id);
+        assert_eq!(r.entree.content, "A\n\nC");
+        assert_eq!(list_journal_entries_for_day(&pool, jour).await.unwrap().len(), 1);
+    }
+
+    #[tokio::test]
+    async fn une_divergence_garde_les_deux_textes() {
+        let pool = pool().await;
+        let jour = "2026-10-21";
+        let a = create_journal_entry(
+            &pool,
+            CreateJournalEntry { target_day: jour.into(), content: "X".into(), written_at: None },
+        )
+        .await
+        .unwrap();
+        let r = poser_reprise(&pool, &a.id, jour, "A", "Y").await.unwrap();
+        assert_eq!(r.issue, "conflit");
+        let textes: Vec<String> =
+            list_journal_entries_for_day(&pool, jour).await.unwrap().into_iter().map(|e| e.content).collect();
+        assert!(textes.contains(&"Y".to_string()));
+        assert!(textes.contains(&"X".to_string()));
+    }
+
+    #[tokio::test]
+    async fn on_ne_supprime_pas_un_moment_qui_a_recu_du_texte_ailleurs() {
+        let pool = pool().await;
+        let jour = "2026-10-21";
+        let a = append_journal_entry(&pool, jour, "A").await.unwrap();
+        append_journal_entry(&pool, jour, "B").await.unwrap();
+        // La page a vidé A, sans avoir vu B : le moment reste.
+        assert!(!retirer_reprise(&pool, &a.id, "A").await.unwrap());
+        assert!(get_journal_entry(&pool, &a.id).await.unwrap().is_some());
+        // Sans rien d'autre, il part.
+        let b = create_journal_entry(
+            &pool,
+            CreateJournalEntry { target_day: jour.into(), content: "Z".into(), written_at: None },
+        )
+        .await
+        .unwrap();
+        assert!(retirer_reprise(&pool, &b.id, "Z").await.unwrap());
+        assert!(get_journal_entry(&pool, &b.id).await.unwrap().is_none());
+    }
 }
 
 /// Tags d'un bloc, triés par nom — même requête que `list_todo_tags`.

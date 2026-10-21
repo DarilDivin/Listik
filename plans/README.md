@@ -31,7 +31,7 @@ mettre à jour sa ligne ci-dessous à la fin.
 | [003](003-restauration-types-de-pieces.md) | La restauration n'accepte que les types de pièces autorisés | P1 | S | — | DONE (156a3cd, sur advisor/integration) |
 | [004](004-dates-et-rappels.md) | « Demain » suit le vrai jour ; un rappel passé ne sonne plus deux fois | P1 | S | 003 | DONE (8134992, sur advisor/integration) |
 | [005](005-publication-apres-tests.md) | Une version n'est publiée que si les tests passent | P1 | S | — | DONE (897ddb0, sur advisor/integration) |
-| [006](006-journal-ne-plus-ecraser.md) | La feuille du journal ne réécrit plus du texte qu'elle n'a pas chargé | P1 | M | — | DONE (a612fff, sur advisor/integration) — tests manuels à faire avant fusion |
+| [006](006-journal-ne-plus-ecraser.md) | La feuille du journal ne réécrit plus du texte qu'elle n'a pas chargé | P1 | M | — | DONE, puis REPRIS le 2026-10-21 : `document.hasFocus()` ment dans WebView2, la page restait périmée et B se perdait encore. L'écriture est désormais arbitrée par Rust (`db::poser_reprise`) ; tests 1 à 3 rejoués dans l'app réelle |
 
 Statuts possibles : TODO | IN PROGRESS | DONE | BLOCKED (avec la raison en
 une ligne) | REJECTED (avec la raison en une ligne).

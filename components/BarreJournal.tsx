@@ -3,7 +3,7 @@
 import { useEffect, useRef } from "react";
 import { Cancel01Icon, ExternalLinkIcon } from "@hugeicons/core-free-icons";
 import { AppIcon } from "@/components/ui/app-icon";
-import { JournalSheet } from "@/components/journal/JournalSheet";
+import { JournalSheet, type JournalSheetHandle } from "@/components/journal/JournalSheet";
 import { useFeuille } from "@/features/journal/useFeuille";
 import { todayLocalISODate } from "@/lib/date";
 
@@ -39,21 +39,13 @@ export default function BarreJournal({
   const today = todayLocalISODate();
   // Pas de « À venir » ici, comme le widget : cette barre ne montre que le
   // jour courant, écrire pour plus tard se fait depuis la page complète.
-  const { reprises, aStamper, enregistrer } = useFeuille(today, false);
+  const { reprises, aStamper, aFondre, enregistrer, saving } = useFeuille(today, false);
   const rootRef = useRef<HTMLDivElement>(null);
+  const feuilleRef = useRef<JournalSheetHandle>(null);
 
   useEffect(() => {
-    if (!autoFocus) return;
-    const zone = rootRef.current?.querySelector<HTMLElement>('[contenteditable="true"]');
-    if (!zone) return;
-    zone.focus();
     // Au bout de la feuille, pas au début : on arrive pour continuer d'écrire.
-    const s = window.getSelection();
-    const r = document.createRange();
-    r.selectNodeContents(zone);
-    r.collapse(false);
-    s?.removeAllRanges();
-    s?.addRange(r);
+    if (autoFocus) feuilleRef.current?.focusFin();
   }, [autoFocus]);
 
   // Capitaliser seulement le premier caractère : "long" rend "mercredi 16
@@ -104,10 +96,13 @@ export default function BarreJournal({
       <div className="min-h-0 flex-1 overflow-y-auto px-6 py-5">
         <div className="mx-auto min-h-full w-full max-w-[44rem]">
           <JournalSheet
+            ref={feuilleRef}
             variant="page"
             reprises={reprises}
             aStamper={aStamper}
-            onSegments={(segments, affichees) => void enregistrer(segments, affichees)}
+            aFondre={aFondre}
+            occupe={saving === "saving"}
+            onSegments={(segments, etat) => void enregistrer(segments, etat)}
             invite={
               <p className="text-[0.9375rem] leading-[1.78] text-muted-foreground/60">
                 Écrire…

@@ -7,6 +7,7 @@ import type {
   JournalExport,
   JournalHit,
   JournalPiece,
+  ReprisePosee,
   UpdateJournalEntryInput,
 } from "./types";
 
@@ -44,6 +45,17 @@ export const journalApi = {
   update: (id: string, payload: UpdateJournalEntryInput) =>
     invoke<JournalEntry>("update_journal_entry", { id, payload }),
   remove: (id: string) => invoke<void>("delete_journal_entry", { id }),
+  /**
+   * Écrit un moment depuis une feuille. `base` est le texte que la feuille
+   * avait chargé (ou écrit en dernier) : Rust compare avec ce que la base
+   * contient vraiment, et recolle ce qu'une autre fenêtre a ajouté au lieu de
+   * l'effacer. `jour` sert si le moment a disparu et doit être recréé.
+   */
+  poser: (id: string, jour: string, base: string, contenu: string) =>
+    invoke<ReprisePosee>("save_journal_entry", { id, jour, base, contenu }),
+  /** Retire un moment vidé — sauf s'il a reçu ailleurs du texte jamais vu ici. */
+  retirer: (id: string, base: string) =>
+    invoke<boolean>("delete_journal_entry_if_unchanged", { id, base }),
   /**
    * Cherche un passage dans tout le journal. `limit` vient de l'appelant :
    * une palette en montre quelques-uns, une page de recherche beaucoup plus.

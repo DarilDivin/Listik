@@ -3,6 +3,7 @@
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState } from "react";
 import type { ReactNode, RefObject } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import { $insertNodeToNearestRoot } from "@lexical/utils";
 import { LexicalComposer } from "@lexical/react/LexicalComposer";
 import { useLexicalComposerContext } from "@lexical/react/LexicalComposerContext";
@@ -45,6 +46,7 @@ import {
   NOEUDS,
   noeudsDepuisMarkdown,
   peutRecharger,
+  type EtatFeuille,
   type Segment,
 } from "@/features/journal/feuille";
 import { cn } from "@/lib/utils";
@@ -125,14 +127,60 @@ function $poserFeuille(reprises: Reprise[]): void {
  * cours de frappe fait alors foi et la sauvegarde la portera. Voir
  * `peutRecharger`.
  */
+/**
+ * La fenêtre a-t-elle le focus du SYSTÈME ?
+ *
+ * `document.hasFocus()` ne le dit pas dans WebView2 : mesuré, il reste vrai
+ * dans la page quand la barre rapide passe au premier plan. Tauri, lui,
+ * rapporte le focus réel de la fenêtre. On part de « oui » : dans le doute,
+ * la feuille ne se recharge pas sous les doigts.
+ */
+function useFenetreActive(surPerte: () => void): RefObject<boolean> {
+  const actif = useRef(true);
+  const surPerteRef = useRef(surPerte);
+  surPerteRef.current = surPerte;
+  useEffect(() => {
+    let vivant = true;
+    const fenetre = getCurrentWindow();
+    void fenetre
+      .isFocused()
+      .then((f) => {
+        if (vivant) actif.current = f;
+      })
+      .catch(() => {});
+    const arret = fenetre.onFocusChanged(({ payload }) => {
+      actif.current = payload;
+      if (!payload) surPerteRef.current();
+    });
+    return () => {
+      vivant = false;
+      void arret.then((stop) => stop()).catch(() => {});
+    };
+  }, []);
+  return actif;
+}
+
 function ChargementPlugin({
   reprises,
   afficheesRef,
+  basesRef,
+  enAttenteRef,
+  occupe,
 }: {
   reprises: Reprise[];
   afficheesRef: RefObject<Set<string>>;
+  basesRef: RefObject<Map<string, string>>;
+  /** Un enregistrement attend son minuteur (voir `SauvegardePlugin`). */
+  enAttenteRef: RefObject<boolean>;
+  /** Un enregistrement est parti et n'est pas revenu. */
+  occupe: boolean;
 }) {
   const [editor] = useLexicalComposerContext();
+  // Un chargement refusé pendant la frappe est retenté quand on cesse d'écrire
+  // ici : on quitte l'éditeur, ou la fenêtre perd le focus. Sans ça, la
+  // feuille restait périmée jusqu'au changement suivant de la base.
+  const [relance, setRelance] = useState(0);
+  const fenetreActive = useFenetreActive(() => setRelance((n) => n + 1));
   const pose = useRef<string | null>(null);
   // Vrai dès qu'une vraie frappe a eu lieu depuis la dernière pose. Les mises à
   // jour du programme (`TAG_PROGRAMME`) n'en sont pas : sans cette distinction,
@@ -145,6 +193,16 @@ function ChargementPlugin({
       editor.registerUpdateListener(({ tags, dirtyElements, dirtyLeaves }) => {
         if (tags.has(TAG_PROGRAMME)) return;
         if (dirtyElements.size > 0 || dirtyLeaves.size > 0) tapeRef.current = true;
+      }),
+    [editor],
+  );
+
+  useEffect(
+    () =>
+      editor.registerRootListener((racine) => {
+        const relancer = () => setRelance((n) => n + 1);
+        racine?.addEventListener("focusout", relancer);
+        return () => racine?.removeEventListener("focusout", relancer);
       }),
     [editor],
   );
@@ -169,15 +227,19 @@ function ChargementPlugin({
     const ok = peutRecharger({
       dejaPosee: pose.current !== null,
       curseurDedans,
-      fenetreActive: document.hasFocus(),
+      fenetreActive: fenetreActive.current,
       tapeDepuisPose: tapeRef.current,
+      enregistrementEnCours: occupe || enAttenteRef.current,
     });
     if (!ok) return;
     pose.current = signature;
     tapeRef.current = false;
     // Ce que la feuille montre désormais : seules ces entrées-là pourront être
-    // effacées par une sauvegarde (voir `entreesASupprimer`).
+    // effacées par une sauvegarde (voir `entreesASupprimer`), et c'est contre
+    // ce texte-là que Rust arbitrera les prochaines écritures (`bases`).
     afficheesRef.current = new Set(reprises.map((r) => r.id).filter((id) => id !== ""));
+    basesRef.current.clear();
+    for (const r of reprises) if (r.id !== "") basesRef.current.set(r.id, r.markdown);
     // Pas de `discrete: true` : on est dans un effet, et il forcerait un
     // `flushSync` pendant que React rend — l'avertissement était réel.
     editor.update(
@@ -192,8 +254,10 @@ function ChargementPlugin({
     // la feuille d'avant le rechargement, et la sauvegarde suivante l'écrirait
     // par-dessus le texte plus récent.
     editor.dispatchCommand(CLEAR_HISTORY_COMMAND, undefined);
+    // `occupe` : un enregistrement qui revient peut débloquer une pose refusée ;
+    // `relance` : on a cessé d'écrire ici (voir plus haut).
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [signature, editor]);
+  }, [signature, editor, occupe, relance]);
 
   return null;
 }
@@ -281,8 +345,10 @@ function QueuePlugin() {
  */
 function SauvegardePlugin({
   onSegments,
+  enAttenteRef,
 }: {
   onSegments: (segments: Segment[]) => void;
+  enAttenteRef: RefObject<boolean>;
 }) {
   const [editor] = useLexicalComposerContext();
   const minuteur = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -298,6 +364,7 @@ function SauvegardePlugin({
       // reste un nombre « vrai » pour toujours si personne ne l'efface — voir
       // plus bas pourquoi ça a fait doubler des reprises.
       minuteur.current = null;
+      enAttenteRef.current = false;
       const racine = editor.getEditorState().toJSON().root.children;
       onSegmentsRef.current(decouperEnSegments(racine));
     };
@@ -308,6 +375,7 @@ function SauvegardePlugin({
       if (tags.has(TAG_PROGRAMME)) return;
       if (dirtyElements.size === 0 && dirtyLeaves.size === 0) return;
       if (minuteur.current) clearTimeout(minuteur.current);
+      enAttenteRef.current = true;
       minuteur.current = setTimeout(pousser, 700);
     });
 
@@ -340,7 +408,56 @@ function SauvegardePlugin({
         pousser();
       }
     };
-  }, [editor]);
+  }, [editor, enAttenteRef]);
+
+  return null;
+}
+
+// ---------------------------------------------------------------------------
+
+/**
+ * Le texte du repère vierge a été FONDU par Rust dans le moment encore ouvert
+ * (voir `useFeuille`) : on retire ce repère, et son texte rejoint le moment
+ * d'avant — exactement ce que la base contient. Garder le repère faisait
+ * renvoyer ce texte à fondre à chaque sauvegarde : il se répétait.
+ */
+function FondrePlugin({ aFondre }: { aFondre: number }) {
+  const [editor] = useLexicalComposerContext();
+
+  useEffect(() => {
+    if (aFondre === 0) return;
+    editor.update(
+      () => {
+        $getRoot()
+          .getChildren()
+          .find((n): n is RepereNode => $isRepereNode(n) && n.getEntryId() === "")
+          ?.remove();
+      },
+      { tag: TAG_PROGRAMME },
+    );
+  }, [aFondre, editor]);
+
+  return null;
+}
+
+/**
+ * Pose le curseur au BOUT de la feuille, par Lexical lui-même. Une plage DOM
+ * posée de l'extérieur (`selectNodeContents`) était ignorée : Lexical gardait
+ * sa propre sélection, et on écrivait au tout début de la journée.
+ */
+function FocusPlugin({ focusRef }: { focusRef: RefObject<(() => void) | null> }) {
+  const [editor] = useLexicalComposerContext();
+
+  useEffect(() => {
+    focusRef.current = () =>
+      editor.focus(
+        () => editor.update(() => $getRoot().selectEnd(), { tag: TAG_PROGRAMME }),
+        { defaultSelection: "rootEnd" },
+      );
+    return () => {
+      focusRef.current = null;
+    };
+  }, [editor, focusRef]);
 
   return null;
 }
@@ -434,6 +551,8 @@ export interface JournalSheetHandle {
    * fois la note faite, il ne reste qu'une pièce à poser, comme les autres.
    */
   poser: (pieceId: string) => void;
+  /** Pose le curseur au bout de la feuille, prêt à continuer d'écrire. */
+  focusFin: () => void;
   /** Ce qui peut partir à l'export d'un passage — voir `Portees`. */
   portees: () => Portees | null;
 }
@@ -667,10 +786,14 @@ function PassagePlugin({ lireRef }: { lireRef: RefObject<(() => Portees) | null>
 
 interface JournalSheetProps {
   reprises: Reprise[];
-  /** La feuille a changé ; `affichees` : les entrées qu'elle a posées, les seules qu'on peut effacer. */
-  onSegments: (segments: Segment[], affichees: ReadonlySet<string>) => void;
+  /** La feuille a changé ; avec ce qu'elle a posé et ce qu'elle montre (voir `EtatFeuille`). */
+  onSegments: (segments: Segment[], etat: EtatFeuille) => void;
   /** Identité à poser sur le repère encore vierge, une fois la ligne créée. */
   aStamper: { id: string; heure: string } | null;
+  /** Augmente quand le texte du repère vierge a été fondu dans le moment d'avant. */
+  aFondre?: number;
+  /** Un enregistrement est parti et n'est pas revenu : on ne recharge pas. */
+  occupe?: boolean;
   /** Ce qu'on lit quand la journée est encore blanche. */
   invite?: ReactNode;
   /**
@@ -694,7 +817,17 @@ interface JournalSheetProps {
  */
 export const JournalSheet = forwardRef<JournalSheetHandle, JournalSheetProps>(
   function JournalSheet(
-    { reprises, onSegments, aStamper, invite, variant = "page", onErreurPiece, className },
+    {
+      reprises,
+      onSegments,
+      aStamper,
+      aFondre = 0,
+      occupe = false,
+      invite,
+      variant = "page",
+      onErreurPiece,
+      className,
+    },
     ref,
   ) {
   const [vide, setVide] = useState(true);
@@ -704,10 +837,14 @@ export const JournalSheet = forwardRef<JournalSheetHandle, JournalSheetProps>(
   const insererRef = useRef<((pieceId: string) => void) | null>(null);
   const lirePorteesRef = useRef<(() => Portees) | null>(null);
   const afficheesRef = useRef<Set<string>>(new Set());
+  const basesRef = useRef<Map<string, string>>(new Map());
+  const enAttenteRef = useRef(false);
+  const focusRef = useRef<(() => void) | null>(null);
   // Le plugin de sauvegarde garde la dernière version de cette fonction dans un
   // ref : elle peut changer à chaque rendu sans qu'il se réabonne.
   const pousserSegments = useCallback(
-    (segments: Segment[]) => onSegments(segments, afficheesRef.current),
+    (segments: Segment[]) =>
+      onSegments(segments, { affichees: afficheesRef.current, bases: basesRef.current }),
     [onSegments],
   );
   useImperativeHandle(
@@ -715,6 +852,7 @@ export const JournalSheet = forwardRef<JournalSheetHandle, JournalSheetProps>(
     () => ({
       attacher: () => poserRef.current?.(),
       poser: (pieceId: string) => insererRef.current?.(pieceId),
+      focusFin: () => focusRef.current?.(),
       portees: () => lirePorteesRef.current?.() ?? null,
     }),
     [],
@@ -770,17 +908,25 @@ export const JournalSheet = forwardRef<JournalSheetHandle, JournalSheetProps>(
         <ListPlugin />
         <LinkPlugin />
         <MarkdownShortcutPlugin transformers={TRANSFORMERS} />
-        <ChargementPlugin reprises={reprises} afficheesRef={afficheesRef} />
+        <ChargementPlugin
+          reprises={reprises}
+          afficheesRef={afficheesRef}
+          basesRef={basesRef}
+          enAttenteRef={enAttenteRef}
+          occupe={occupe}
+        />
         <FrontierePlugin />
         <QueuePlugin />
         <IdentitePlugin aStamper={aStamper} afficheesRef={afficheesRef} />
+        <FondrePlugin aFondre={aFondre} />
+        <FocusPlugin focusRef={focusRef} />
         <VidePlugin onVide={setVide} />
         <PiecePlugin
           poserRef={poserRef}
           insererRef={insererRef}
           onErreur={onErreurPiece ?? (() => {})}
         />
-        <SauvegardePlugin onSegments={pousserSegments} />
+        <SauvegardePlugin onSegments={pousserSegments} enAttenteRef={enAttenteRef} />
         <PassagePlugin lireRef={lirePorteesRef} />
       </div>
     </LexicalComposer>

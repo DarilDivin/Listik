@@ -2,7 +2,7 @@ use crate::db::{self, AppState};
 use crate::models::{
     AiChatMessage, AiParsedTask, Area, CreateArea, CreateJournalEntry, CreateProject,
     CreateSubTask, CreateTag, CreateTodo, JournalDayCount, JournalEntry, JournalExport, JournalHit,
-    JournalPiece,
+    JournalPiece, ReprisePosee,
     Project, Settings,
     SubTask, Tag,
     Todo, UpdateArea, UpdateJournalEntry, UpdateProject, UpdateSettings, UpdateSubTask,
@@ -367,6 +367,45 @@ pub async fn delete_journal_entry(
         .map_err(|e| e.to_string())?;
     notify_journal_changed(&app);
     Ok(())
+}
+
+/// Écrit un moment depuis une feuille du journal, en arbitrant contre la base :
+/// la feuille envoie aussi le texte qu'elle avait chargé (`base`), pour qu'une
+/// feuille périmée n'efface jamais ce qu'une autre fenêtre a écrit. Voir
+/// `db::poser_reprise`.
+#[tauri::command]
+pub async fn save_journal_entry(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    id: String,
+    jour: String,
+    base: String,
+    contenu: String,
+) -> Result<ReprisePosee, String> {
+    let posee = db::poser_reprise(&state.pool, &id, &jour, &base, &contenu)
+        .await
+        .map_err(|e| e.to_string())?;
+    if posee.issue != "inchangee" {
+        notify_journal_changed(&app);
+    }
+    Ok(posee)
+}
+
+/// Retire un moment vidé dans une feuille — sauf s'il a reçu ailleurs du texte
+/// que la feuille n'a pas vu. Rend `true` si le moment n'est plus en base.
+#[tauri::command]
+pub async fn delete_journal_entry_if_unchanged(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    id: String,
+    base: String,
+) -> Result<bool, String> {
+    let parti = db::retirer_reprise(&state.pool, &id, &base)
+        .await
+        .map_err(|e| e.to_string())?;
+    // Gardé ou non, la feuille doit se recaler sur la base.
+    notify_journal_changed(&app);
+    Ok(parti)
 }
 
 #[tauri::command]

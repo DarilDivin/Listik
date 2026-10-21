@@ -123,7 +123,7 @@ export default function JournalPage() {
 function JournalPageContent() {
   const today = todayLocalISODate();
   const [day, setDay] = useState(today);
-  const { upcoming, loading, reprises, aStamper, enregistrer, saving, isToday } =
+  const { upcoming, loading, reprises, aStamper, aFondre, enregistrer, saving, isToday } =
     useFeuille(day);
 
   const [cherche, setCherche] = useState(false);
@@ -476,6 +476,8 @@ function JournalPageContent() {
               key={day}
               reprises={reprises}
               aStamper={aStamper}
+              aFondre={aFondre}
+              occupe={saving === "saving"}
               invite={
                 <div className="flex flex-col gap-4">
                   <p className="text-[1.0625rem] leading-[1.78] text-foreground/[0.66]">
@@ -488,7 +490,7 @@ function JournalPageContent() {
                   )}
                 </div>
               }
-              onSegments={(segments, affichees) => void enregistrer(segments, affichees)}
+              onSegments={(segments, etat) => void enregistrer(segments, etat)}
               // On ne prévient QUE si ça a échoué : poser une image se voit,
               // le dire serait redondant.
               onErreurPiece={(m) => toast.error(m)}
