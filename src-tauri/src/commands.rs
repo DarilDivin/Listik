@@ -1081,6 +1081,12 @@ pub async fn restore_backup(
                 .bind(&todo.id).bind(&tag.id).execute(&mut *tx).await.map_err(|e| e.to_string())?;
         }
     }
+    // Les rappels déjà passés sont réputés envoyés : sans ça, chaque ancien rappel
+    // d'une tâche encore à faire sonnait dans les dix secondes suivant la
+    // restauration (la colonne `reminded` n'est pas dans la sauvegarde).
+    sqlx::query("UPDATE todos SET reminded = 1 WHERE remind_at IS NOT NULL AND remind_at < ?")
+        .bind(db::heure_de_rappel_maintenant())
+        .execute(&mut *tx).await.map_err(|e| e.to_string())?;
     for ordering in &backup.orderings {
         sqlx::query("INSERT INTO orderings (context, todo_id, position) VALUES (?, ?, ?)")
             .bind(&ordering.context).bind(&ordering.todo_id).bind(ordering.position)

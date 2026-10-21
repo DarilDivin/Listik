@@ -497,9 +497,10 @@ pub async fn update(pool: &SqlitePool, id: &str, input: UpdateTodo) -> Result<To
         sep.push("due_date = ").push_bind_unseparated(due_date);
     }
     if let Some(remind_at) = input.remind_at {
-        // Le rappel change → on réarme la notification (reminded remis à 0).
+        // Le rappel change → on le réarme, sauf s'il est déjà passé.
+        let reminded = reminded_pour(remind_at.as_deref(), &heure_de_rappel_maintenant());
         sep.push("remind_at = ").push_bind_unseparated(remind_at);
-        sep.push("reminded = ").push_bind_unseparated(0_i64);
+        sep.push("reminded = ").push_bind_unseparated(reminded);
     }
     if let Some(project_id) = input.project_id {
         sep.push("project_id = ").push_bind_unseparated(project_id);
@@ -581,12 +582,13 @@ pub async fn toggle(pool: &SqlitePool, id: &str) -> Result<Todo, sqlx::Error> {
                     .map(|d| (d + shift).format("%Y-%m-%d").to_string())
             });
             sqlx::query(
-                "UPDATE todos SET scheduled_for = ?, due_date = ?, remind_at = ?, reminded = 0, \
+                "UPDATE todos SET scheduled_for = ?, due_date = ?, remind_at = ?, reminded = ?, \
                  needs_embedding = 1, updated_at = ? WHERE id = ?",
             )
             .bind(&next_str)
             .bind(&next_due)
             .bind(&next_remind)
+            .bind(reminded_pour(next_remind.as_deref(), &heure_de_rappel_maintenant()))
             .bind(now_iso())
             .bind(id)
             .execute(pool)
@@ -626,6 +628,23 @@ pub async fn delete(pool: &SqlitePool, id: &str) -> Result<(), sqlx::Error> {
         .execute(pool)
         .await?;
     queue_deindex(pool, id, "task").await
+}
+
+/// L'heure présente au format des rappels (« YYYY-MM-DDTHH:MM », locale) —
+/// le même que la boucle d'envoi (`reminders.rs`).
+pub fn heure_de_rappel_maintenant() -> String {
+    chrono::Local::now().format("%Y-%m-%dT%H:%M").to_string()
+}
+
+/// La valeur de `reminded` pour un rappel qu'on écrit : un rappel dont
+/// l'heure est déjà passée compte comme envoyé. Sans ça, « Annuler », cocher
+/// une répétitive en retard ou restaurer une sauvegarde faisaient sonner à
+/// nouveau des rappels d'hier. L'heure présente (même minute) sonne encore.
+fn reminded_pour(remind_at: Option<&str>, maintenant: &str) -> i64 {
+    match remind_at {
+        Some(heure) if heure < maintenant => 1,
+        _ => 0,
+    }
 }
 
 /// Tâches dont le rappel est dû : `remind_at` <= `now` (date-heure locale),
@@ -2395,6 +2414,7 @@ mod tests {
         list_projects, list_subtasks, list_tags, list_todo_tags, mark_reminded, reconcile_lists_into_projects,
         set_todo_tags, take_due_digest, todos_needing_embedding, toggle, update,
         update_area, update_project, update_settings, update_subtask, update_tag,
+        heure_de_rappel_maintenant, reminded_pour,
     };
     use crate::models::{
         CreateArea, CreateProject, CreateSubTask, CreateTag, CreateTodo, JournalEntry, JournalPiece,
@@ -2665,32 +2685,97 @@ mod tests {
     #[tokio::test]
     async fn update_remind_at_rearms_the_reminder() {
         let pool = memory_pool().await;
+        // Heures relatives à maintenant : un rappel déjà passé n'est plus réarmé.
+        let fmt = |d: chrono::DateTime<chrono::Local>| d.format("%Y-%m-%dT%H:%M").to_string();
+        let maintenant = chrono::Local::now();
+        let dans_1h = fmt(maintenant + chrono::Duration::hours(1));
+        let dans_2h = fmt(maintenant + chrono::Duration::hours(2));
+        let dans_3h = fmt(maintenant + chrono::Duration::hours(3));
+
         let mut input = new_todo("Avec rappel");
-        input.remind_at = Some("2026-06-14T08:00".to_string());
+        input.remind_at = Some(dans_1h);
         let todo = create(&pool, input).await.unwrap();
+        assert_eq!(due_reminders(&pool, &dans_3h).await.unwrap().len(), 1);
 
         // Notifié une première fois → ne ressort plus.
         mark_reminded(&pool, &todo.id).await.unwrap();
-        assert!(due_reminders(&pool, "2026-06-14T09:00")
-            .await
-            .unwrap()
-            .is_empty());
+        assert!(due_reminders(&pool, &dans_3h).await.unwrap().is_empty());
 
-        // Changer l'heure du rappel réarme la notification (reminded -> 0).
+        // Changer l'heure du rappel (vers le futur) réarme la notification
+        // (reminded -> 0).
         update(
             &pool,
             &todo.id,
             UpdateTodo {
-                remind_at: Some(Some("2026-06-14T08:30".to_string())),
+                remind_at: Some(Some(dans_2h)),
                 ..Default::default()
             },
         )
         .await
         .unwrap();
-        assert_eq!(
-            due_reminders(&pool, "2026-06-14T09:00").await.unwrap().len(),
-            1
-        );
+        assert_eq!(due_reminders(&pool, &dans_3h).await.unwrap().len(), 1);
+    }
+
+    #[tokio::test]
+    async fn update_remind_at_in_the_past_does_not_rearm() {
+        let pool = memory_pool().await;
+        let fmt = |d: chrono::DateTime<chrono::Local>| d.format("%Y-%m-%dT%H:%M").to_string();
+        let maintenant = chrono::Local::now();
+        let dans_1h = fmt(maintenant + chrono::Duration::hours(1));
+        let dans_3h = fmt(maintenant + chrono::Duration::hours(3));
+        let il_y_a_2h = fmt(maintenant - chrono::Duration::hours(2));
+
+        let mut input = new_todo("Déjà sonné");
+        input.remind_at = Some(dans_1h);
+        let todo = create(&pool, input).await.unwrap();
+        mark_reminded(&pool, &todo.id).await.unwrap();
+
+        // Réécrire une heure déjà passée (« Annuler », restauration…) ne doit
+        // pas faire sonner le rappel une seconde fois.
+        update(
+            &pool,
+            &todo.id,
+            UpdateTodo {
+                remind_at: Some(Some(il_y_a_2h)),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        assert!(due_reminders(&pool, &dans_3h).await.unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn toggle_of_an_overdue_recurring_task_does_not_resend_its_reminder() {
+        use crate::models::Recurrence;
+        let pool = memory_pool().await;
+
+        // Tâche quotidienne en retard de 10 jours, rappel à 08:00 ce jour-là.
+        let il_y_a_10_jours =
+            (chrono::Local::now().date_naive() - chrono::Duration::days(10))
+                .format("%Y-%m-%d")
+                .to_string();
+        let mut input = new_todo("Médicament en retard");
+        input.recurrence = Some(Recurrence::Daily);
+        input.scheduled_for = Some(il_y_a_10_jours.clone());
+        input.remind_at = Some(format!("{il_y_a_10_jours}T08:00"));
+        let todo = create(&pool, input).await.unwrap();
+        mark_reminded(&pool, &todo.id).await.unwrap();
+
+        // Le rappel décalé d'un jour reste dans le passé : il ne doit pas sonner.
+        toggle(&pool, &todo.id).await.unwrap();
+        assert!(due_reminders(&pool, &heure_de_rappel_maintenant())
+            .await
+            .unwrap()
+            .is_empty());
+    }
+
+    #[test]
+    fn reminded_pour_compare_a_maintenant() {
+        assert_eq!(reminded_pour(Some("2026-10-21T08:00"), "2026-10-21T09:00"), 1);
+        assert_eq!(reminded_pour(Some("2026-10-21T09:00"), "2026-10-21T09:00"), 0);
+        assert_eq!(reminded_pour(Some("2026-10-21T10:00"), "2026-10-21T09:00"), 0);
+        assert_eq!(reminded_pour(None, "2026-10-21T09:00"), 0);
     }
 
     #[tokio::test]
