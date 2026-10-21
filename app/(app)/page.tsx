@@ -9,6 +9,7 @@ import { usePlannerTodos } from "@/hooks/usePlannerTodos";
 import { triggerPendingUndo } from "@/features/todos/useTodoMutations";
 import { useProjects } from "@/hooks/useProjects";
 import { useTags } from "@/hooks/useTags";
+import { useJourCourant } from "@/hooks/useJourCourant";
 import { TagFilterProvider } from "@/features/tags/tag-filter";
 import { DuplicateTodoProvider } from "@/features/todos/duplicate-context";
 import { TodoDetailProvider } from "@/features/todos/detail-context";
@@ -60,7 +61,6 @@ import {
 import { SelectionBar } from "@/components/todo/SelectionBar";
 import { TodoDetailSheet } from "@/components/todo/TodoDetailSheet";
 import { AnimatedTodoList, type TodoListDnd } from "@/components/todo/AnimatedTodoList";
-import { todayLocalISODate, toLocalISODate } from "@/lib/date";
 import type { Priority, Todo, TodoStatus } from "@/features/todos/types";
 
 /** Présentation de chaque groupe : libellé, tonalité, date implicite. */
@@ -260,12 +260,8 @@ function PlannerPageContent() {
     return () => timers.forEach(clearTimeout);
   }, []);
 
-  const todayISO = todayLocalISODate();
-  const tomorrowISO = useMemo(() => {
-    const t = new Date();
-    t.setDate(t.getDate() + 1);
-    return toLocalISODate(t);
-  }, []);
+  // Suit le vrai jour : la page reste montée des jours entiers.
+  const { aujourdhui: todayISO, demain: tomorrowISO } = useJourCourant();
 
   // Filtre par tag, routage avec pause, puis regroupement GTD.
   const groups: TodoGroups = useMemo(() => {

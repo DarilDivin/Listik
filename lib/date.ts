@@ -15,6 +15,22 @@ export function todayLocalISODate(): string {
   return toLocalISODate(new Date());
 }
 
+/** Le jour qui suit `iso` (YYYY-MM-DD), en date locale. */
+export function lendemainISO(iso: string): string {
+  const [y, m, d] = iso.split("-").map(Number);
+  return toLocalISODate(new Date(y, m - 1, d + 1));
+}
+
+/** Millisecondes jusqu'au prochain minuit local, vu depuis `maintenant`. */
+export function msAvantMinuit(maintenant: Date): number {
+  const minuit = new Date(
+    maintenant.getFullYear(),
+    maintenant.getMonth(),
+    maintenant.getDate() + 1,
+  );
+  return minuit.getTime() - maintenant.getTime();
+}
+
 /**
  * Compte à rebours d'échéance, façon Things : « J-3 » (à venir), « J-0 »
  * (aujourd'hui), « J+2 » (dépassée). `reached` pilote la couleur (destructive

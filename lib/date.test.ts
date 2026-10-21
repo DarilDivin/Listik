@@ -1,5 +1,10 @@
 import { describe, it, expect } from "vitest";
-import { deadlineCountdown, toLocalISODate } from "./date";
+import {
+  deadlineCountdown,
+  lendemainISO,
+  msAvantMinuit,
+  toLocalISODate,
+} from "./date";
 
 describe("toLocalISODate", () => {
   it("formate une date en YYYY-MM-DD local", () => {
@@ -11,6 +16,38 @@ describe("toLocalISODate", () => {
 
   it("complète le mois et le jour sur deux chiffres", () => {
     expect(toLocalISODate(new Date(2026, 0, 3))).toBe("2026-01-03");
+  });
+});
+
+describe("lendemainISO", () => {
+  it("passe au jour suivant dans le même mois", () => {
+    expect(lendemainISO("2026-10-21")).toBe("2026-10-22");
+  });
+
+  it("franchit la fin du mois", () => {
+    expect(lendemainISO("2026-10-31")).toBe("2026-11-01");
+  });
+
+  it("franchit la fin de l'année", () => {
+    expect(lendemainISO("2026-12-31")).toBe("2027-01-01");
+  });
+
+  it("connaît le 29 février d'une année bissextile", () => {
+    expect(lendemainISO("2028-02-28")).toBe("2028-02-29");
+  });
+
+  it("reste juste la veille d'un changement d'heure", () => {
+    expect(lendemainISO("2026-03-28")).toBe("2026-03-29");
+  });
+});
+
+describe("msAvantMinuit", () => {
+  it("une minute avant minuit", () => {
+    expect(msAvantMinuit(new Date(2026, 9, 21, 23, 59, 0))).toBe(60_000);
+  });
+
+  it("à minuit pile, il reste un jour entier", () => {
+    expect(msAvantMinuit(new Date(2026, 9, 21, 0, 0, 0))).toBe(86_400_000);
   });
 });
 
