@@ -1963,7 +1963,16 @@ pub fn decider_reprise(actuel: Option<&str>, base: &str, contenu: &str) -> Decis
         (Some(ajout_ailleurs), None) => recoller(contenu, ajout_ailleurs),
         (None, Some(ajout_ici)) => recoller(actuel, ajout_ici),
         (None, None) => {
-            return DecisionReprise::EcrireEtGarder { texte: contenu.to_string(), autre: actuel.to_string() };
+            // La feuille ne connaissait qu'un MORCEAU du moment (une copie
+            // périmée, ou un texte que Rust a fondu dans un moment ouvert
+            // ailleurs). Si ce morceau s'y trouve tel quel, une seule fois, on
+            // y remplace ce morceau par sa nouvelle version, sans toucher au
+            // reste.
+            if !base.trim().is_empty() && actuel.matches(base).count() == 1 {
+                actuel.replacen(base, contenu, 1)
+            } else {
+                return DecisionReprise::EcrireEtGarder { texte: contenu.to_string(), autre: actuel.to_string() };
+            }
         }
     };
     DecisionReprise::Ecrire { texte, issue: "recollee" }
@@ -2130,6 +2139,28 @@ mod reprise_tests {
     fn un_ajout_ici_survit_a_une_retouche_ailleurs() {
         // Une autre fenêtre a réécrit A en X ; la page a ajouté C.
         assert_eq!(decider_reprise(Some("X"), "A", "A\n\nC"), ecrire("X\n\nC", "recollee"));
+    }
+
+    #[test]
+    fn un_morceau_connu_se_remplace_sur_place() {
+        // La barre rapide n'a vu que « Salut » (fondu par Rust à la suite du
+        // texte de la page) ; elle continue la phrase.
+        assert_eq!(
+            decider_reprise(Some("Page
+
+Salut"), "Salut", "Salut toi"),
+            ecrire("Page
+
+Salut toi", "recollee"),
+        );
+    }
+
+    #[test]
+    fn un_morceau_qui_apparait_deux_fois_n_est_pas_devine() {
+        assert_eq!(
+            decider_reprise(Some("vu ok, puis ok"), "ok", "ok bien"),
+            DecisionReprise::EcrireEtGarder { texte: "ok bien".into(), autre: "vu ok, puis ok".into() },
+        );
     }
 
     #[test]

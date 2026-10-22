@@ -27,7 +27,7 @@ export type Saving = "idle" | "saving" | "saved";
  * payer sur l'ancien widget.
  */
 export function useFeuille(day: string, withUpcoming = true) {
-  const { entries, upcoming, loading, appendEntry, saveEntry, deleteIfUnchanged } =
+  const { entries, upcoming, loading, appendEntry, saveEntry, deleteIfUnchanged, refetchDay } =
     useJournal(day, withUpcoming);
 
   const [saving, setSaving] = useState<Saving>("idle");
@@ -159,17 +159,24 @@ export function useFeuille(day: string, withUpcoming = true) {
           if (!cree) continue;
           // RUST ARBITRE, et il peut dire non. S'il a jugé la session d'avant
           // encore ouverte, il a fondu le texte dedans et rend CETTE
-          // entrée-là : il n'y a pas de moment nouveau à marquer. La feuille
-          // retire alors son repère vierge, pour dire la même chose que la
-          // base — sans ça, chaque sauvegarde suivante renvoyait ce texte à
-          // fondre, et il se répétait.
-          if (connues.some((e) => e.id === cree.id)) {
-            const avant = bases.get(cree.id);
-            bases.set(cree.id, avant ? `${avant}\n\n${s.markdown}` : s.markdown);
+          // entrée-là. On le reconnaît au CONTENU (un moment neuf contient
+          // exactement le texte envoyé), pas à la liste des entrées connues :
+          // celle-ci peut être périmée, et le moment fondu ne pas y figurer.
+          const fondu = cree.content !== s.markdown;
+          if (fondu && bases.has(cree.id)) {
+            // La feuille montre ce moment juste au-dessus : on retire le repère
+            // vierge, et son texte le rejoint, comme en base. Sans ça, chaque
+            // sauvegarde suivante renvoyait ce texte à fondre : il se répétait.
+            bases.set(cree.id, `${bases.get(cree.id)}
+
+${s.markdown}`);
             setHeureVierge(null);
             setAFondre((n) => n + 1);
             continue;
           }
+          // Moment neuf — ou moment fondu que la feuille ne montre pas encore :
+          // le repère vierge prend son identité, et sa base est ce qu'il
+          // montre. Rust retrouvera ce morceau dans le moment pour la suite.
           bases.set(cree.id, s.markdown);
           setAStamper({ id: cree.id, heure: heureDe(cree.written_at) });
           continue;
@@ -220,5 +227,7 @@ export function useFeuille(day: string, withUpcoming = true) {
     enregistrer,
     saving,
     isToday,
+    /** Relit la journée en base (rend une promesse). */
+    rafraichir: refetchDay,
   };
 }

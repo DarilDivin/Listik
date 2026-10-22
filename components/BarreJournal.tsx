@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Cancel01Icon, ExternalLinkIcon } from "@hugeicons/core-free-icons";
 import { AppIcon } from "@/components/ui/app-icon";
 import { JournalSheet, type JournalSheetHandle } from "@/components/journal/JournalSheet";
@@ -39,14 +39,33 @@ export default function BarreJournal({
   const today = todayLocalISODate();
   // Pas de « À venir » ici, comme le widget : cette barre ne montre que le
   // jour courant, écrire pour plus tard se fait depuis la page complète.
-  const { reprises, aStamper, aFondre, enregistrer, saving } = useFeuille(today, false);
+  const { reprises, aStamper, aFondre, enregistrer, saving, rafraichir } = useFeuille(today, false);
   const rootRef = useRef<HTMLDivElement>(null);
   const feuilleRef = useRef<JournalSheetHandle>(null);
 
+  // La fenêtre rapide garde sa copie de la journée pendant qu'elle est cachée,
+  // et personne ne la tient à jour : on écrivait dans la page, on ouvrait
+  // Alt+Q, et on retrouvait la journée d'avant — si l'on tapait aussitôt, elle
+  // le restait. La feuille n'apparaît donc qu'une fois la journée relue en
+  // base (quelques millisecondes).
+  const [pret, setPret] = useState(false);
+  useEffect(() => {
+    let vivant = true;
+    void Promise.resolve(rafraichir())
+      .catch(() => {})
+      .finally(() => {
+        if (vivant) setPret(true);
+      });
+    return () => {
+      vivant = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   useEffect(() => {
     // Au bout de la feuille, pas au début : on arrive pour continuer d'écrire.
-    if (autoFocus) feuilleRef.current?.focusFin();
-  }, [autoFocus]);
+    if (autoFocus && pret) feuilleRef.current?.focusFin();
+  }, [autoFocus, pret]);
 
   // Capitaliser seulement le premier caractère : "long" rend "mercredi 16
   // septembre" en minuscules, et le nom de mois doit le rester (contrairement
@@ -95,21 +114,23 @@ export default function BarreJournal({
       </header>
       <div className="min-h-0 flex-1 overflow-y-auto px-6 py-5">
         <div className="mx-auto min-h-full w-full max-w-[44rem]">
-          <JournalSheet
-            ref={feuilleRef}
-            variant="page"
-            reprises={reprises}
-            aStamper={aStamper}
-            aFondre={aFondre}
-            occupe={saving === "saving"}
-            onSegments={(segments, etat) => void enregistrer(segments, etat)}
-            invite={
-              <p className="text-[0.9375rem] leading-[1.78] text-muted-foreground/60">
-                Écrire…
-              </p>
-            }
-            className="min-h-full pb-16"
-          />
+          {pret && (
+            <JournalSheet
+              ref={feuilleRef}
+              variant="page"
+              reprises={reprises}
+              aStamper={aStamper}
+              aFondre={aFondre}
+              occupe={saving === "saving"}
+              onSegments={(segments, etat) => void enregistrer(segments, etat)}
+              invite={
+                <p className="text-[0.9375rem] leading-[1.78] text-muted-foreground/60">
+                  Écrire…
+                </p>
+              }
+              className="min-h-full pb-16"
+            />
+          )}
         </div>
       </div>
     </div>

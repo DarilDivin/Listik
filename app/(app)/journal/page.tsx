@@ -41,7 +41,7 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
-import { todayLocalISODate } from "@/lib/date";
+import { useJourCourant } from "@/hooks/useJourCourant";
 
 /** Parse une date « jour seul » en Date locale (évite le décalage UTC). */
 function parseLocalISODate(value: string): Date {
@@ -121,8 +121,19 @@ export default function JournalPage() {
 }
 
 function JournalPageContent() {
-  const today = todayLocalISODate();
+  // Suit le vrai jour : l'app reste ouverte la nuit, et une page restée sur
+  // hier faisait écrire dans la veille pendant qu'Alt+Q écrivait aujourd'hui.
+  const { aujourdhui: today } = useJourCourant();
   const [day, setDay] = useState(today);
+  // À minuit, la page qui montrait « aujourd'hui » passe au nouveau jour. Une
+  // page ouverte sur un autre jour, choisi exprès, y reste.
+  const veilleRef = useRef(today);
+  useEffect(() => {
+    if (veilleRef.current === today) return;
+    const veille = veilleRef.current;
+    veilleRef.current = today;
+    setDay((d) => (d === veille ? today : d));
+  }, [today]);
   const { upcoming, loading, reprises, aStamper, aFondre, enregistrer, saving, isToday } =
     useFeuille(day);
 
