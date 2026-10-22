@@ -13,6 +13,32 @@ Règles :
 - Écrire pour les utilisateurs : ce qui change pour eux, en français, au vouvoiement. Pas de nom de fichier ni de jargon.
 -->
 
+## 0.2.4
+
+> Une barre rapide qui se comporte comme celle du système, six encres pour colorer Listik, et un journal qui ne perd plus rien d'une fenêtre à l'autre.
+
+### Nouveau
+
+- La barre rapide (Alt+Q, ⌥Espace sur Mac) se comporte comme une barre du système : elle flotte au-dessus de vos fenêtres, ses pastilles Tâche, Journal et Question se choisissent aussi au clavier avec Tab, et un clic à côté la referme. Tant qu'une réponse ou le journal y est ouvert, elle reste là.
+- Les panneaux de réponse et de journal de la barre rapide s'agrandissent par leur coin.
+- Pendant que l'assistant travaille, une orbe montre ce qu'il fait vraiment : il réfléchit, il parcourt vos tâches, il agit.
+- Six couleurs d'accent, pensées comme des encres de stylo-plume : Encre, Pétrole, Bleu, Violette, Framboise et Ambre. Toutes restent lisibles en clair comme en sombre. Votre choix est repris ; si vous aviez le corail, Listik passe à Framboise.
+- Pendant un enregistrement vocal dans le journal, votre voix éclaire la pastille d'enregistrement.
+
+### Amélioré
+
+- Dans la barre rapide, le journal s'ouvre sur la journée à jour, le curseur au bout du texte.
+- La page Journal passe d'elle-même au nouveau jour à minuit.
+
+### Corrigé
+
+- Écrire dans le journal depuis la page et depuis la barre rapide ne fait plus disparaître de texte.
+- Les notes vocales se relisent dans l'application installée.
+- Une tâche répétitive capturée avec la barre rapide (« chaque lundi ») reste répétitive.
+- « Demain » désigne bien le lendemain, même quand Listik est resté ouvert pendant la nuit.
+- Un rappel déjà passé ne sonne plus une seconde fois : après « Annuler », après avoir coché une tâche répétitive en retard, ou après une restauration.
+- La restauration d'une sauvegarde refuse les pièces jointes qui ne sont ni des images, ni des PDF, ni des documents, ni des notes vocales.
+
 ## 0.2.3 — 2026-10-13
 
 > Un texte écrit dans le journal se partage tel quel : en message, en PDF, en images ou en Word.
