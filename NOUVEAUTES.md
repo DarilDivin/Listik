@@ -13,7 +13,7 @@ Règles :
 - Écrire pour les utilisateurs : ce qui change pour eux, en français, au vouvoiement. Pas de nom de fichier ni de jargon.
 -->
 
-## 0.2.4
+## 0.2.4 — 2026-10-22
 
 > Une barre rapide qui se comporte comme celle du système, six encres pour colorer Listik, et un journal qui ne perd plus rien d'une fenêtre à l'autre.
 
